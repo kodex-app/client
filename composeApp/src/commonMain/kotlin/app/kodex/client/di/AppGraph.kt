@@ -32,8 +32,16 @@ class AppGraph {
         }
     }
 
+    /** Separate bare client for Coil image loading — no JSON negotiation, no expectSuccess. */
+    val imageHttpClient = createHttpClient {
+        install(HttpTimeout) {
+            requestTimeoutMillis = 30_000
+            connectTimeoutMillis = 15_000
+        }
+    }
+
     private val store = ServerStore()
-    private val api = KodexApi(httpClient)
+    val api = KodexApi(httpClient)
 
     val session: SessionManager = SessionManager(store, api).apply { bootstrap() }
 }
