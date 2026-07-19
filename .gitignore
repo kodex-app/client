@@ -1,0 +1,20 @@
+# Gradle
+.gradle/
+build/
+**/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Local config
+local.properties
+*.hprof
+
+# IDE
+.idea/
+*.iml
+.kotlin/
+
+# macOS / Xcode
+.DS_Store
+xcuserdata/
+*.xcworkspace/xcuserdata/
+iosApp/Pods/

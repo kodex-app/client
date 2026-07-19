@@ -1,0 +1,18 @@
+import SwiftUI
+import ComposeApp
+
+/// Hosts the shared Compose UI (the Kotlin `MainViewController()`) inside SwiftUI.
+struct ComposeView: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> UIViewController {
+        MainViewControllerKt.MainViewController()
+    }
+
+    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
+}
+
+struct ContentView: View {
+    var body: some View {
+        ComposeView()
+            .ignoresSafeArea(.keyboard) // keep the compose keyboard handling authoritative
+    }
+}

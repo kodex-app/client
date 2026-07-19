@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Kodex servers are self-hosted, so the target host is unknown at build time and is often a LAN
+  address served over plain http, or https with a user-installed (self-signed) CA. Android's default
+  policy blocks both ("Cleartext HTTP traffic ... not permitted" / network security policy), so we
+  opt in to cleartext and trust user CAs in addition to the system ones.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
