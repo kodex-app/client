@@ -73,6 +73,8 @@ fun MainScaffold(session: SessionManager, api: KodexApi) {
             api = api,
             onOpenSeries = openSeries,
             onOpenBook = openBook,
+            onOpenSourceSeries = { source, seed -> backStack.add(DetailRoute.SourceSeries(source, seed)) },
+            onOpenReader = { backStack.add(DetailRoute.Reader(it)) },
             onBack = { backStack.removeAt(backStack.lastIndex) },
         )
         return

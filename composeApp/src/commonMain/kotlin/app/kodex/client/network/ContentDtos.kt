@@ -28,14 +28,17 @@ data class SourceDescriptor(
     val kind: String = "COMIC",
 )
 
-/** One series returned by a content source's search/browse feed. */
+/** One series returned by a content source's search/browse feed or its detail endpoint. */
 @Serializable
 data class SourceSearchResult(
     val providerId: String? = null,
     val externalId: String = "",
     val title: String = "",
+    val description: String? = null,
     val coverUrl: String? = null,
     val author: String? = null,
+    val artist: String? = null,
+    val genres: List<String> = emptyList(),
     val status: String = "UNKNOWN",
 )
 
@@ -44,4 +47,35 @@ data class SourceSearchResult(
 data class SeriesPage(
     val items: List<SourceSearchResult> = emptyList(),
     val hasNextPage: Boolean = false,
+)
+
+/** A chapter from a content source's live chapter list. */
+@Serializable
+data class SourceChapter(
+    val externalId: String = "",
+    val name: String = "",
+    val number: Double? = null,
+    val scanlator: String? = null,
+    val releaseDate: String? = null,
+)
+
+/** Resolves a source series to its followed local series (present only when followed). */
+@Serializable
+data class FollowedSeriesRef(
+    val seriesId: String,
+    val libraryId: String,
+)
+
+/** Body of `POST /v1/libraries/{id}/web-series` (follow a source series into a WEB library). */
+@Serializable
+data class FollowWebSeriesRequest(
+    val providerId: String,
+    val externalId: String,
+    val categoryIds: List<String>? = null,
+)
+
+/** Body of `.../web-series/{id}/download` — null [chapterIds] downloads all missing chapters. */
+@Serializable
+data class DownloadWebSeriesRequest(
+    val chapterIds: List<String>? = null,
 )

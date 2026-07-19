@@ -8,6 +8,10 @@ import io.ktor.http.encodeURLQueryComponent
 fun bookCoverUrl(baseUrl: String, bookId: String): String =
     "$baseUrl/api/v1/books/$bookId/thumbnail"
 
+/** Rendered page image for the reader. [page] is 1-based (comics/DIVINA + PDF; EPUB is not an image). */
+fun bookPageUrl(baseUrl: String, bookId: String, page: Int): String =
+    "$baseUrl/api/v1/books/$bookId/pages/$page"
+
 /**
  * Series cover, mirroring the web `coverSrc`: a custom [SeriesDto.coverUrl] wins (absolute URLs are
  * used as-is, server-relative ones are prefixed), otherwise fall back to the series thumbnail.

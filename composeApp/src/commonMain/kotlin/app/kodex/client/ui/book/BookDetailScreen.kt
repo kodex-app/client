@@ -24,6 +24,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -57,6 +58,7 @@ fun BookDetailScreen(
     api: KodexApi,
     bookId: String,
     onBack: () -> Unit,
+    onRead: (String) -> Unit = {},
 ) {
     val server by session.activeServer.collectAsStateSafe()
     var reload by remember { mutableStateOf(0) }
@@ -85,6 +87,7 @@ fun BookDetailScreen(
                     server = s,
                     book = book,
                     busy = busy,
+                    onRead = { onRead(book.id) },
                     onToggleRead = {
                         busy = true
                         scope.launch {
@@ -111,6 +114,7 @@ private fun BookDetailContent(
     server: ServerConnection,
     book: BookDto,
     busy: Boolean,
+    onRead: () -> Unit,
     onToggleRead: () -> Unit,
 ) {
     Column(
@@ -136,9 +140,13 @@ private fun BookDetailContent(
         }
 
         Spacer(Modifier.height(16.dp))
-        Button(onClick = onToggleRead, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+        Button(onClick = onRead, enabled = book.isReady, modifier = Modifier.fillMaxWidth()) {
+            Text(readActionLabel(book))
+        }
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(onClick = onToggleRead, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
             if (busy) {
-                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
             } else {
                 Text(if (book.readProgress?.completed == true) "Mark as unread" else "Mark as read")
             }
@@ -179,6 +187,12 @@ private fun MetaSection(label: String, value: String?) {
         )
         Text(value, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
     }
+}
+
+private fun readActionLabel(book: BookDto): String = when {
+    book.readProgress?.completed == true -> "Read again"
+    book.readProgress != null -> "Continue"
+    else -> "Read"
 }
 
 private fun readStatus(book: BookDto): String = when {

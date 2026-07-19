@@ -2,6 +2,7 @@ package app.kodex.client.network
 
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -11,6 +12,7 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
@@ -148,6 +150,15 @@ class KodexApi(private val client: HttpClient) {
         }
     }
 
+    /** Persist reader position: [page] is 1-based; [completed] is set at the last page. */
+    suspend fun saveReadProgress(baseUrl: String, apiKey: String, bookId: String, page: Int, completed: Boolean) {
+        client.patch("$baseUrl/api/v1/books/$bookId/read-progress") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(ReadProgressDto(page = page, completed = completed))
+        }
+    }
+
     // ── Browse (content sources) ──────────────────────────────────────────────────────────────────
 
     suspend fun contentSources(baseUrl: String, apiKey: String): List<SourceDescriptor> =
@@ -167,6 +178,61 @@ class KodexApi(private val client: HttpClient) {
             header(HEADER_API_KEY, apiKey)
             parameter("page", page)
         }.body()
+
+    // ── Source series detail (Browse drill-down) ─────────────────────────────────────────────────
+
+    suspend fun sourceSeries(baseUrl: String, apiKey: String, providerId: String, externalId: String): SourceSearchResult =
+        client.get("$baseUrl/api/v1/content-sources/$providerId/series") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("id", externalId)
+        }.body()
+
+    suspend fun sourceChapters(baseUrl: String, apiKey: String, providerId: String, externalId: String): List<SourceChapter> =
+        client.get("$baseUrl/api/v1/content-sources/$providerId/chapters") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("seriesId", externalId)
+        }.body()
+
+    /** The followed-series link for a source series, or null (404) when it isn't followed. */
+    suspend fun followedSeriesRef(baseUrl: String, apiKey: String, providerId: String, externalId: String): FollowedSeriesRef? =
+        try {
+            client.get("$baseUrl/api/v1/content-sources/$providerId/followed-series") {
+                header(HEADER_API_KEY, apiKey)
+                parameter("id", externalId)
+            }.body()
+        } catch (e: ClientRequestException) {
+            if (e.response.status == HttpStatusCode.NotFound) null else throw e
+        }
+
+    /** The user's WEB library (auto-created server-side), used as the follow target. */
+    suspend fun webLibrary(baseUrl: String, apiKey: String): LibraryDto =
+        client.get("$baseUrl/api/v1/libraries/web") {
+            header(HEADER_API_KEY, apiKey)
+        }.body()
+
+    suspend fun followWebSeries(baseUrl: String, apiKey: String, libraryId: String, providerId: String, externalId: String) {
+        client.post("$baseUrl/api/v1/libraries/$libraryId/web-series") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(FollowWebSeriesRequest(providerId, externalId))
+        }
+    }
+
+    /** Download chapters of a followed series (null = all missing). */
+    suspend fun downloadWebSeries(baseUrl: String, apiKey: String, libraryId: String, seriesId: String, chapterIds: List<String>? = null) {
+        client.post("$baseUrl/api/v1/libraries/$libraryId/web-series/$seriesId/download") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(DownloadWebSeriesRequest(chapterIds))
+        }
+    }
+
+    suspend fun unfollowWebSeries(baseUrl: String, apiKey: String, libraryId: String, seriesId: String, deleteFiles: Boolean) {
+        client.delete("$baseUrl/api/v1/libraries/$libraryId/web-series/$seriesId") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("deleteFiles", deleteFiles)
+        }
+    }
 
     private companion object {
         const val HEADER_API_KEY = "X-API-Key"
