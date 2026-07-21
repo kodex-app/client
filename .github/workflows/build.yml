@@ -1,0 +1,112 @@
+name: Build & publish APK
+
+# Builds the Android APK, publishes it as a GitHub Release (a shareable download link), and — only
+# when the optional secrets TELEGRAM_TOKEN and TELEGRAM_CHAT_ID are configured — posts the link to
+# Telegram. Tag pushes (v*) make a real release; branch pushes / manual runs update a `nightly` one.
+
+on:
+  push:
+    branches: [main, dev]
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write # create releases / tags
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build debug APK
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :composeApp:assembleDebug --no-daemon --stacktrace
+
+      - name: Stage APK
+        id: stage
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            version="${GITHUB_REF#refs/tags/}"
+          else
+            version="nightly-$(git rev-parse --short HEAD)"
+          fi
+          apk="$(find composeApp/build/outputs/apk/debug -name '*.apk' | head -n1)"
+          if [[ -z "$apk" ]]; then echo "No APK produced" >&2; exit 1; fi
+          name="kodex-client-${version}.apk"
+          mkdir -p out
+          cp "$apk" "out/${name}"
+          {
+            echo "version=${version}"
+            echo "apk_name=${name}"
+            echo "apk_path=out/${name}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.stage.outputs.apk_name }}
+          path: ${{ steps.stage.outputs.apk_path }}
+          if-no-files-found: error
+
+      - name: Publish release
+        id: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APK_PATH: ${{ steps.stage.outputs.apk_path }}
+          APK_NAME: ${{ steps.stage.outputs.apk_name }}
+          VERSION: ${{ steps.stage.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            tag="${GITHUB_REF#refs/tags/}"
+            gh release create "$tag" "$APK_PATH" --title "$tag" --generate-notes \
+              || gh release upload "$tag" "$APK_PATH" --clobber
+          else
+            tag="nightly"
+            # Move the rolling nightly release/tag to this commit.
+            gh release delete "$tag" --yes --cleanup-tag || true
+            gh release create "$tag" "$APK_PATH" --title "Nightly (${VERSION})" --prerelease \
+              --notes "Automated build from ${GITHUB_SHA}."
+          fi
+          release_url="$(gh release view "$tag" --json url --jq .url)"
+          apk_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/${APK_NAME}"
+          {
+            echo "release_url=${release_url}"
+            echo "apk_url=${apk_url}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Notify Telegram
+        if: ${{ env.TELEGRAM_TOKEN != '' && env.TELEGRAM_CHAT_ID != '' }}
+        env:
+          VERSION: ${{ steps.stage.outputs.version }}
+          RELEASE_URL: ${{ steps.publish.outputs.release_url }}
+          APK_URL: ${{ steps.publish.outputs.apk_url }}
+        run: |
+          set -euo pipefail
+          text="$(printf '🤖 New Kodex client APK: %s\nRelease: %s\nDownload: %s' "$VERSION" "$RELEASE_URL" "$APK_URL")"
+          curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=${text}" \
+            -o /dev/null -w "Telegram sendMessage HTTP %{http_code}\n"

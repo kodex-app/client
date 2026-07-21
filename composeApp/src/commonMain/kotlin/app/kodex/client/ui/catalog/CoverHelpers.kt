@@ -12,6 +12,10 @@ fun bookCoverUrl(baseUrl: String, bookId: String): String =
 fun bookPageUrl(baseUrl: String, bookId: String, page: Int): String =
     "$baseUrl/api/v1/books/$bookId/pages/$page"
 
+/** Page image streamed live from a content source. [index] is 0-based (unlike book pages). */
+fun sourcePageUrl(baseUrl: String, providerId: String, chapterId: String, index: Int): String =
+    "$baseUrl/api/v1/content-sources/$providerId/page?chapterId=${chapterId.encodeURLQueryComponent()}&index=$index"
+
 /**
  * Series cover, mirroring the web `coverSrc`: a custom [SeriesDto.coverUrl] wins (absolute URLs are
  * used as-is, server-relative ones are prefixed), otherwise fall back to the series thumbnail.

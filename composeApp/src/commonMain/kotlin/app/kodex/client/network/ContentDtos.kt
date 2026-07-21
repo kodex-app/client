@@ -79,3 +79,20 @@ data class FollowWebSeriesRequest(
 data class DownloadWebSeriesRequest(
     val chapterIds: List<String>? = null,
 )
+
+/** `GET /content-sources/{id}/pages?chapterId=` — page count for a streamed chapter. */
+@Serializable
+data class PageCountDto(val pageCount: Int = 0)
+
+/** Body of `PUT /content-sources/{id}/progress` — records streamed read progress (drives History). */
+@Serializable
+data class SaveSourceProgressRequest(
+    val seriesId: String? = null,
+    val sourceSeriesId: String? = null,
+    val sourceSeriesName: String? = null,
+    val sourceCoverUrl: String? = null,
+    val chapterId: String,
+    val chapterName: String? = null,
+    val page: Int,
+    val completed: Boolean,
+)

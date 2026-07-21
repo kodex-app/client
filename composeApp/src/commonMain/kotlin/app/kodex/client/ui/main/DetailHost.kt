@@ -11,6 +11,7 @@ import app.kodex.client.ui.browse.SourceFeedScreen
 import app.kodex.client.ui.browse.SourceSeriesScreen
 import app.kodex.client.ui.library.LibrarySeriesScreen
 import app.kodex.client.ui.reader.ReaderScreen
+import app.kodex.client.ui.reader.SourceReaderScreen
 import app.kodex.client.ui.series.SeriesDetailScreen
 
 /**
@@ -25,7 +26,16 @@ sealed interface DetailRoute {
     data class SeriesDetail(val seriesId: String) : DetailRoute
     data class BookDetail(val bookId: String) : DetailRoute
     data class Reader(val bookId: String) : DetailRoute
+    data class SourceReader(
+        val providerId: String,
+        val chapterId: String,
+        val seriesId: String?,
+        val chapterName: String?,
+    ) : DetailRoute
 }
+
+/** Opens a streamed (no-download) chapter reader. */
+typealias OpenSourceReader = (providerId: String, chapterId: String, seriesId: String?, chapterName: String?) -> Unit
 
 @Composable
 fun DetailHost(
@@ -36,6 +46,7 @@ fun DetailHost(
     onOpenBook: (String) -> Unit,
     onOpenSourceSeries: (SourceDescriptor, SourceSearchResult) -> Unit,
     onOpenReader: (String) -> Unit,
+    onOpenSourceReader: OpenSourceReader,
     onBack: () -> Unit,
 ) {
     when (route) {
@@ -49,12 +60,20 @@ fun DetailHost(
             SourceSeriesScreen(session, api, route.source, route.seed, onBack)
 
         is DetailRoute.SeriesDetail ->
-            SeriesDetailScreen(session, api, route.seriesId, onBack, onOpenBook = onOpenBook)
+            SeriesDetailScreen(
+                session, api, route.seriesId, onBack,
+                onOpenBook = onOpenBook,
+                onOpenReader = onOpenReader,
+                onOpenSourceReader = onOpenSourceReader,
+            )
 
         is DetailRoute.BookDetail ->
             BookDetailScreen(session, api, route.bookId, onBack, onRead = onOpenReader)
 
         is DetailRoute.Reader ->
             ReaderScreen(session, api, route.bookId, onBack)
+
+        is DetailRoute.SourceReader ->
+            SourceReaderScreen(session, api, route.providerId, route.chapterId, route.seriesId, route.chapterName, onBack)
     }
 }

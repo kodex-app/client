@@ -9,11 +9,18 @@ import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import io.ktor.http.encodeURLQueryComponent
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
@@ -27,6 +34,8 @@ import kotlin.io.encoding.ExperimentalEncodingApi
  *    the cookie/session `/api/login/api-key` route is for the web UI).
  */
 class KodexApi(private val client: HttpClient) {
+
+    private val json = Json { ignoreUnknownKeys = true }
 
     @OptIn(ExperimentalEncodingApi::class)
     suspend fun createApiKey(
@@ -121,13 +130,19 @@ class KodexApi(private val client: HttpClient) {
             header(HEADER_API_KEY, apiKey)
         }.body()
 
-    /** All books in a series, ordered by number. */
+    /** All books in a series, ordered by number (LOCAL series). */
     suspend fun seriesBooks(baseUrl: String, apiKey: String, seriesId: String): List<BookDto> =
         client.get("$baseUrl/api/v1/series/$seriesId/books") {
             header(HEADER_API_KEY, apiKey)
             parameter("size", SERIES_BOOKS_SIZE)
             parameter("sort", "number,asc")
         }.body<PageResponse<BookDto>>().content
+
+    /** A WEB series' tracked chapters (with read/downloaded state). */
+    suspend fun seriesChapters(baseUrl: String, apiKey: String, seriesId: String): List<SeriesChapterDto> =
+        client.get("$baseUrl/api/v1/series/$seriesId/chapters") {
+            header(HEADER_API_KEY, apiKey)
+        }.body()
 
     suspend fun book(baseUrl: String, apiKey: String, bookId: String): BookDto =
         client.get("$baseUrl/api/v1/books/$bookId") {
@@ -231,6 +246,61 @@ class KodexApi(private val client: HttpClient) {
         client.delete("$baseUrl/api/v1/libraries/$libraryId/web-series/$seriesId") {
             header(HEADER_API_KEY, apiKey)
             parameter("deleteFiles", deleteFiles)
+        }
+    }
+
+    // ── Read-from-source (streamed chapter, no download) ─────────────────────────────────────────
+
+    /** Page count for a chapter streamed live from its source (0 if the source can't fetch it). */
+    suspend fun sourceChapterPageCount(baseUrl: String, apiKey: String, providerId: String, chapterId: String): Int =
+        client.get("$baseUrl/api/v1/content-sources/$providerId/pages") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("chapterId", chapterId)
+        }.body<PageCountDto>().pageCount
+
+    /** Saved progress for a streamed chapter, or null (the endpoint returns an empty body when none). */
+    suspend fun sourceProgress(baseUrl: String, apiKey: String, providerId: String, chapterId: String): ReadProgressDto? {
+        val text = client.get("$baseUrl/api/v1/content-sources/$providerId/progress") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("chapterId", chapterId)
+        }.bodyAsText()
+        return if (text.isBlank()) null else runCatching { json.decodeFromString<ReadProgressDto>(text) }.getOrNull()
+    }
+
+    /** Records streamed read progress (also drives History). [seriesId] is set for library WEB series. */
+    suspend fun saveSourceProgress(
+        baseUrl: String,
+        apiKey: String,
+        providerId: String,
+        chapterId: String,
+        page: Int,
+        completed: Boolean,
+        seriesId: String? = null,
+        chapterName: String? = null,
+    ) {
+        client.put("$baseUrl/api/v1/content-sources/$providerId/progress") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(SaveSourceProgressRequest(seriesId = seriesId, chapterId = chapterId, chapterName = chapterName, page = page, completed = completed))
+        }
+    }
+
+    // ── Per-user settings (reader prefs live here) ───────────────────────────────────────────────
+
+    /** All generic per-user settings as a JSON object (e.g. `reader.comic`, `reader.comic.series.<id>`). */
+    suspend fun userSettings(baseUrl: String, apiKey: String): JsonObject {
+        val text = client.get("$baseUrl/api/v1/users/me/settings") {
+            header(HEADER_API_KEY, apiKey)
+        }.bodyAsText()
+        return if (text.isBlank()) JsonObject(emptyMap()) else json.parseToJsonElement(text).jsonObject
+    }
+
+    /** Upsert one opaque JSON setting (pass a JSON `null` value to clear it). */
+    suspend fun saveUserSetting(baseUrl: String, apiKey: String, key: String, value: JsonElement) {
+        client.put("$baseUrl/api/v1/users/me/settings/${key.encodeURLQueryComponent()}") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(value)
         }
     }
 

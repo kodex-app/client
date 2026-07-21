@@ -104,6 +104,24 @@ android {
     }
 }
 
+// Temporary: run the real client against a live server (see VerifyApi.kt). Reads host/key from
+// kodex/.env.test so no secret lands in source or build config.
+tasks.register<JavaExec>("verifyApi") {
+    group = "verification"
+    val comp = kotlin.targets.getByName("desktop").compilations.getByName("main")
+    dependsOn(comp.compileTaskProvider)
+    classpath = files(comp.output.allOutputs, comp.runtimeDependencyFiles)
+    mainClass.set("app.kodex.client.VerifyApiKt")
+    val env = rootProject.file("../kodex/.env.test")
+    if (env.exists()) {
+        val props = env.readLines().mapNotNull {
+            val i = it.indexOf('=')
+            if (i > 0) it.substring(0, i).trim() to it.substring(i + 1).trim() else null
+        }.toMap()
+        args(props["HOST"] ?: "http://localhost:26000", props["API_KEY"] ?: "")
+    }
+}
+
 compose.desktop {
     application {
         mainClass = "app.kodex.client.MainKt"

@@ -75,6 +75,9 @@ fun MainScaffold(session: SessionManager, api: KodexApi) {
             onOpenBook = openBook,
             onOpenSourceSeries = { source, seed -> backStack.add(DetailRoute.SourceSeries(source, seed)) },
             onOpenReader = { backStack.add(DetailRoute.Reader(it)) },
+            onOpenSourceReader = { providerId, chapterId, seriesId, chapterName ->
+                backStack.add(DetailRoute.SourceReader(providerId, chapterId, seriesId, chapterName))
+            },
             onBack = { backStack.removeAt(backStack.lastIndex) },
         )
         return

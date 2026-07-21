@@ -65,10 +65,32 @@ data class SeriesDetailDto(
     val unreadCount: Int = 0,
     val coverUrl: String? = null,
     val totalChapters: Int? = null,
+    val status: String? = null,
     val summary: String = "",
     val publisher: String = "",
     val language: String = "",
     val readingDirection: String? = null,
     val genres: List<String> = emptyList(),
     val tags: List<String> = emptyList(),
+    /** Non-null for WEB (followed) series — switches the detail list from books to source chapters. */
+    val sourceProviderId: String? = null,
+    val sourceSeriesId: String? = null,
+) {
+    val isWeb: Boolean get() = sourceProviderId != null
+}
+
+/** A WEB series' stored chapter (tracked catalogue), with per-user read/downloaded state. */
+@Serializable
+data class SeriesChapterDto(
+    val chapterId: String,
+    val name: String? = null,
+    val number: Double? = null,
+    val releaseDate: String? = null,
+    val downloaded: Boolean = false,
+    val bookId: String? = null,
+    val read: Boolean = false,
+    val isNew: Boolean = false,
+    val page: Int? = null,
+    val volume: String? = null,
+    val scanlator: String? = null,
 )
