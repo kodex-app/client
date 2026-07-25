@@ -198,6 +198,28 @@ class KodexApi(private val client: HttpClient) {
             header(HEADER_API_KEY, apiKey)
         }.body()
 
+    /** Partial-update a book's metadata (only non-null fields are applied server-side). */
+    suspend fun updateBookMetadata(baseUrl: String, apiKey: String, bookId: String, patch: UpdateBookMetadataRequest): BookDto =
+        client.patch("$baseUrl/api/v1/books/$bookId/metadata") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(patch)
+        }.body()
+
+    /** Re-run content analysis for a book (recomputes media type / page count / thumbnail). */
+    suspend fun analyzeBook(baseUrl: String, apiKey: String, bookId: String) {
+        client.post("$baseUrl/api/v1/books/$bookId/analyze") {
+            header(HEADER_API_KEY, apiKey)
+        }
+    }
+
+    /** Delete a book (and its file). */
+    suspend fun deleteBook(baseUrl: String, apiKey: String, bookId: String) {
+        client.delete("$baseUrl/api/v1/books/$bookId") {
+            header(HEADER_API_KEY, apiKey)
+        }
+    }
+
     /** Mark a book fully read (progress at last page, completed). */
     suspend fun markBookRead(baseUrl: String, apiKey: String, book: BookDto) {
         client.patch("$baseUrl/api/v1/books/${book.id}/read-progress") {
@@ -228,6 +250,27 @@ class KodexApi(private val client: HttpClient) {
     suspend fun contentSources(baseUrl: String, apiKey: String): List<SourceDescriptor> =
         client.get("$baseUrl/api/v1/content-sources") {
             header(HEADER_API_KEY, apiKey)
+        }.body()
+
+    /** A source's default filter list (rendered in the filter sheet, then posted back with a search). */
+    suspend fun sourceFilters(baseUrl: String, apiKey: String, sourceId: String): FilterListDto =
+        client.get("$baseUrl/api/v1/content-sources/$sourceId/filters") {
+            header(HEADER_API_KEY, apiKey)
+        }.body()
+
+    /** Search a source. [page] is 1-based; [filters] carries the user-edited filter list (may be empty). */
+    suspend fun sourceSearch(
+        baseUrl: String,
+        apiKey: String,
+        sourceId: String,
+        query: String,
+        page: Int,
+        filters: FilterListDto = FilterListDto(),
+    ): SeriesPage =
+        client.post("$baseUrl/api/v1/content-sources/$sourceId/search") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(SourceSearchRequest(query = query, page = page, filters = filters))
         }.body()
 
     /** A source's browse feed. [feed] is "popular" or "latest"; pages are 1-based. */

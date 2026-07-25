@@ -87,6 +87,23 @@ data class SeriesDetailDto(
     val isWeb: Boolean get() = sourceProviderId != null
 }
 
+/**
+ * Partial book-metadata edit (`PATCH /books/{id}/metadata`). The server applies each field only when
+ * non-null, so leave anything untouched as null. [number] and [releaseDate] are strings the server
+ * parses ([releaseDate] as `yyyy-MM-dd`).
+ */
+@Serializable
+data class UpdateBookMetadataRequest(
+    val title: String? = null,
+    val summary: String? = null,
+    val number: String? = null,
+    val releaseDate: String? = null,
+    val isbn: String? = null,
+    val authors: List<AuthorDto>? = null,
+    val tags: List<String>? = null,
+    val identifiers: Map<String, String>? = null,
+)
+
 /** A WEB series' stored chapter (tracked catalogue), with per-user read/downloaded state. */
 @Serializable
 data class SeriesChapterDto(

@@ -51,9 +51,9 @@ Legend: `[x]` done · `[~]` partial (built, gaps listed) · `[ ]` not started
 
 - [~] Library series list: sort (title/added/updated) · reading-status filter · grid/list toggle (persisted) · refresh (SSE-reload on scan complete) — **done**; group tabs (status/source via `/series/groups`) · WEB category chips · Mihon import still pending
 - [~] Series detail: chapter-sort toggle · refresh-chapters (WEB) · mark series read/unread · multi-select (long-press) mark-read/unread + WEB download · overflow refresh-metadata — **done**; sub-series · bookmarks · analyze/migrate still pending
-- [ ] Book detail: bookmarks · re-analyze · delete · identifiers/links · edit-metadata sheet
+- [~] Book detail: re-analyze · delete (confirm dialog) · edit-metadata sheet (title/number/summary/tags, partial PATCH) — **done**; bookmarks · identifiers/links still pending
 - [ ] Browse: favorites + recents quick-access · kind filter · language visibility
-- [ ] Source catalogue (WebBrowse): Search tab · source `FilterList` filters · multi-select add-to-library
+- [~] Source catalogue (WebBrowse): Search (query field in top bar, infinite-scroll results) · source `FilterList` filters bottom sheet (text/checkbox/tristate/select/sort/group, polymorphic round-trip) — **done** (compile + routes verified; live data blocked — no source plugins on dev server); multi-select add-to-library still pending
 - [ ] Search: source/plugin mode · facet-filter sheet (library/genre/author/status/readingStatus/language/tag/label)
 
 ## Phase 3 — content management

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -18,18 +19,28 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -43,14 +54,16 @@ import app.kodex.client.auth.SessionManager
 import app.kodex.client.data.model.ServerConnection
 import app.kodex.client.network.BookDto
 import app.kodex.client.network.KodexApi
-import app.kodex.client.ui.LoadedContent
+import app.kodex.client.network.UpdateBookMetadataRequest
 import app.kodex.client.ui.MetaChip
 import app.kodex.client.ui.catalog.CoverImage
 import app.kodex.client.ui.catalog.bookCoverUrl
 import app.kodex.client.ui.collectAsStateSafe
+import app.kodex.client.ui.friendlyMessage
+import app.kodex.client.ui.rememberSnackbar
 import kotlinx.coroutines.launch
 
-/** A single book: cover + metadata + summary, with a functional mark read/unread toggle. */
+/** A single book: cover + metadata + summary, mark read/unread, and edit / re-analyze / delete. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BookDetailScreen(
@@ -61,49 +74,166 @@ fun BookDetailScreen(
     onRead: (String) -> Unit = {},
 ) {
     val server by session.activeServer.collectAsStateSafe()
-    var reload by remember { mutableStateOf(0) }
-    var busy by remember { mutableStateOf(false) }
+    val snackbar = rememberSnackbar()
     val scope = rememberCoroutineScope()
+
+    var book by remember { mutableStateOf<BookDto?>(null) }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
+    var reloadTick by remember { mutableIntStateOf(0) }
+    var busy by remember { mutableStateOf(false) }
+    var menuOpen by remember { mutableStateOf(false) }
+    var editOpen by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
+
+    LaunchedEffect(bookId, server?.id, reloadTick) {
+        val s = server ?: return@LaunchedEffect
+        errorMsg = null
+        runCatching { api.book(s.baseUrl, s.apiKey, bookId) }
+            .fold({ book = it }, { errorMsg = it.friendlyMessage() })
+    }
+
+    fun action(message: String, block: suspend () -> Unit) {
+        scope.launch {
+            runCatching { block() }.fold(
+                onSuccess = { snackbar?.show(message); reloadTick++ },
+                onFailure = { snackbar?.show("Action failed. Please try again.") },
+            )
+        }
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Book", fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                },
+                actions = {
+                    if (book != null) {
+                        IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Book actions") }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(text = { Text("Edit metadata") }, onClick = { menuOpen = false; editOpen = true })
+                            DropdownMenuItem(text = { Text("Re-analyze") }, onClick = {
+                                menuOpen = false
+                                val s = server ?: return@DropdownMenuItem
+                                action("Re-analyzing…") { api.analyzeBook(s.baseUrl, s.apiKey, bookId) }
+                            })
+                            DropdownMenuItem(text = { Text("Delete") }, onClick = { menuOpen = false; confirmDelete = true })
+                        }
                     }
                 },
             )
         },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
-            LoadedContent(
-                key = Triple(bookId, reload, server?.id),
-                load = { val s = server!!; api.book(s.baseUrl, s.apiKey, bookId) },
-            ) { book ->
-                val s = server ?: return@LoadedContent
-                BookDetailContent(
+            val s = server
+            val current = book
+            when {
+                errorMsg != null && current == null ->
+                    Box(Modifier.fillMaxSize().padding(32.dp), Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(errorMsg!!, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Button(onClick = { reloadTick++ }, Modifier.padding(top = 16.dp)) { Text("Retry") }
+                        }
+                    }
+                current == null -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
+                s != null -> BookDetailContent(
                     server = s,
-                    book = book,
+                    book = current,
                     busy = busy,
-                    onRead = { onRead(book.id) },
+                    onRead = { onRead(current.id) },
                     onToggleRead = {
                         busy = true
                         scope.launch {
                             runCatching {
-                                if (book.readProgress?.completed == true) {
-                                    api.markBookUnread(s.baseUrl, s.apiKey, book.id)
-                                } else {
-                                    api.markBookRead(s.baseUrl, s.apiKey, book)
-                                }
+                                if (current.readProgress?.completed == true) api.markBookUnread(s.baseUrl, s.apiKey, current.id)
+                                else api.markBookRead(s.baseUrl, s.apiKey, current)
                             }
                             busy = false
-                            reload++
+                            reloadTick++
                         }
                     },
                 )
             }
+        }
+    }
+
+    val current = book
+    val s = server
+    if (editOpen && current != null && s != null) {
+        EditMetadataSheet(
+            book = current,
+            onDismiss = { editOpen = false },
+            onSave = { patch ->
+                editOpen = false
+                action("Metadata updated") { api.updateBookMetadata(s.baseUrl, s.apiKey, bookId, patch) }
+            },
+        )
+    }
+
+    if (confirmDelete && s != null) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Delete book?") },
+            text = { Text("This removes the book and its file from the server. This can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = false
+                    scope.launch {
+                        runCatching { api.deleteBook(s.baseUrl, s.apiKey, bookId) }.fold(
+                            onSuccess = { snackbar?.show("Book deleted"); onBack() },
+                            onFailure = { snackbar?.show("Couldn't delete (need manage permission).") },
+                        )
+                    }
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EditMetadataSheet(
+    book: BookDto,
+    onDismiss: () -> Unit,
+    onSave: (UpdateBookMetadataRequest) -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var title by remember { mutableStateOf(book.title) }
+    var number by remember { mutableStateOf(book.numberDisplay ?: "") }
+    var summary by remember { mutableStateOf(book.summary) }
+    var tags by remember { mutableStateOf(book.tags.joinToString(", ")) }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(16.dp)) {
+            Text("Edit metadata", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(title, { title = it }, label = { Text("Title") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(number, { number = it }, label = { Text("Number") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(summary, { summary = it }, label = { Text("Summary") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(tags, { tags = it }, label = { Text("Tags (comma-separated)") }, modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(16.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
+                Button(
+                    onClick = {
+                        onSave(
+                            UpdateBookMetadataRequest(
+                                title = title,
+                                number = number.ifBlank { null },
+                                summary = summary,
+                                tags = tags.split(",").map { it.trim() }.filter { it.isNotBlank() },
+                            ),
+                        )
+                    },
+                    modifier = Modifier.weight(1f),
+                ) { Text("Save") }
+            }
+            Spacer(Modifier.height(12.dp))
         }
     }
 }
