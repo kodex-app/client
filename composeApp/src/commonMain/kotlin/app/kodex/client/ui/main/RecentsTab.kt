@@ -1,10 +1,7 @@
 package app.kodex.client.ui.main
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -13,13 +10,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
+import app.kodex.client.auth.SessionManager
+import app.kodex.client.network.KodexApi
+import app.kodex.client.ui.recents.HistoryList
+import app.kodex.client.ui.recents.UpdatesList
 
 /** "Recents" groups the server's Updates feed and the user's reading History behind two sub-tabs. */
 @Composable
-fun RecentsTab() {
+fun RecentsTab(
+    session: SessionManager,
+    api: KodexApi,
+    onOpenReader: (String) -> Unit,
+    onOpenSourceReader: OpenSourceReader,
+) {
     val sections = listOf("Updates", "History")
     var selected by remember { mutableStateOf(0) }
 
@@ -33,25 +37,9 @@ fun RecentsTab() {
                 )
             }
         }
-        Column(
-            modifier = Modifier.fillMaxSize().padding(32.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            val subtitle = when (selected) {
-                0 -> "New chapters and books from your web libraries."
-                else -> "Everything you've been reading, most recent first."
-            }
-            Text(
-                sections[selected],
-                style = MaterialTheme.typography.titleLarge,
-            )
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp),
-            )
+        when (selected) {
+            0 -> UpdatesList(session, api, onOpenReader, onOpenSourceReader)
+            else -> HistoryList(session, api, onOpenReader, onOpenSourceReader)
         }
     }
 }

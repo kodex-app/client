@@ -2,6 +2,7 @@ package app.kodex.client.ui.main
 
 import androidx.compose.runtime.Composable
 import app.kodex.client.auth.SessionManager
+import app.kodex.client.data.AppSettings
 import app.kodex.client.network.KodexApi
 import app.kodex.client.network.LibraryDto
 import app.kodex.client.network.SourceDescriptor
@@ -9,10 +10,14 @@ import app.kodex.client.network.SourceSearchResult
 import app.kodex.client.ui.book.BookDetailScreen
 import app.kodex.client.ui.browse.SourceFeedScreen
 import app.kodex.client.ui.browse.SourceSeriesScreen
+import app.kodex.client.ui.downloads.DownloadsScreen
 import app.kodex.client.ui.library.LibrarySeriesScreen
 import app.kodex.client.ui.reader.ReaderScreen
 import app.kodex.client.ui.reader.SourceReaderScreen
 import app.kodex.client.ui.series.SeriesDetailScreen
+import app.kodex.client.ui.settings.AboutScreen
+import app.kodex.client.ui.settings.AppearanceScreen
+import app.kodex.client.ui.settings.SettingsScreen
 
 /**
  * Minimal in-app navigation: full-screen "detail" routes pushed onto a back stack over the tab
@@ -32,6 +37,11 @@ sealed interface DetailRoute {
         val seriesId: String?,
         val chapterName: String?,
     ) : DetailRoute
+
+    data object Downloads : DetailRoute
+    data object Settings : DetailRoute
+    data object Appearance : DetailRoute
+    data object About : DetailRoute
 }
 
 /** Opens a streamed (no-download) chapter reader. */
@@ -42,6 +52,7 @@ fun DetailHost(
     route: DetailRoute,
     session: SessionManager,
     api: KodexApi,
+    appSettings: AppSettings,
     onOpenSeries: (String) -> Unit,
     onOpenBook: (String) -> Unit,
     onOpenSourceSeries: (SourceDescriptor, SourceSearchResult) -> Unit,
@@ -75,5 +86,17 @@ fun DetailHost(
 
         is DetailRoute.SourceReader ->
             SourceReaderScreen(session, api, route.providerId, route.chapterId, route.seriesId, route.chapterName, onBack)
+
+        is DetailRoute.Downloads ->
+            DownloadsScreen(session, api, onBack)
+
+        is DetailRoute.Settings ->
+            SettingsScreen(session, api, onBack)
+
+        is DetailRoute.Appearance ->
+            AppearanceScreen(appSettings, onBack)
+
+        is DetailRoute.About ->
+            AboutScreen(onBack)
     }
 }

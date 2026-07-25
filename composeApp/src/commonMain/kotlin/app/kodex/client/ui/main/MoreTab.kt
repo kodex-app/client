@@ -1,5 +1,6 @@
 package app.kodex.client.ui.main
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,9 +9,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -19,22 +29,29 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
 import app.kodex.client.ui.collectAsStateSafe
 
 /**
- * "More" holds account/server info and the multi-server controls: signing out returns to the login
- * screen, where the user can pick a different saved server or add one (the app keeps them all).
+ * "More" is the app's hub: account/server summary, entry points to Downloads / Settings / About, and
+ * the multi-server controls. Signing out returns to the login screen (all saved servers are kept).
  */
 @Composable
-fun MoreTab(session: SessionManager) {
+fun MoreTab(
+    session: SessionManager,
+    onOpenDownloads: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenAppearance: () -> Unit,
+    onOpenAbout: () -> Unit,
+) {
     val server by session.activeServer.collectAsStateSafe()
     val user by session.currentUser.collectAsStateSafe()
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(20.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Card(Modifier.fillMaxWidth()) {
@@ -45,7 +62,7 @@ fun MoreTab(session: SessionManager) {
                 Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary) {
                     Column(Modifier.size(48.dp)) {}
                 }
-                Spacer(Modifier.size(14.dp))
+                Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
                         server?.label ?: "Not signed in",
@@ -77,19 +94,36 @@ fun MoreTab(session: SessionManager) {
             }
         }
 
-        HorizontalDivider()
-
-        OutlinedButton(
-            onClick = { session.signOut() },
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("Switch or add server")
+        Card(Modifier.fillMaxWidth()) {
+            Column {
+                HubRow(Icons.Filled.Settings, "Downloads", "Active and finished chapter downloads", onOpenDownloads)
+                HorizontalDivider(Modifier.padding(start = 56.dp))
+                HubRow(Icons.Filled.Settings, "Settings", "Series behaviour and reader defaults", onOpenSettings)
+                HorizontalDivider(Modifier.padding(start = 56.dp))
+                HubRow(Icons.Filled.Star, "Appearance", "Theme, colours, dark mode", onOpenAppearance)
+                HorizontalDivider(Modifier.padding(start = 56.dp))
+                HubRow(Icons.Filled.Info, "About", "Version and licence", onOpenAbout)
+            }
         }
 
-        Text(
-            "Settings, downloads, and about will appear here.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        OutlinedButton(onClick = { session.signOut() }, modifier = Modifier.fillMaxWidth()) {
+            Text("Switch or add server")
+        }
+    }
+}
+
+@Composable
+private fun HubRow(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

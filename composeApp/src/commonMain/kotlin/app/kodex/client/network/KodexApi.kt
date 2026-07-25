@@ -285,6 +285,59 @@ class KodexApi(private val client: HttpClient) {
         }
     }
 
+    // ── Recents: Updates + History ───────────────────────────────────────────────────────────────
+
+    /** One page of the Mihon-style Updates feed (new source chapters for followed WEB series). */
+    suspend fun updates(baseUrl: String, apiKey: String, page: Int, size: Int = PAGE_SIZE): PageResponse<UpdateDto> =
+        client.get("$baseUrl/api/v1/updates") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("page", page)
+            parameter("size", size)
+        }.body()
+
+    /** One page of reading history (downloaded-book + streamed-source progress merged, newest first). */
+    suspend fun history(baseUrl: String, apiKey: String, page: Int, size: Int = PAGE_SIZE): PageResponse<HistoryEntryDto> =
+        client.get("$baseUrl/api/v1/history") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("page", page)
+            parameter("size", size)
+        }.body()
+
+    /** Clears history within an optional `[from, to]` ISO-8601 window (omit both to clear everything). */
+    suspend fun clearHistory(baseUrl: String, apiKey: String, from: String? = null, to: String? = null) {
+        client.delete("$baseUrl/api/v1/history") {
+            header(HEADER_API_KEY, apiKey)
+            if (from != null) parameter("from", from)
+            if (to != null) parameter("to", to)
+        }
+    }
+
+    // ── Downloads ────────────────────────────────────────────────────────────────────────────────
+
+    suspend fun downloads(baseUrl: String, apiKey: String, page: Int, size: Int = PAGE_SIZE): PageResponse<DownloadJobDto> =
+        client.get("$baseUrl/api/v1/downloads") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("page", page)
+            parameter("size", size)
+        }.body()
+
+    /** Per-job action: [action] is one of "cancel", "pause", "resume", "retry" (all 204). */
+    suspend fun downloadAction(baseUrl: String, apiKey: String, jobId: String, action: String) {
+        client.post("$baseUrl/api/v1/downloads/$jobId/$action") {
+            header(HEADER_API_KEY, apiKey)
+        }
+    }
+
+    suspend fun cancelAllDownloads(baseUrl: String, apiKey: String) {
+        client.post("$baseUrl/api/v1/downloads/cancel-all") { header(HEADER_API_KEY, apiKey) }
+    }
+
+    suspend fun clearFinishedDownloads(baseUrl: String, apiKey: String): Int =
+        client.post("$baseUrl/api/v1/downloads/clear") { header(HEADER_API_KEY, apiKey) }.body<ClearedDto>().cleared
+
+    suspend fun retryFailedDownloads(baseUrl: String, apiKey: String): Int =
+        client.post("$baseUrl/api/v1/downloads/retry-failed") { header(HEADER_API_KEY, apiKey) }.body<RetriedDto>().retried
+
     // ── Per-user settings (reader prefs live here) ───────────────────────────────────────────────
 
     /** All generic per-user settings as a JSON object (e.g. `reader.comic`, `reader.comic.series.<id>`). */
@@ -310,5 +363,6 @@ class KodexApi(private val client: HttpClient) {
         const val SEARCH_SIZE = 50
         const val LIBRARY_SERIES_SIZE = 200
         const val SERIES_BOOKS_SIZE = 1000
+        const val PAGE_SIZE = 50
     }
 }

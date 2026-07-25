@@ -1,14 +1,21 @@
 package app.kodex.client.di
 
 import app.kodex.client.auth.SessionManager
+import app.kodex.client.data.AppSettings
 import app.kodex.client.data.ServerStore
+import app.kodex.client.network.EventBus
 import app.kodex.client.network.KodexApi
 import app.kodex.client.platform.createHttpClient
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logging
+import io.ktor.client.plugins.sse.SSE
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 
 /**
@@ -32,6 +39,13 @@ class AppGraph {
         }
     }
 
+    // Dedicated client for the long-lived SSE stream: SSE installed, and NO request timeout (a
+    // 30s cap would abort the persistent event stream). Connect timeout still guards the handshake.
+    private val sseHttpClient = createHttpClient {
+        install(SSE)
+        install(HttpTimeout) { connectTimeoutMillis = 15_000 }
+    }
+
     /** Separate bare client for Coil image loading — no JSON negotiation, no expectSuccess. */
     val imageHttpClient = createHttpClient {
         install(HttpTimeout) {
@@ -43,5 +57,21 @@ class AppGraph {
     private val store = ServerStore()
     val api = KodexApi(httpClient)
 
+    /** Device-local appearance prefs (theme mode, palette, AMOLED, dynamic colour). */
+    val appSettings = AppSettings()
+
     val session: SessionManager = SessionManager(store, api).apply { bootstrap() }
+
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /** Live server events (SSE), (re)connected to whichever server is active. */
+    val eventBus = EventBus(sseHttpClient, appScope)
+
+    init {
+        appScope.launch {
+            session.activeServer.collect { server ->
+                if (server != null) eventBus.connect(server.baseUrl, server.apiKey) else eventBus.disconnect()
+            }
+        }
+    }
 }

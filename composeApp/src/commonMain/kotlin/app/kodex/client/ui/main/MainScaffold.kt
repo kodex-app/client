@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
+import app.kodex.client.data.AppSettings
 import app.kodex.client.network.KodexApi
 import app.kodex.client.ui.search.SearchScreen
 
@@ -48,7 +49,7 @@ enum class BottomTab(val label: String, val icon: ImageVector) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScaffold(session: SessionManager, api: KodexApi) {
+fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSettings) {
     var tab by remember { mutableStateOf(BottomTab.Home) }
     var searchOpen by remember { mutableStateOf(false) }
     val backStack = remember { mutableStateListOf<DetailRoute>() }
@@ -71,6 +72,7 @@ fun MainScaffold(session: SessionManager, api: KodexApi) {
             route = backStack.last(),
             session = session,
             api = api,
+            appSettings = appSettings,
             onOpenSeries = openSeries,
             onOpenBook = openBook,
             onOpenSourceSeries = { source, seed -> backStack.add(DetailRoute.SourceSeries(source, seed)) },
@@ -116,38 +118,23 @@ fun MainScaffold(session: SessionManager, api: KodexApi) {
                     onOpenSeries = { openSeries(it.id) },
                 )
                 BottomTab.Libraries -> LibrariesTab(session, api, onOpenLibrary = { backStack.add(DetailRoute.LibrarySeries(it)) })
-                BottomTab.Recents -> RecentsTab()
+                BottomTab.Recents -> RecentsTab(
+                    session, api,
+                    onOpenReader = { backStack.add(DetailRoute.Reader(it)) },
+                    onOpenSourceReader = { providerId, chapterId, seriesId, chapterName ->
+                        backStack.add(DetailRoute.SourceReader(providerId, chapterId, seriesId, chapterName))
+                    },
+                )
                 BottomTab.Browse -> BrowseTab(session, api, onOpenSource = { backStack.add(DetailRoute.SourceFeed(it)) })
-                BottomTab.More -> MoreTab(session)
+                BottomTab.More -> MoreTab(
+                    session,
+                    onOpenDownloads = { backStack.add(DetailRoute.Downloads) },
+                    onOpenSettings = { backStack.add(DetailRoute.Settings) },
+                    onOpenAppearance = { backStack.add(DetailRoute.Appearance) },
+                    onOpenAbout = { backStack.add(DetailRoute.About) },
+                )
             }
         }
     }
 }
 
-@Composable
-private fun PlaceholderTab(tab: BottomTab, subtitle: String) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(32.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Icon(
-            tab.icon,
-            contentDescription = null,
-            modifier = Modifier.size(48.dp),
-            tint = MaterialTheme.colorScheme.primary,
-        )
-        Text(
-            tab.label,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(top = 12.dp),
-        )
-        Text(
-            subtitle,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 4.dp),
-        )
-    }
-}
