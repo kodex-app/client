@@ -80,6 +80,13 @@ data class DownloadWebSeriesRequest(
     val chapterIds: List<String>? = null,
 )
 
+/** Body of `POST /series/{id}/chapters/mark-read` — mark the given WEB chapters read/unread. */
+@Serializable
+data class MarkChaptersRequest(
+    val chapterIds: List<String>,
+    val read: Boolean,
+)
+
 /** `GET /content-sources/{id}/pages?chapterId=` — page count for a streamed chapter. */
 @Serializable
 data class PageCountDto(val pageCount: Int = 0)

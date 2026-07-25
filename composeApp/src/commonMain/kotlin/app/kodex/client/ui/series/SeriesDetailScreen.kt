@@ -1,6 +1,9 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package app.kodex.client.ui.series
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,7 +26,13 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -32,8 +41,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -45,14 +61,18 @@ import app.kodex.client.network.BookDto
 import app.kodex.client.network.KodexApi
 import app.kodex.client.network.SeriesChapterDto
 import app.kodex.client.network.SeriesDetailDto
-import app.kodex.client.ui.main.OpenSourceReader
-import app.kodex.client.ui.LoadedContent
 import app.kodex.client.ui.MetaChip
+import app.kodex.client.ui.SelectionState
 import app.kodex.client.ui.catalog.CoverCard
 import app.kodex.client.ui.catalog.CoverImage
 import app.kodex.client.ui.catalog.bookCoverUrl
 import app.kodex.client.ui.catalog.seriesCoverUrl
 import app.kodex.client.ui.collectAsStateSafe
+import app.kodex.client.ui.friendlyMessage
+import app.kodex.client.ui.main.OpenSourceReader
+import app.kodex.client.ui.rememberSelection
+import app.kodex.client.ui.rememberSnackbar
+import kotlinx.coroutines.launch
 
 private data class SeriesContent(
     val detail: SeriesDetailDto,
@@ -60,12 +80,12 @@ private data class SeriesContent(
     val chapters: List<SeriesChapterDto>,
 )
 
-/** Resume affordance for the header's Read button. */
 private data class Resume(val label: String, val open: () -> Unit)
 
 /**
  * A series: cover + metadata header with a Read/Continue button, then its content — the books grid
- * for LOCAL series, or the source chapter list for WEB (followed) series.
+ * for LOCAL series, or the source chapter list for WEB (followed) series. Supports series-level
+ * actions (mark read/unread, refresh chapters/metadata) and long-press multi-select bulk actions.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -79,48 +99,213 @@ fun SeriesDetailScreen(
     onOpenSourceReader: OpenSourceReader,
 ) {
     val server by session.activeServer.collectAsStateSafe()
+    val snackbar = rememberSnackbar()
+    val scope = rememberCoroutineScope()
+    val selection = rememberSelection<String>()
+    var reloadTick by remember { mutableIntStateOf(0) }
+    var sortDesc by remember { mutableStateOf(true) }
+    var menuOpen by remember { mutableStateOf(false) }
+
+    fun reload() { selection.clear(); reloadTick++ }
+
+    fun runAction(message: String?, block: suspend () -> Unit) {
+        server ?: return
+        scope.launch {
+            runCatching { block() }.fold(
+                onSuccess = { message?.let { snackbar?.show(it) }; reload() },
+                onFailure = { snackbar?.show("Action failed. Please try again.") },
+            )
+        }
+    }
+
+    var phase by remember { mutableStateOf<SeriesPhase>(SeriesPhase.Loading) }
+    LaunchedEffect(seriesId, server?.id, reloadTick) {
+        val s0 = server ?: return@LaunchedEffect
+        phase = SeriesPhase.Loading
+        phase = runCatching {
+            val detail = api.seriesDetail(s0.baseUrl, s0.apiKey, seriesId)
+            if (detail.isWeb) SeriesContent(detail, emptyList(), api.seriesChapters(s0.baseUrl, s0.apiKey, seriesId))
+            else SeriesContent(detail, api.seriesBooks(s0.baseUrl, s0.apiKey, seriesId), emptyList())
+        }.fold({ SeriesPhase.Ready(it) }, { SeriesPhase.Error(it.friendlyMessage()) })
+    }
+
+    val content = (phase as? SeriesPhase.Ready)?.content
+    val errorMsg = (phase as? SeriesPhase.Error)?.message
+    val s = server
+    val detail = content?.detail
+    val isWeb = detail?.isWeb == true
+
+    // Ids available for "select all" depend on the layout.
+    val allIds = when {
+        content == null -> emptyList()
+        isWeb -> content.chapters.map { it.chapterId }
+        else -> content.books.map { it.id }
+    }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Series", fontWeight = FontWeight.SemiBold) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-            )
-        },
-    ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
-            LoadedContent(
-                key = seriesId to server?.id,
-                load = {
-                    val s = server!!
-                    val detail = api.seriesDetail(s.baseUrl, s.apiKey, seriesId)
-                    if (detail.isWeb) {
-                        SeriesContent(detail, emptyList(), api.seriesChapters(s.baseUrl, s.apiKey, seriesId))
-                    } else {
-                        SeriesContent(detail, api.seriesBooks(s.baseUrl, s.apiKey, seriesId), emptyList())
-                    }
-                },
-            ) { content ->
-                val s = server ?: return@LoadedContent
-                if (content.detail.isWeb) {
-                    ChaptersLayout(s.baseUrl, s.apiKey, content, onOpenReader, onOpenSourceReader)
+            topBar = {
+                if (selection.active) {
+                    SelectionBar(
+                        count = selection.count,
+                        isWeb = isWeb,
+                        onClose = { selection.clear() },
+                        onSelectAll = { selection.selectAll(allIds) },
+                        onMarkRead = { markSelected(api, s, content, selection, read = true, ::runAction) },
+                        onMarkUnread = { markSelected(api, s, content, selection, read = false, ::runAction) },
+                        onDownload = { downloadSelected(api, s, content, selection, snackbar, scope) { reload() } },
+                    )
                 } else {
-                    BooksLayout(s.baseUrl, s.apiKey, content, onOpenBook, onOpenReader)
+                    TopAppBar(
+                        title = { Text(detail?.title ?: "Series", fontWeight = FontWeight.SemiBold, maxLines = 1) },
+                        navigationIcon = {
+                            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                        },
+                        actions = {
+                            if (content != null) {
+                                IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Series actions") }
+                                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                    DropdownMenuItem(text = { Text("Mark all read") }, onClick = {
+                                        menuOpen = false; runAction("Marked series read") { api.markSeriesRead(s!!.baseUrl, s.apiKey, seriesId, true) }
+                                    })
+                                    DropdownMenuItem(text = { Text("Mark all unread") }, onClick = {
+                                        menuOpen = false; runAction("Marked series unread") { api.markSeriesRead(s!!.baseUrl, s.apiKey, seriesId, false) }
+                                    })
+                                    if (isWeb) {
+                                        DropdownMenuItem(text = { Text("Refresh chapters") }, onClick = {
+                                            menuOpen = false; runAction("Chapters refreshed") { api.refreshSeriesChapters(s!!.baseUrl, s.apiKey, seriesId) }
+                                        })
+                                    }
+                                    DropdownMenuItem(text = { Text("Refresh metadata") }, onClick = {
+                                        menuOpen = false; runAction("Refreshing metadata…") { api.refreshSeriesMetadata(s!!.baseUrl, s.apiKey, seriesId) }
+                                    })
+                                }
+                            }
+                        },
+                    )
                 }
+            },
+        ) { padding ->
+            Box(Modifier.fillMaxSize().padding(padding)) {
+                when {
+                    errorMsg != null && content == null -> ErrorRetry(errorMsg) { reloadTick++ }
+                    content == null -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
+                    s != null && isWeb -> ChaptersLayout(s.baseUrl, s.apiKey, content, sortDesc, { sortDesc = !sortDesc }, selection, onOpenReader, onOpenSourceReader)
+                    s != null -> BooksLayout(s.baseUrl, s.apiKey, content, selection, onOpenBook, onOpenReader)
+                }
+            }
+        }
+    }
+
+private sealed interface SeriesPhase {
+    data object Loading : SeriesPhase
+    data class Error(val message: String) : SeriesPhase
+    data class Ready(val content: SeriesContent) : SeriesPhase
+}
+
+@Composable
+private fun ErrorRetry(message: String, onRetry: () -> Unit) {
+    Box(Modifier.fillMaxSize().padding(32.dp), Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Button(onClick = onRetry, modifier = Modifier.padding(top = 16.dp)) { Text("Retry") }
+        }
+    }
+}
+
+// ── Selection top bar ──────────────────────────────────────────────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SelectionBar(
+    count: Int,
+    isWeb: Boolean,
+    onClose: () -> Unit,
+    onSelectAll: () -> Unit,
+    onMarkRead: () -> Unit,
+    onMarkUnread: () -> Unit,
+    onDownload: () -> Unit,
+) {
+    var menu by remember { mutableStateOf(false) }
+    TopAppBar(
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ),
+        title = { Text("$count selected", fontWeight = FontWeight.SemiBold) },
+        navigationIcon = {
+            IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "Cancel selection") }
+        },
+        actions = {
+            IconButton(onClick = onMarkRead) { Icon(Icons.Filled.Check, contentDescription = "Mark read") }
+            IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More") }
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                DropdownMenuItem(text = { Text("Mark unread") }, onClick = { menu = false; onMarkUnread() })
+                if (isWeb) DropdownMenuItem(text = { Text("Download") }, onClick = { menu = false; onDownload() })
+                DropdownMenuItem(text = { Text("Select all") }, onClick = { menu = false; onSelectAll() })
+            }
+        },
+    )
+}
+
+// ── Bulk action helpers ────────────────────────────────────────────────────────────────────────
+private fun markSelected(
+    api: KodexApi,
+    server: app.kodex.client.data.model.ServerConnection?,
+    content: SeriesContent?,
+    selection: SelectionState<String>,
+    read: Boolean,
+    run: (String?, suspend () -> Unit) -> Unit,
+) {
+    server ?: return; content ?: return
+    val ids = selection.selected.toList()
+    if (ids.isEmpty()) return
+    val label = if (read) "Marked read" else "Marked unread"
+    if (content.detail.isWeb) {
+        run(label) { api.markChaptersRead(server.baseUrl, server.apiKey, content.detail.id, ids, read) }
+    } else {
+        val byId = content.books.associateBy { it.id }
+        run(label) {
+            ids.forEach { id ->
+                val book = byId[id] ?: return@forEach
+                if (read) api.markBookRead(server.baseUrl, server.apiKey, book)
+                else api.markBookUnread(server.baseUrl, server.apiKey, id)
             }
         }
     }
 }
 
+private fun downloadSelected(
+    api: KodexApi,
+    server: app.kodex.client.data.model.ServerConnection?,
+    content: SeriesContent?,
+    selection: SelectionState<String>,
+    snackbar: app.kodex.client.ui.SnackbarController?,
+    scope: kotlinx.coroutines.CoroutineScope,
+    onDone: () -> Unit,
+) {
+    server ?: return; content ?: return
+    val detail = content.detail
+    val ids = selection.selected.toList()
+    if (!detail.isWeb || ids.isEmpty()) return
+    scope.launch {
+        runCatching {
+            // Resolve the followed series' library to target the download endpoint.
+            val ref = api.followedSeriesRef(server.baseUrl, server.apiKey, detail.sourceProviderId!!, detail.sourceSeriesId!!)
+                ?: error("not followed")
+            api.downloadWebSeries(server.baseUrl, server.apiKey, ref.libraryId, detail.id, ids)
+        }.fold(
+            onSuccess = { snackbar?.show("Downloading ${ids.size} chapter(s)"); onDone() },
+            onFailure = { snackbar?.show("Couldn't start download.") },
+        )
+    }
+}
+
+// ── Layouts ────────────────────────────────────────────────────────────────────────────────────
 @Composable
 private fun BooksLayout(
     baseUrl: String,
     apiKey: String,
     content: SeriesContent,
+    selection: SelectionState<String>,
     onOpenBook: (String) -> Unit,
     onOpenReader: (String) -> Unit,
 ) {
@@ -145,15 +330,24 @@ private fun BooksLayout(
         if (content.books.isNotEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }) { SectionLabel("Books · ${content.books.size}") }
             items(content.books, key = { it.id }) { book ->
-                CoverCard(
-                    coverUrl = bookCoverUrl(baseUrl, book.id),
-                    apiKey = apiKey,
-                    title = bookLabel(book),
-                    subtitle = book.numberDisplay,
-                    unread = null,
-                    onClick = { onOpenBook(book.id) },
-                    width = null,
-                )
+                val selected = selection.isSelected(book.id)
+                Box(
+                    Modifier.combinedClickable(
+                        onClick = { if (selection.active) selection.toggle(book.id) else onOpenBook(book.id) },
+                        onLongClick = { selection.toggle(book.id) },
+                    ).then(if (selected) Modifier.background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(12.dp)) else Modifier),
+                ) {
+                    CoverCard(
+                        coverUrl = bookCoverUrl(baseUrl, book.id),
+                        apiKey = apiKey,
+                        title = bookLabel(book),
+                        subtitle = book.numberDisplay,
+                        unread = null,
+                        onClick = { if (selection.active) selection.toggle(book.id) else onOpenBook(book.id) },
+                        width = null,
+                    )
+                    if (selected) Icon(Icons.Filled.Check, "Selected", Modifier.align(Alignment.TopStart).padding(6.dp), tint = MaterialTheme.colorScheme.primary)
+                }
             }
         }
     }
@@ -164,14 +358,16 @@ private fun ChaptersLayout(
     baseUrl: String,
     apiKey: String,
     content: SeriesContent,
+    sortDesc: Boolean,
+    onToggleSort: () -> Unit,
+    selection: SelectionState<String>,
     onOpenReader: (String) -> Unit,
     onOpenSourceReader: OpenSourceReader,
 ) {
     val providerId = content.detail.sourceProviderId.orEmpty()
     val seriesId = content.detail.id
-    // Reading order is ascending by number; display newest-first (matches the web default).
     val ascending = content.chapters.sortedWith(compareBy(nullsLast()) { it.number })
-    val display = ascending.asReversed()
+    val display = if (sortDesc) ascending.asReversed() else ascending
     val downloaded = ascending.count { it.downloaded }
     val resume = webResume(ascending, providerId, seriesId, onOpenReader, onOpenSourceReader)
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
@@ -183,10 +379,21 @@ private fun ChaptersLayout(
             )
             ReadButton(resume)
             Spacer(Modifier.height(20.dp))
-            SectionLabel("Chapters · ${ascending.size}")
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                SectionLabel("Chapters · ${ascending.size}")
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (sortDesc) "Newest first" else "Oldest first",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clip(RoundedCornerShape(6.dp))
+                        .combinedClickable(onClick = onToggleSort, onLongClick = onToggleSort)
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+            }
         }
         items(display, key = { it.chapterId }) { chapter ->
-            ChapterRow(chapter, providerId, seriesId, onOpenReader, onOpenSourceReader)
+            ChapterRow(chapter, providerId, seriesId, selection, onOpenReader, onOpenSourceReader)
             HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
         }
     }
@@ -197,40 +404,60 @@ private fun ChapterRow(
     chapter: SeriesChapterDto,
     providerId: String,
     seriesId: String,
+    selection: SelectionState<String>,
     onOpenReader: (String) -> Unit,
     onOpenSourceReader: OpenSourceReader,
 ) {
-    Column(
+    val selected = selection.isSelected(chapter.chapterId)
+    Row(
         Modifier
             .fillMaxWidth()
-            .clickable {
-                val bookId = chapter.bookId
-                if (bookId != null) onOpenReader(bookId)
-                else onOpenSourceReader(providerId, chapter.chapterId, seriesId, chapter.name)
-            }
-            .alpha(if (chapter.read) 0.55f else 1f)
-            .padding(vertical = 12.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                chapter.name?.takeIf { it.isNotBlank() } ?: chapterNumberLabel(chapter),
-                style = MaterialTheme.typography.bodyLarge,
-                modifier = Modifier.weight(1f),
-                maxLines = 2,
+            .then(if (selected) Modifier.background(MaterialTheme.colorScheme.primaryContainer) else Modifier)
+            .combinedClickable(
+                onClick = {
+                    if (selection.active) {
+                        selection.toggle(chapter.chapterId)
+                    } else {
+                        val bookId = chapter.bookId
+                        if (bookId != null) onOpenReader(bookId)
+                        else onOpenSourceReader(providerId, chapter.chapterId, seriesId, chapter.name)
+                    }
+                },
+                onLongClick = { selection.toggle(chapter.chapterId) },
             )
-            if (chapter.isNew) {
-                Spacer(Modifier.width(8.dp))
-                MetaChip("New")
-            }
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (selection.active) {
+            Icon(
+                Icons.Filled.Check,
+                contentDescription = null,
+                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.padding(end = 12.dp),
+            )
         }
-        val meta = listOfNotNull(
-            if (chapter.downloaded) "Downloaded" else "Stream",
-            chapter.scanlator?.takeIf { it.isNotBlank() },
-            chapter.releaseDate?.takeIf { it.isNotBlank() },
-        ).joinToString(" · ")
-        if (meta.isNotBlank()) {
-            Spacer(Modifier.height(2.dp))
-            Text(meta, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(Modifier.weight(1f).alpha(if (chapter.read && !selected) 0.55f else 1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    chapter.name?.takeIf { it.isNotBlank() } ?: chapterNumberLabel(chapter),
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 2,
+                )
+                if (chapter.isNew) {
+                    Spacer(Modifier.width(8.dp))
+                    MetaChip("New")
+                }
+            }
+            val meta = listOfNotNull(
+                if (chapter.downloaded) "Downloaded" else "Stream",
+                chapter.scanlator?.takeIf { it.isNotBlank() },
+                chapter.releaseDate?.takeIf { it.isNotBlank() },
+            ).joinToString(" · ")
+            if (meta.isNotBlank()) {
+                Spacer(Modifier.height(2.dp))
+                Text(meta, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }
@@ -254,11 +481,7 @@ private fun SeriesHeader(baseUrl: String, apiKey: String, detail: SeriesDetailDt
             Column(Modifier.weight(1f)) {
                 Text(detail.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(6.dp))
-                Text(
-                    countLabel,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Text(countLabel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (unread > 0) {
                     Text("$unread unread", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 }
@@ -287,15 +510,9 @@ private fun SeriesHeader(baseUrl: String, apiKey: String, detail: SeriesDetailDt
 
 @Composable
 private fun SectionLabel(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.titleSmall,
-        fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+    Text(text, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
-/** LOCAL: resume the in-progress book, else the first unread, else re-read from the top. */
 private fun localResume(books: List<BookDto>, onOpenReader: (String) -> Unit): Resume? {
     if (books.isEmpty()) return null
     val inProgress = books.firstOrNull { it.readProgress?.completed == false }
@@ -309,7 +526,6 @@ private fun localResume(books: List<BookDto>, onOpenReader: (String) -> Unit): R
     return Resume(label) { onOpenReader(target.id) }
 }
 
-/** WEB: resume the first unread chapter — opens the offline book if downloaded, else streams it. */
 private fun webResume(
     chapters: List<SeriesChapterDto>,
     providerId: String,

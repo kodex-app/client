@@ -114,14 +114,32 @@ class KodexApi(private val client: HttpClient) {
             header(HEADER_API_KEY, apiKey)
         }.body()
 
-    /** Series within one library, title-sorted (backs the Libraries drill-down grid). */
-    suspend fun seriesInLibrary(baseUrl: String, apiKey: String, libraryId: String): List<SeriesDto> =
+    /**
+     * Series within one library (backs the Libraries drill-down). [sort] is a Spring sort expr
+     * ("title,asc" | "createdDate,desc" | "lastModifiedDate,desc"); [readingStatus] optionally filters
+     * to NOT_STARTED / IN_PROGRESS / COMPLETED.
+     */
+    suspend fun seriesInLibrary(
+        baseUrl: String,
+        apiKey: String,
+        libraryId: String,
+        sort: String = "title,asc",
+        readingStatus: String? = null,
+    ): List<SeriesDto> =
         client.get("$baseUrl/api/v1/series") {
             header(HEADER_API_KEY, apiKey)
             parameter("libraryId", libraryId)
             parameter("size", LIBRARY_SERIES_SIZE)
-            parameter("sort", "title,asc")
+            parameter("sort", sort)
+            if (readingStatus != null) parameter("readingStatus", readingStatus)
         }.body<PageResponse<SeriesDto>>().content
+
+    /** Queue a library refresh (filesystem scan for LOCAL, content-source update for WEB). */
+    suspend fun refreshLibrary(baseUrl: String, apiKey: String, libraryId: String) {
+        client.post("$baseUrl/api/v1/libraries/$libraryId/refresh") {
+            header(HEADER_API_KEY, apiKey)
+        }
+    }
 
     // ── Series / book detail ─────────────────────────────────────────────────────────────────────
 
@@ -143,6 +161,37 @@ class KodexApi(private val client: HttpClient) {
         client.get("$baseUrl/api/v1/series/$seriesId/chapters") {
             header(HEADER_API_KEY, apiKey)
         }.body()
+
+    /** Mark the whole series read or unread (LOCAL books + WEB chapters). */
+    suspend fun markSeriesRead(baseUrl: String, apiKey: String, seriesId: String, read: Boolean) {
+        client.post("$baseUrl/api/v1/series/$seriesId/mark-read") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("read", read)
+        }
+    }
+
+    /** Re-fetch a WEB series' chapter list from its source (discovers new chapters). */
+    suspend fun refreshSeriesChapters(baseUrl: String, apiKey: String, seriesId: String) {
+        client.post("$baseUrl/api/v1/series/$seriesId/chapters/refresh") {
+            header(HEADER_API_KEY, apiKey)
+        }
+    }
+
+    /** Mark specific WEB chapters read/unread for the current user. */
+    suspend fun markChaptersRead(baseUrl: String, apiKey: String, seriesId: String, chapterIds: List<String>, read: Boolean) {
+        client.post("$baseUrl/api/v1/series/$seriesId/chapters/mark-read") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(MarkChaptersRequest(chapterIds, read))
+        }
+    }
+
+    /** Re-run metadata providers for the series (updates title/summary/genres/etc.). */
+    suspend fun refreshSeriesMetadata(baseUrl: String, apiKey: String, seriesId: String) {
+        client.post("$baseUrl/api/v1/series/$seriesId/metadata/refresh") {
+            header(HEADER_API_KEY, apiKey)
+        }
+    }
 
     suspend fun book(baseUrl: String, apiKey: String, bookId: String): BookDto =
         client.get("$baseUrl/api/v1/books/$bookId") {

@@ -62,7 +62,7 @@ fun DetailHost(
 ) {
     when (route) {
         is DetailRoute.LibrarySeries ->
-            LibrarySeriesScreen(session, api, route.library, onBack, onOpenSeries = { onOpenSeries(it.id) })
+            LibrarySeriesScreen(session, api, appSettings, route.library, onBack, onOpenSeries = { onOpenSeries(it.id) })
 
         is DetailRoute.SourceFeed ->
             SourceFeedScreen(session, api, route.source, onBack, onOpenSourceSeries = { onOpenSourceSeries(route.source, it) })

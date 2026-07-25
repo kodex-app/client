@@ -26,6 +26,10 @@ class AppSettings(private val settings: Settings = Settings()) {
     private val _dynamicColor = MutableStateFlow(settings.getBoolean(KEY_DYNAMIC, false))
     val dynamicColor: StateFlow<Boolean> = _dynamicColor.asStateFlow()
 
+    /** Library series view: true = cover grid, false = list rows. */
+    private val _libraryGridView = MutableStateFlow(settings.getBoolean(KEY_LIBRARY_GRID, true))
+    val libraryGridView: StateFlow<Boolean> = _libraryGridView.asStateFlow()
+
     fun setThemeMode(value: ThemeMode) {
         settings.putString(KEY_MODE, value.name); _themeMode.value = value
     }
@@ -42,6 +46,10 @@ class AppSettings(private val settings: Settings = Settings()) {
         settings.putBoolean(KEY_DYNAMIC, value); _dynamicColor.value = value
     }
 
+    fun setLibraryGridView(value: Boolean) {
+        settings.putBoolean(KEY_LIBRARY_GRID, value); _libraryGridView.value = value
+    }
+
     private inline fun <reified T : Enum<T>> readEnum(key: String, values: List<T>, fallback: T): T {
         val stored = settings.getStringOrNull(key) ?: return fallback
         return values.firstOrNull { it.name == stored } ?: fallback
@@ -52,5 +60,6 @@ class AppSettings(private val settings: Settings = Settings()) {
         const val KEY_THEME = "appearance.theme"
         const val KEY_AMOLED = "appearance.amoled"
         const val KEY_DYNAMIC = "appearance.dynamicColor"
+        const val KEY_LIBRARY_GRID = "library.gridView"
     }
 }

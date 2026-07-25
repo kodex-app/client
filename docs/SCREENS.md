@@ -29,8 +29,8 @@ Legend: `[x]` done · `[~]` partial (built, gaps listed) · `[ ]` not started
 - [x] Snackbar host — app-level `SnackbarController` via `LocalSnackbar`, hosted at the root over any screen's Scaffold; wired to Downloads global actions + History clear (success + failure feedback)
 - [x] Pull-to-refresh (`PullToRefreshBox`) — in the `PagedList` helper
 - [x] Reusable paged infinite-list helper (`PagedListState` + `PagedList`) — Updates/History/Downloads; + `Dates.kt` day-grouping utils
-- [ ] Selection mode (long-press → contextual top bar + bulk actions)
-- [ ] Bottom-sheet form / filter-sheet pattern (using dropdown menus in the interim)
+- [x] Selection mode (`SelectionState` + `rememberSelection`) — long-press → contextual top bar + bulk actions; first used in Series detail
+- [x] Bottom-sheet form / filter-sheet pattern (`ModalBottomSheet`) — first used by the Library view/sort/filter sheet
 - [ ] Role gating (`UserDto.roles`)
 
 ## Phase 1 — core consumer
@@ -49,8 +49,8 @@ Legend: `[x]` done · `[~]` partial (built, gaps listed) · `[ ]` not started
 
 ## Phase 2 — enrich existing screens
 
-- [ ] Library series list: sort · group tabs (status/source) · WEB category chips · grid/list toggle · refresh · Mihon import
-- [ ] Series detail: sub-series · bookmarks · chapter-sort · refresh-chapters · mark series read/unread · multi-select mark-read+download · overflow (refresh-meta/analyze/migrate)
+- [~] Library series list: sort (title/added/updated) · reading-status filter · grid/list toggle (persisted) · refresh (SSE-reload on scan complete) — **done**; group tabs (status/source via `/series/groups`) · WEB category chips · Mihon import still pending
+- [~] Series detail: chapter-sort toggle · refresh-chapters (WEB) · mark series read/unread · multi-select (long-press) mark-read/unread + WEB download · overflow refresh-metadata — **done**; sub-series · bookmarks · analyze/migrate still pending
 - [ ] Book detail: bookmarks · re-analyze · delete · identifiers/links · edit-metadata sheet
 - [ ] Browse: favorites + recents quick-access · kind filter · language visibility
 - [ ] Source catalogue (WebBrowse): Search tab · source `FilterList` filters · multi-select add-to-library

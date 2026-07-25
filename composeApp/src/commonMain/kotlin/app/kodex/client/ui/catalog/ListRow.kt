@@ -86,6 +86,24 @@ fun MediaRow(
     }
 }
 
+/** Small rounded unread-count pill for list rows. */
+@Composable
+fun UnreadPill(count: Int) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(50))
+            .background(MaterialTheme.colorScheme.primary)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    ) {
+        Text(
+            if (count > 99) "99+" else count.toString(),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onPrimary,
+        )
+    }
+}
+
 /** Sticky day header used above grouped feed sections. */
 @Composable
 fun DayHeader(text: String, modifier: Modifier = Modifier) {
