@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -155,6 +156,17 @@ fun SeriesDetailScreen(
         else -> content.books.map { it.id }
     }
 
+    // The resume action (Start Reading / Continue) — surfaced as a floating button.
+    val resume = when {
+        content == null -> null
+        isWeb -> webResume(
+            content.chapters.sortedWith(compareBy(nullsLast()) { it.number }),
+            content.detail.sourceProviderId.orEmpty(), content.detail.id,
+            onOpenReader, onOpenSourceReader, onOpenReaderIncognito, onOpenSourceReaderIncognito,
+        )
+        else -> localResume(content.books, onOpenReader, onOpenReaderIncognito)
+    }
+
     Scaffold(
             topBar = {
                 if (selection.active) {
@@ -168,8 +180,9 @@ fun SeriesDetailScreen(
                         onDownload = { downloadSelected(api, s, content, selection, snackbar, scope) { reload() } },
                     )
                 } else {
+                    // Mihon-style: no title in the toolbar — just back + the actions menu.
                     TopAppBar(
-                        title = { Text(detail?.title ?: "Series", fontWeight = FontWeight.SemiBold, maxLines = 1) },
+                        title = {},
                         navigationIcon = {
                             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                         },
@@ -207,6 +220,20 @@ fun SeriesDetailScreen(
                             }
                         },
                     )
+                }
+            },
+            floatingActionButton = {
+                if (resume != null && !selection.active) {
+                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        androidx.compose.material3.SmallFloatingActionButton(onClick = resume.openIncognito) {
+                            Icon(app.kodex.client.ui.icons.IncognitoIcon, contentDescription = "Read incognito")
+                        }
+                        androidx.compose.material3.ExtendedFloatingActionButton(
+                            onClick = resume.open,
+                            icon = { Icon(Icons.Filled.PlayArrow, contentDescription = null) },
+                            text = { Text(resume.label) },
+                        )
+                    }
                 }
             },
         ) { padding ->
@@ -364,25 +391,21 @@ private fun BooksLayout(
     onOpenSeries: (String) -> Unit,
     onOpenReaderIncognito: (String) -> Unit,
 ) {
-    val resume = localResume(content.books, onOpenReader, onOpenReaderIncognito)
     LazyVerticalGrid(
         columns = GridCells.Adaptive(112.dp),
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 96.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
-            Column {
-                SeriesHeader(
-                    baseUrl, apiKey, content.detail,
-                    countLabel = "${content.books.size} ${if (content.books.size == 1) "book" else "books"}",
-                    unread = content.books.count { it.readProgress?.completed != true },
-                    libraryName = content.libraryName,
-                    sourceName = content.sourceName,
-                )
-                ReadButton(resume)
-            }
+            SeriesHeader(
+                baseUrl, apiKey, content.detail,
+                countLabel = "${content.books.size} ${if (content.books.size == 1) "book" else "books"}",
+                unread = content.books.count { it.readProgress?.completed != true },
+                libraryName = content.libraryName,
+                sourceName = content.sourceName,
+            )
         }
         if (content.subseries.isNotEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }) {
@@ -442,8 +465,7 @@ private fun ChaptersLayout(
     val ascending = content.chapters.sortedWith(compareBy(nullsLast()) { it.number })
     val display = if (sortDesc) ascending.asReversed() else ascending
     val downloaded = ascending.count { it.downloaded }
-    val resume = webResume(ascending, providerId, seriesId, onOpenReader, onOpenSourceReader, onOpenReaderIncognito, onOpenSourceReaderIncognito)
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 96.dp)) {
         item {
             SeriesHeader(
                 baseUrl, apiKey, content.detail,
@@ -452,7 +474,6 @@ private fun ChaptersLayout(
                 libraryName = content.libraryName,
                 sourceName = content.sourceName,
             )
-            ReadButton(resume)
             Spacer(Modifier.height(20.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 SectionLabel("Chapters · ${ascending.size}")
@@ -534,17 +555,6 @@ private fun ChapterRow(
                 Text(meta, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-    }
-}
-
-@Composable
-private fun ReadButton(resume: Resume?) {
-    if (resume == null) return
-    Spacer(Modifier.height(16.dp))
-    Button(onClick = resume.open, modifier = Modifier.fillMaxWidth()) { Text(resume.label) }
-    Spacer(Modifier.height(8.dp))
-    androidx.compose.material3.OutlinedButton(onClick = resume.openIncognito, modifier = Modifier.fillMaxWidth()) {
-        Text("Read incognito")
     }
 }
 

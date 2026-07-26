@@ -29,5 +29,8 @@ fun KodexTheme(settings: AppSettings, content: @Composable () -> Unit) {
     val dynamicScheme = if (dynamic) dynamicColorScheme(dark) else null
     val scheme = dynamicScheme ?: resolveColorScheme(theme, dark, amoled)
 
+    // Match the system-bar icons to the theme so they stay visible: dark icons in light mode, light in dark.
+    app.kodex.client.platform.StatusBarIcons(darkIcons = !dark)
+
     MaterialTheme(colorScheme = scheme, content = content)
 }

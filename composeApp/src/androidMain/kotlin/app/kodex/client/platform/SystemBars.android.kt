@@ -18,9 +18,15 @@ actual fun StatusBarIcons(darkIcons: Boolean) {
             onDispose {}
         } else {
             val controller = WindowCompat.getInsetsController(window, view)
-            val previous = controller.isAppearanceLightStatusBars
+            val prevStatus = controller.isAppearanceLightStatusBars
+            val prevNav = controller.isAppearanceLightNavigationBars
+            // isAppearanceLightBars = true → light bar background → DARK icons (visible on a light UI).
             controller.isAppearanceLightStatusBars = darkIcons
-            onDispose { controller.isAppearanceLightStatusBars = previous }
+            controller.isAppearanceLightNavigationBars = darkIcons
+            onDispose {
+                controller.isAppearanceLightStatusBars = prevStatus
+                controller.isAppearanceLightNavigationBars = prevNav
+            }
         }
     }
 }
