@@ -88,8 +88,12 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
             onOpenBook = openBook,
             onOpenSourceSeries = { source, seed -> backStack.add(DetailRoute.SourceSeries(source, seed)) },
             onOpenReader = { backStack.add(DetailRoute.Reader(it)) },
+            onOpenReaderAt = { bookId, page -> backStack.add(DetailRoute.Reader(bookId, page)) },
             onOpenSourceReader = { providerId, chapterId, seriesId, chapterName ->
                 backStack.add(DetailRoute.SourceReader(providerId, chapterId, seriesId, chapterName))
+            },
+            onOpenMigrate = { seriesId, providerId, sourceSeriesId, title ->
+                backStack.add(DetailRoute.Migrate(seriesId, providerId, sourceSeriesId, title))
             },
             onBack = { backStack.removeAt(backStack.lastIndex) },
         )
@@ -143,6 +147,9 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
                     onOpenSettings = { backStack.add(DetailRoute.Settings) },
                     onOpenAppearance = { backStack.add(DetailRoute.Appearance) },
                     onOpenAbout = { backStack.add(DetailRoute.About) },
+                    onOpenLibraries = { backStack.add(DetailRoute.Libraries) },
+                    onOpenLabels = { backStack.add(DetailRoute.Labels) },
+                    onOpenPlugins = { backStack.add(DetailRoute.Plugins) },
                 )
             }
         }

@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
@@ -46,9 +47,14 @@ fun MoreTab(
     onOpenSettings: () -> Unit,
     onOpenAppearance: () -> Unit,
     onOpenAbout: () -> Unit,
+    onOpenLibraries: () -> Unit = {},
+    onOpenLabels: () -> Unit = {},
+    onOpenPlugins: () -> Unit = {},
 ) {
     val server by session.activeServer.collectAsStateSafe()
     val user by session.currentUser.collectAsStateSafe()
+    val isManager = user?.let { it.isAdmin || it.isManager } == true
+    val isAdmin = user?.isAdmin == true
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
@@ -103,6 +109,27 @@ fun MoreTab(
                 HubRow(Icons.Filled.Star, "Appearance", "Theme, colours, dark mode", onOpenAppearance)
                 HorizontalDivider(Modifier.padding(start = 56.dp))
                 HubRow(Icons.Filled.Info, "About", "Version and licence", onOpenAbout)
+            }
+        }
+
+        if (isManager) {
+            Text(
+                "Manage",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 4.dp),
+            )
+            Card(Modifier.fillMaxWidth()) {
+                Column {
+                    HubRow(Icons.AutoMirrored.Filled.List, "Libraries", "Add, edit, refresh, delete libraries", onOpenLibraries)
+                    HorizontalDivider(Modifier.padding(start = 56.dp))
+                    HubRow(Icons.Filled.Star, "Labels", "Create and manage metadata labels", onOpenLabels)
+                    if (isAdmin) {
+                        HorizontalDivider(Modifier.padding(start = 56.dp))
+                        HubRow(Icons.Filled.Settings, "Plugins", "Install and manage content sources", onOpenPlugins)
+                    }
+                }
             }
         }
 

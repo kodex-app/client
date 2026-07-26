@@ -38,7 +38,7 @@ private sealed interface ReaderState {
 
 /** Reader for a downloaded local book (comic/DIVINA + PDF). EPUB is gated with a message. */
 @Composable
-fun ReaderScreen(session: SessionManager, api: KodexApi, bookId: String, onBack: () -> Unit) {
+fun ReaderScreen(session: SessionManager, api: KodexApi, bookId: String, onBack: () -> Unit, startPage: Int? = null) {
     val server by session.activeServer.collectAsStateSafe()
     var state by remember(bookId) { mutableStateOf<ReaderState>(ReaderState.Loading) }
 
@@ -60,11 +60,11 @@ fun ReaderScreen(session: SessionManager, api: KodexApi, bookId: String, onBack:
                 isEpub(book) -> ReaderShell(onBack) { ReaderMessage("EPUB reading isn't supported in the app yet.") }
                 book.pageCount <= 0 -> ReaderShell(onBack) { ReaderMessage("This book has no readable pages.") }
                 else -> {
-                    val source = remember(book.id, s.baseUrl) {
+                    val source = remember(book.id, s.baseUrl, startPage) {
                         ReaderSource(
                             title = book.title.ifBlank { book.numberDisplay ?: "Reading" },
                             pageCount = book.pageCount,
-                            initialPage = book.readProgress?.page ?: 1,
+                            initialPage = startPage?.coerceIn(1, book.pageCount) ?: book.readProgress?.page ?: 1,
                             kind = if (book.mediaType?.contains("pdf", ignoreCase = true) == true) "pdf" else "comic",
                             seriesId = book.seriesId,
                             apiKey = s.apiKey,

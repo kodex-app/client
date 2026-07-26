@@ -15,6 +15,10 @@ import app.kodex.client.ui.library.LibrarySeriesScreen
 import app.kodex.client.ui.reader.ReaderScreen
 import app.kodex.client.ui.reader.SourceReaderScreen
 import app.kodex.client.ui.series.SeriesDetailScreen
+import app.kodex.client.ui.manage.LabelsScreen
+import app.kodex.client.ui.manage.LibrariesScreen
+import app.kodex.client.ui.manage.MigrateScreen
+import app.kodex.client.ui.manage.PluginsScreen
 import app.kodex.client.ui.settings.AboutScreen
 import app.kodex.client.ui.settings.AppearanceScreen
 import app.kodex.client.ui.settings.SettingsScreen
@@ -30,7 +34,7 @@ sealed interface DetailRoute {
     data class SourceSeries(val source: SourceDescriptor, val seed: SourceSearchResult) : DetailRoute
     data class SeriesDetail(val seriesId: String) : DetailRoute
     data class BookDetail(val bookId: String) : DetailRoute
-    data class Reader(val bookId: String) : DetailRoute
+    data class Reader(val bookId: String, val startPage: Int? = null) : DetailRoute
     data class SourceReader(
         val providerId: String,
         val chapterId: String,
@@ -42,6 +46,15 @@ sealed interface DetailRoute {
     data object Settings : DetailRoute
     data object Appearance : DetailRoute
     data object About : DetailRoute
+    data object Libraries : DetailRoute
+    data object Labels : DetailRoute
+    data object Plugins : DetailRoute
+    data class Migrate(
+        val seriesId: String,
+        val providerId: String,
+        val sourceSeriesId: String,
+        val title: String,
+    ) : DetailRoute
 }
 
 /** Opens a streamed (no-download) chapter reader. */
@@ -57,7 +70,9 @@ fun DetailHost(
     onOpenBook: (String) -> Unit,
     onOpenSourceSeries: (SourceDescriptor, SourceSearchResult) -> Unit,
     onOpenReader: (String) -> Unit,
+    onOpenReaderAt: (bookId: String, page: Int) -> Unit,
     onOpenSourceReader: OpenSourceReader,
+    onOpenMigrate: (seriesId: String, providerId: String, sourceSeriesId: String, title: String) -> Unit,
     onBack: () -> Unit,
 ) {
     when (route) {
@@ -76,13 +91,16 @@ fun DetailHost(
                 onOpenBook = onOpenBook,
                 onOpenReader = onOpenReader,
                 onOpenSourceReader = onOpenSourceReader,
+                onOpenMigrate = onOpenMigrate,
+                onOpenReaderAt = onOpenReaderAt,
+                onOpenSeries = onOpenSeries,
             )
 
         is DetailRoute.BookDetail ->
-            BookDetailScreen(session, api, route.bookId, onBack, onRead = onOpenReader)
+            BookDetailScreen(session, api, route.bookId, onBack, onRead = onOpenReader, onOpenReaderAt = onOpenReaderAt)
 
         is DetailRoute.Reader ->
-            ReaderScreen(session, api, route.bookId, onBack)
+            ReaderScreen(session, api, route.bookId, onBack, route.startPage)
 
         is DetailRoute.SourceReader ->
             SourceReaderScreen(session, api, route.providerId, route.chapterId, route.seriesId, route.chapterName, onBack)
@@ -98,5 +116,17 @@ fun DetailHost(
 
         is DetailRoute.About ->
             AboutScreen(onBack)
+
+        is DetailRoute.Libraries ->
+            LibrariesScreen(session, api, onBack)
+
+        is DetailRoute.Labels ->
+            LabelsScreen(session, api, onBack)
+
+        is DetailRoute.Plugins ->
+            PluginsScreen(session, api, onBack)
+
+        is DetailRoute.Migrate ->
+            MigrateScreen(session, api, route.seriesId, route.providerId, route.sourceSeriesId, route.title, onBack)
     }
 }

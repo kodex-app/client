@@ -49,9 +49,16 @@ data class BookDto(
     val authors: List<AuthorDto> = emptyList(),
     val tags: List<String> = emptyList(),
     val readProgress: ReadProgressDto? = null,
+    val isbn: String? = null,
+    val identifiers: Map<String, String> = emptyMap(),
+    val externalLinks: List<WebLinkDto> = emptyList(),
 ) {
     val isReady: Boolean get() = mediaStatus == null || mediaStatus == "READY"
 }
+
+/** A canonical "open on …" link derived from a book's identifiers. */
+@Serializable
+data class WebLinkDto(val label: String = "", val url: String = "")
 
 /** A series. `totalChapters` is non-null only for WEB series and switches the subtitle to chapters. */
 @Serializable

@@ -1,5 +1,6 @@
 package app.kodex.client.ui.book
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -72,6 +73,7 @@ fun BookDetailScreen(
     bookId: String,
     onBack: () -> Unit,
     onRead: (String) -> Unit = {},
+    onOpenReaderAt: (bookId: String, page: Int) -> Unit = { _, _ -> },
 ) {
     val server by session.activeServer.collectAsStateSafe()
     val snackbar = rememberSnackbar()
@@ -182,7 +184,7 @@ fun BookDetailScreen(
                         id = bm.id,
                         title = bm.label?.takeIf { it.isNotBlank() } ?: (bm.page?.let { "Page $it" } ?: "Bookmark"),
                         subtitle = bm.page?.let { "Page $it" }.takeIf { bm.label != null && bm.label.isNotBlank() },
-                        onOpen = { bookmarksOpen = false; onRead(bookId) },
+                        onOpen = { bookmarksOpen = false; bm.page?.let { onOpenReaderAt(bookId, it) } ?: onRead(bookId) },
                         onDelete = { api.deleteBookmark(s.baseUrl, s.apiKey, bookId, bm.id) },
                     )
                 }
@@ -320,6 +322,32 @@ private fun BookDetailContent(
             Text("Summary", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(4.dp))
             Text(book.summary, style = MaterialTheme.typography.bodyMedium)
+        }
+
+        val ids = buildMap {
+            book.isbn?.takeIf { it.isNotBlank() }?.let { put("ISBN", it) }
+            book.identifiers.forEach { (k, v) -> if (k != "isbn" && v.isNotBlank()) put(k.uppercase(), v) }
+        }
+        if (ids.isNotEmpty()) {
+            Spacer(Modifier.height(16.dp))
+            Text("Identifiers", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            ids.forEach { (k, v) -> MetaSection(k, v) }
+        }
+
+        if (book.externalLinks.isNotEmpty()) {
+            val openUrl = app.kodex.client.platform.rememberUrlOpener()
+            Spacer(Modifier.height(16.dp))
+            Text("Links", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            book.externalLinks.forEach { link ->
+                Text(
+                    link.label.ifBlank { link.url },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.fillMaxWidth()
+                        .clickable { openUrl(link.url) }
+                        .padding(vertical = 8.dp),
+                )
+            }
         }
     }
 }

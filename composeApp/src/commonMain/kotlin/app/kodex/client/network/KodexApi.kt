@@ -134,10 +134,11 @@ class KodexApi(private val client: HttpClient) {
             if (readingStatus != null) parameter("readingStatus", readingStatus)
         }.body<PageResponse<SeriesDto>>().content
 
-    /** Queue a library refresh (filesystem scan for LOCAL, content-source update for WEB). */
-    suspend fun refreshLibrary(baseUrl: String, apiKey: String, libraryId: String) {
+    /** Queue a library refresh (filesystem scan for LOCAL, content-source update for WEB). [deep] also re-analyzes. */
+    suspend fun refreshLibrary(baseUrl: String, apiKey: String, libraryId: String, deep: Boolean = false) {
         client.post("$baseUrl/api/v1/libraries/$libraryId/refresh") {
             header(HEADER_API_KEY, apiKey)
+            if (deep) parameter("deep", true)
         }
     }
 
@@ -234,6 +235,115 @@ class KodexApi(private val client: HttpClient) {
 
     suspend fun seriesBookmarks(baseUrl: String, apiKey: String, seriesId: String): List<SeriesBookmarkDto> =
         client.get("$baseUrl/api/v1/series/$seriesId/bookmarks") { header(HEADER_API_KEY, apiKey) }.body()
+
+    // ── Series metadata edit (partial) ─────────────────────────────────────────────────────────────
+
+    suspend fun updateSeriesMetadata(baseUrl: String, apiKey: String, seriesId: String, patch: UpdateSeriesMetadataRequest): SeriesDetailDto =
+        client.patch("$baseUrl/api/v1/series/$seriesId/metadata") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(patch)
+        }.body()
+
+    // ── Libraries CRUD (Phase 3) ─────────────────────────────────────────────────────────────────
+
+    suspend fun createLibrary(baseUrl: String, apiKey: String, request: CreateLibraryRequest): LibraryDto =
+        client.post("$baseUrl/api/v1/libraries") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+
+    suspend fun updateLibrary(baseUrl: String, apiKey: String, libraryId: String, request: UpdateLibraryRequest): LibraryDto =
+        client.patch("$baseUrl/api/v1/libraries/$libraryId") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+
+    suspend fun deleteLibrary(baseUrl: String, apiKey: String, libraryId: String, deleteFiles: Boolean = false) {
+        client.delete("$baseUrl/api/v1/libraries/$libraryId") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("deleteFiles", deleteFiles)
+        }
+    }
+
+    suspend fun analyzeLibrary(baseUrl: String, apiKey: String, libraryId: String) {
+        client.post("$baseUrl/api/v1/libraries/$libraryId/analyze") { header(HEADER_API_KEY, apiKey) }
+    }
+
+    /** Admin folder picker: list directories under [path] (null = roots). */
+    suspend fun listDirectory(baseUrl: String, apiKey: String, path: String?): DirectoryListing =
+        client.get("$baseUrl/api/v1/filesystem") {
+            header(HEADER_API_KEY, apiKey)
+            if (path != null) parameter("path", path)
+        }.body()
+
+    // ── Labels CRUD (Phase 3) ────────────────────────────────────────────────────────────────────
+
+    suspend fun createLabel(baseUrl: String, apiKey: String, name: String): LabelDto =
+        client.post("$baseUrl/api/v1/labels") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(LabelRequest(name))
+        }.body()
+
+    suspend fun renameLabel(baseUrl: String, apiKey: String, labelId: String, name: String): LabelDto =
+        client.patch("$baseUrl/api/v1/labels/$labelId") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(LabelRequest(name))
+        }.body()
+
+    suspend fun deleteLabel(baseUrl: String, apiKey: String, labelId: String) {
+        client.delete("$baseUrl/api/v1/labels/$labelId") { header(HEADER_API_KEY, apiKey) }
+    }
+
+    // ── Plugins (Phase 3) ────────────────────────────────────────────────────────────────────────
+
+    suspend fun installedPlugins(baseUrl: String, apiKey: String): List<InstalledPluginDto> =
+        client.get("$baseUrl/api/v1/plugins") { header(HEADER_API_KEY, apiKey) }.body()
+
+    suspend fun availablePlugins(baseUrl: String, apiKey: String): List<AvailablePluginDto> =
+        client.get("$baseUrl/api/v1/plugins/available") { header(HEADER_API_KEY, apiKey) }.body()
+
+    suspend fun refreshAvailablePlugins(baseUrl: String, apiKey: String): List<AvailablePluginDto> =
+        client.post("$baseUrl/api/v1/plugins/refresh-available") { header(HEADER_API_KEY, apiKey) }.body()
+
+    suspend fun installPlugin(baseUrl: String, apiKey: String, pluginId: String, version: String): List<InstalledPluginDto> =
+        client.post("$baseUrl/api/v1/plugins/install") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(InstallRequest(pluginId, version))
+        }.body()
+
+    suspend fun uninstallPlugin(baseUrl: String, apiKey: String, pluginId: String) {
+        client.delete("$baseUrl/api/v1/plugins/$pluginId") { header(HEADER_API_KEY, apiKey) }
+    }
+
+    /** [action] is "enable", "disable", or "update". */
+    suspend fun pluginAction(baseUrl: String, apiKey: String, pluginId: String, action: String) {
+        client.post("$baseUrl/api/v1/plugins/$pluginId/$action") { header(HEADER_API_KEY, apiKey) }
+    }
+
+    suspend fun checkPluginUpdates(baseUrl: String, apiKey: String): PluginUpdateStatusDto =
+        client.post("$baseUrl/api/v1/plugins/check-updates") { header(HEADER_API_KEY, apiKey) }.body()
+
+    // ── Migration (Phase 3) ──────────────────────────────────────────────────────────────────────
+
+    suspend fun migrationCandidates(baseUrl: String, apiKey: String, libraryId: String, seriesId: String, providerId: String, query: String?): List<SourceSearchResult> =
+        client.get("$baseUrl/api/v1/libraries/$libraryId/web-series/$seriesId/migration-candidates") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("providerId", providerId)
+            if (!query.isNullOrBlank()) parameter("query", query)
+        }.body()
+
+    suspend fun migrateSeries(baseUrl: String, apiKey: String, libraryId: String, seriesId: String, request: MigrateRequest): MigrationResultDto =
+        client.post("$baseUrl/api/v1/libraries/$libraryId/web-series/$seriesId/migrate") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
 
     // ── Series / book detail ─────────────────────────────────────────────────────────────────────
 

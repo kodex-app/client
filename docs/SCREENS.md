@@ -50,19 +50,19 @@ Legend: `[x]` done · `[~]` partial (built, gaps listed) · `[ ]` not started
 ## Phase 2 — enrich existing screens
 
 - [~] Library series list: sort · reading-status filter · grid/list toggle · refresh (SSE-reload) · **status group tabs** (`/series/groups`) · **WEB category chips** (`/categories`) — **done**; Mihon import still pending (blocked — needs source plugins)
-- [~] Series detail: chapter-sort · refresh-chapters · mark series read/unread · multi-select bulk · refresh-metadata · **re-analyze** · **bookmarks viewer** — **done**; sub-series · migrate (Phase 3) still pending
-- [~] Book detail: re-analyze · delete · edit-metadata sheet · **bookmarks viewer** (list + delete) — **done**; identifiers/links still pending
+- [x] Series detail: chapter-sort · refresh-chapters · mark series read/unread · multi-select bulk · refresh-metadata · re-analyze · bookmarks (page-jump) · **edit-metadata sheet** · **sub-series rail** · **migrate**
+- [x] Book detail: re-analyze · delete · edit-metadata sheet · bookmarks (page-jump) · **identifiers + external links** (tap to open)
 - [~] Browse: **kind filter** chips · language grouping — **done**; favorites + recents quick-access still pending
 - [~] Source catalogue (WebBrowse): Search · source `FilterList` filters (polymorphic) — **done** (live data blocked — no source plugins); multi-select add-to-library still pending
 - [x] Search: library search + **facet-filter sheet** (genre/status/readingStatus/language/tag/label via `/series` + `/series/{genres,tags,languages}` + `/labels`) — facets can browse with empty query
 
 ## Phase 3 — content management
 
-- [ ] Libraries CRUD (LOCAL folder picker / WEB source+kind; refresh/analyze/refresh-metadata; hide+reorder nav)
-- [ ] Metadata edit sheets (series + book: title/summary/publisher/status/genres/tags/labels/authors/identifiers/field-locks)
-- [ ] Labels (create/rename/delete)
-- [ ] Plugins (Installed: uninstall + configure · Browse/install from repository · check-updates)
-- [ ] Migration: MigrateSeries (from/series/to) → MigrateRun (review + run)
+- [~] Libraries CRUD — **done**: create (LOCAL server-side folder picker via `/filesystem` · WEB source+kind), edit, delete, refresh/deep-scan/analyze (More → Libraries); nav hide+reorder still pending
+- [~] Metadata edit sheets — **done**: series (title/summary/publisher/status/language/genres/tags, partial PATCH) + book (title/number/summary/tags) + book identifiers/links shown; authors/labels multi-select · field-locks still pending
+- [x] Labels — create / rename / delete (More → Labels, admin-gated)
+- [~] Plugins — **done**: Installed (enable/disable/update/uninstall) · Browse & install from repository · check-updates (More → Plugins, admin); per-plugin config schema · repository CRUD still pending
+- [x] Migration: MigrateSeries — pick target source, find matches, choose carry-over (read/metadata/downloads), migrate (Series detail → Migrate)
 
 ## Phase 4 — server admin
 

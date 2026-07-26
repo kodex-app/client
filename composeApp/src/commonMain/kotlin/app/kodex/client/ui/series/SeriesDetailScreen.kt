@@ -78,6 +78,7 @@ private data class SeriesContent(
     val detail: SeriesDetailDto,
     val books: List<BookDto>,
     val chapters: List<SeriesChapterDto>,
+    val subseries: List<app.kodex.client.network.SeriesDto> = emptyList(),
 )
 
 private data class Resume(val label: String, val open: () -> Unit)
@@ -97,6 +98,9 @@ fun SeriesDetailScreen(
     onOpenBook: (String) -> Unit,
     onOpenReader: (String) -> Unit,
     onOpenSourceReader: OpenSourceReader,
+    onOpenMigrate: (seriesId: String, providerId: String, sourceSeriesId: String, title: String) -> Unit = { _, _, _, _ -> },
+    onOpenReaderAt: (bookId: String, page: Int) -> Unit = { _, _ -> },
+    onOpenSeries: (String) -> Unit = {},
 ) {
     val server by session.activeServer.collectAsStateSafe()
     val snackbar = rememberSnackbar()
@@ -106,6 +110,7 @@ fun SeriesDetailScreen(
     var sortDesc by remember { mutableStateOf(true) }
     var menuOpen by remember { mutableStateOf(false) }
     var bookmarksOpen by remember { mutableStateOf(false) }
+    var editOpen by remember { mutableStateOf(false) }
 
     fun reload() { selection.clear(); reloadTick++ }
 
@@ -125,8 +130,9 @@ fun SeriesDetailScreen(
         phase = SeriesPhase.Loading
         phase = runCatching {
             val detail = api.seriesDetail(s0.baseUrl, s0.apiKey, seriesId)
-            if (detail.isWeb) SeriesContent(detail, emptyList(), api.seriesChapters(s0.baseUrl, s0.apiKey, seriesId))
-            else SeriesContent(detail, api.seriesBooks(s0.baseUrl, s0.apiKey, seriesId), emptyList())
+            val subs = runCatching { api.subSeries(s0.baseUrl, s0.apiKey, seriesId) }.getOrDefault(emptyList())
+            if (detail.isWeb) SeriesContent(detail, emptyList(), api.seriesChapters(s0.baseUrl, s0.apiKey, seriesId), subs)
+            else SeriesContent(detail, api.seriesBooks(s0.baseUrl, s0.apiKey, seriesId), emptyList(), subs)
         }.fold({ SeriesPhase.Ready(it) }, { SeriesPhase.Error(it.friendlyMessage()) })
     }
 
@@ -175,6 +181,13 @@ fun SeriesDetailScreen(
                                         DropdownMenuItem(text = { Text("Refresh chapters") }, onClick = {
                                             menuOpen = false; runAction("Chapters refreshed") { api.refreshSeriesChapters(s!!.baseUrl, s.apiKey, seriesId) }
                                         })
+                                        val prov = detail?.sourceProviderId
+                                        val ext = detail?.sourceSeriesId
+                                        if (prov != null && ext != null) {
+                                            DropdownMenuItem(text = { Text("Migrate to another source") }, onClick = {
+                                                menuOpen = false; onOpenMigrate(seriesId, prov, ext, detail.title)
+                                            })
+                                        }
                                     }
                                     DropdownMenuItem(text = { Text("Refresh metadata") }, onClick = {
                                         menuOpen = false; runAction("Refreshing metadata…") { api.refreshSeriesMetadata(s!!.baseUrl, s.apiKey, seriesId) }
@@ -182,6 +195,7 @@ fun SeriesDetailScreen(
                                     DropdownMenuItem(text = { Text("Re-analyze") }, onClick = {
                                         menuOpen = false; runAction("Analyzing…") { api.analyzeSeries(s!!.baseUrl, s.apiKey, seriesId) }
                                     })
+                                    DropdownMenuItem(text = { Text("Edit metadata") }, onClick = { menuOpen = false; editOpen = true })
                                     DropdownMenuItem(text = { Text("Bookmarks") }, onClick = { menuOpen = false; bookmarksOpen = true })
                                 }
                             }
@@ -195,10 +209,21 @@ fun SeriesDetailScreen(
                     errorMsg != null && content == null -> ErrorRetry(errorMsg) { reloadTick++ }
                     content == null -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
                     s != null && isWeb -> ChaptersLayout(s.baseUrl, s.apiKey, content, sortDesc, { sortDesc = !sortDesc }, selection, onOpenReader, onOpenSourceReader)
-                    s != null -> BooksLayout(s.baseUrl, s.apiKey, content, selection, onOpenBook, onOpenReader)
+                    s != null -> BooksLayout(s.baseUrl, s.apiKey, content, selection, onOpenBook, onOpenReader, onOpenSeries)
                 }
             }
         }
+
+    if (editOpen && content != null && s != null) {
+        SeriesMetadataSheet(
+            detail = content.detail,
+            onDismiss = { editOpen = false },
+            onSave = { patch ->
+                editOpen = false
+                runAction("Series updated") { api.updateSeriesMetadata(s.baseUrl, s.apiKey, seriesId, patch) }
+            },
+        )
+    }
 
     if (bookmarksOpen && s != null) {
         app.kodex.client.ui.bookmark.BookmarksSheet(
@@ -209,7 +234,7 @@ fun SeriesDetailScreen(
                         id = bm.id,
                         title = bm.label?.takeIf { it.isNotBlank() } ?: (bm.bookName ?: "Bookmark"),
                         subtitle = listOfNotNull(bm.bookName?.takeIf { bm.label != null && bm.label.isNotBlank() }, bm.page?.let { "Page $it" }).joinToString(" · ").ifBlank { null },
-                        onOpen = { bookmarksOpen = false; bm.bookId?.let { onOpenReader(it) } },
+                        onOpen = { bookmarksOpen = false; bm.bookId?.let { bid -> bm.page?.let { onOpenReaderAt(bid, it) } ?: onOpenReader(bid) } },
                         onDelete = bm.bookId?.let { bid -> { api.deleteBookmark(s.baseUrl, s.apiKey, bid, bm.id) } },
                     )
                 }
@@ -330,6 +355,7 @@ private fun BooksLayout(
     selection: SelectionState<String>,
     onOpenBook: (String) -> Unit,
     onOpenReader: (String) -> Unit,
+    onOpenSeries: (String) -> Unit,
 ) {
     val resume = localResume(content.books, onOpenReader)
     LazyVerticalGrid(
@@ -347,6 +373,20 @@ private fun BooksLayout(
                     unread = content.books.count { it.readProgress?.completed != true },
                 )
                 ReadButton(resume)
+            }
+        }
+        if (content.subseries.isNotEmpty()) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                app.kodex.client.ui.catalog.CoverSection("Sub-series", content.subseries, key = { it.id }) { sub ->
+                    CoverCard(
+                        coverUrl = app.kodex.client.ui.catalog.seriesCoverUrl(baseUrl, sub),
+                        apiKey = apiKey,
+                        title = sub.title,
+                        subtitle = app.kodex.client.ui.catalog.seriesSubtitle(sub),
+                        unread = app.kodex.client.ui.catalog.seriesUnreadBadge(sub),
+                        onClick = { onOpenSeries(sub.id) },
+                    )
+                }
             }
         }
         if (content.books.isNotEmpty()) {
