@@ -58,7 +58,7 @@ fun App() {
                     if (activeServer == null) {
                         LoginScreen(graph.session)
                     } else {
-                        MainScaffold(graph.session, graph.api, graph.appSettings)
+                        MainScaffold(graph.session, graph.api, graph.appSettings, graph.sourcePrefs)
                     }
                     // App-level snackbar overlay — sits above any screen's own Scaffold.
                     SnackbarHost(snackbarHostState, Modifier.align(Alignment.BottomCenter).fillMaxWidth())

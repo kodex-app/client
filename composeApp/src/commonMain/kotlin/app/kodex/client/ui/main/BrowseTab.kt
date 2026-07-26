@@ -53,7 +53,7 @@ import app.kodex.client.ui.collectAsStateSafe
 fun BrowseTab(
     session: SessionManager,
     api: KodexApi,
-    appSettings: app.kodex.client.data.AppSettings,
+    sourcePrefs: app.kodex.client.data.SourcePrefsStore,
     onOpenSource: (SourceDescriptor, String) -> Unit,
 ) {
     val server by session.activeServer.collectAsStateSafe()
@@ -67,8 +67,8 @@ fun BrowseTab(
         } else {
             SourceList(
                 sources = sources,
-                appSettings = appSettings,
-                onOpen = { src, feed -> appSettings.pushRecentSource(src.id); onOpenSource(src, feed) },
+                sourcePrefs = sourcePrefs,
+                onOpen = { src, feed -> sourcePrefs.recordRecent(src.id); onOpenSource(src, feed) },
             )
         }
     }
@@ -77,11 +77,11 @@ fun BrowseTab(
 @Composable
 private fun SourceList(
     sources: List<SourceDescriptor>,
-    appSettings: app.kodex.client.data.AppSettings,
+    sourcePrefs: app.kodex.client.data.SourcePrefsStore,
     onOpen: (SourceDescriptor, String) -> Unit,
 ) {
-    val favorites by appSettings.favoriteSources.collectAsStateSafe()
-    val recents by appSettings.recentSources.collectAsStateSafe()
+    val favorites by sourcePrefs.favorites.collectAsStateSafe()
+    val recents by sourcePrefs.recents.collectAsStateSafe()
     var filter by remember { mutableStateOf("") }
     var kind by remember { mutableStateOf<String?>(null) }
     var lang by remember { mutableStateOf<String?>(null) }
@@ -151,7 +151,7 @@ private fun SourceList(
                     SourceRow(
                         source = source,
                         isFavorite = source.id in favorites,
-                        onToggleFavorite = { appSettings.toggleFavoriteSource(source.id) },
+                        onToggleFavorite = { sourcePrefs.toggleFavorite(source.id) },
                         onOpen = { feed -> onOpen(source, feed) },
                     )
                     Spacer(Modifier.size(10.dp))

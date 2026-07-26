@@ -51,7 +51,7 @@ enum class BottomTab(val label: String, val icon: ImageVector) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSettings) {
+fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSettings, sourcePrefs: app.kodex.client.data.SourcePrefsStore) {
     var tab by remember { mutableStateOf(BottomTab.Home) }
     var searchOpen by remember { mutableStateOf(false) }
     val backStack = remember { mutableStateListOf<DetailRoute>() }
@@ -148,7 +148,7 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
                     },
                     onOpenSeries = openSeries,
                 )
-                BottomTab.Browse -> BrowseTab(session, api, appSettings, onOpenSource = { src, feed -> backStack.add(DetailRoute.SourceFeed(src, feed)) })
+                BottomTab.Browse -> BrowseTab(session, api, sourcePrefs, onOpenSource = { src, feed -> backStack.add(DetailRoute.SourceFeed(src, feed)) })
                 BottomTab.More -> MoreTab(
                     session,
                     appSettings,

@@ -3,6 +3,7 @@ package app.kodex.client.di
 import app.kodex.client.auth.SessionManager
 import app.kodex.client.data.AppSettings
 import app.kodex.client.data.ServerStore
+import app.kodex.client.data.SourcePrefsStore
 import app.kodex.client.network.EventBus
 import app.kodex.client.network.KodexApi
 import app.kodex.client.platform.createHttpClient
@@ -27,6 +28,9 @@ class AppGraph {
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
+        // Server sends JSON null for optional string fields (e.g. author/artist); coerce a null to the
+        // property's default instead of throwing "Unexpected 'null' value instead of string literal".
+        coerceInputValues = true
     }
 
     private val httpClient = createHttpClient {
@@ -67,10 +71,19 @@ class AppGraph {
     /** Live server events (SSE), (re)connected to whichever server is active. */
     val eventBus = EventBus(sseHttpClient, appScope)
 
+    /** Per-user Browse favourites/recents, loaded from the active server's user settings. */
+    val sourcePrefs = SourcePrefsStore(api, appScope)
+
     init {
         appScope.launch {
             session.activeServer.collect { server ->
-                if (server != null) eventBus.connect(server.baseUrl, server.apiKey) else eventBus.disconnect()
+                if (server != null) {
+                    eventBus.connect(server.baseUrl, server.apiKey)
+                    sourcePrefs.bind(server.baseUrl, server.apiKey)
+                } else {
+                    eventBus.disconnect()
+                    sourcePrefs.clear()
+                }
             }
         }
     }
