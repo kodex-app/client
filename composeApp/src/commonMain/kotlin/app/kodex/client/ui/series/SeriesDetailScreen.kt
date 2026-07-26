@@ -54,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -180,8 +181,9 @@ fun SeriesDetailScreen(
                         onDownload = { downloadSelected(api, s, content, selection, snackbar, scope) { reload() } },
                     )
                 } else {
-                    // Mihon-style: no title in the toolbar — just back + the actions menu.
+                    // Mihon-style: no title in the toolbar — just back + the actions menu, over the backdrop.
                     TopAppBar(
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
                         title = {},
                         navigationIcon = {
                             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
@@ -237,12 +239,17 @@ fun SeriesDetailScreen(
                 }
             },
         ) { padding ->
-            Box(Modifier.fillMaxSize().padding(padding)) {
+            val topInset = padding.calculateTopPadding()
+            Box(Modifier.fillMaxSize()) {
+                // Blurred cover backdrop from the top (behind the toolbar) down to just below the cover.
+                if (content != null && s != null) {
+                    SeriesBackdrop(s.baseUrl, s.apiKey, content.detail, topInset + 210.dp)
+                }
                 when {
-                    errorMsg != null && content == null -> ErrorRetry(errorMsg) { reloadTick++ }
-                    content == null -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
-                    s != null && isWeb -> ChaptersLayout(s.baseUrl, s.apiKey, content, sortDesc, { sortDesc = !sortDesc }, selection, onOpenReader, onOpenSourceReader, onOpenReaderIncognito, onOpenSourceReaderIncognito)
-                    s != null -> BooksLayout(s.baseUrl, s.apiKey, content, selection, onOpenBook, onOpenReader, onOpenSeries, onOpenReaderIncognito)
+                    errorMsg != null && content == null -> Box(Modifier.fillMaxSize().padding(padding)) { ErrorRetry(errorMsg) { reloadTick++ } }
+                    content == null -> Box(Modifier.fillMaxSize().padding(padding), Alignment.Center) { CircularProgressIndicator() }
+                    s != null && isWeb -> ChaptersLayout(s.baseUrl, s.apiKey, content, sortDesc, { sortDesc = !sortDesc }, selection, onOpenReader, onOpenSourceReader, onOpenReaderIncognito, onOpenSourceReaderIncognito, topInset)
+                    s != null -> BooksLayout(s.baseUrl, s.apiKey, content, selection, onOpenBook, onOpenReader, onOpenSeries, onOpenReaderIncognito, topInset)
                 }
             }
         }
@@ -390,11 +397,12 @@ private fun BooksLayout(
     onOpenReader: (String) -> Unit,
     onOpenSeries: (String) -> Unit,
     onOpenReaderIncognito: (String) -> Unit,
+    topInset: androidx.compose.ui.unit.Dp,
 ) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(112.dp),
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 96.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = topInset + 8.dp, bottom = 96.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -459,13 +467,14 @@ private fun ChaptersLayout(
     onOpenSourceReader: OpenSourceReader,
     onOpenReaderIncognito: (String) -> Unit,
     onOpenSourceReaderIncognito: OpenSourceReader,
+    topInset: androidx.compose.ui.unit.Dp,
 ) {
     val providerId = content.detail.sourceProviderId.orEmpty()
     val seriesId = content.detail.id
     val ascending = content.chapters.sortedWith(compareBy(nullsLast()) { it.number })
     val display = if (sortDesc) ascending.asReversed() else ascending
     val downloaded = ascending.count { it.downloaded }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 96.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = topInset + 8.dp, bottom = 96.dp)) {
         item {
             SeriesHeader(
                 baseUrl, apiKey, content.detail,
@@ -555,6 +564,29 @@ private fun ChapterRow(
                 Text(meta, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+    }
+}
+
+/** Mihon-style backdrop: the cover, blurred, fading into the page background under the header. */
+@Composable
+private fun SeriesBackdrop(baseUrl: String, apiKey: String, detail: SeriesDetailDto, height: androidx.compose.ui.unit.Dp) {
+    val surface = MaterialTheme.colorScheme.surface
+    Box(Modifier.fillMaxWidth().height(height)) {
+        CoverImage(
+            seriesCoverUrl(baseUrl, detail.id, detail.coverUrl),
+            apiKey,
+            Modifier.fillMaxSize().blur(20.dp).alpha(0.55f),
+        )
+        // Top-to-bottom scrim so toolbar icons stay legible and the backdrop dissolves into the content.
+        Box(
+            Modifier.fillMaxSize().background(
+                androidx.compose.ui.graphics.Brush.verticalGradient(
+                    0f to surface.copy(alpha = 0.30f),
+                    0.65f to surface.copy(alpha = 0.75f),
+                    1f to surface,
+                ),
+            ),
+        )
     }
 }
 
