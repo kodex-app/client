@@ -57,10 +57,14 @@ fun BrowseTab(session: SessionManager, api: KodexApi, onOpenSource: (SourceDescr
 @Composable
 private fun SourceList(sources: List<SourceDescriptor>, onOpen: (SourceDescriptor) -> Unit) {
     var filter by remember { mutableStateOf("") }
+    var kind by remember { mutableStateOf<String?>(null) }
 
-    val groups = remember(sources, filter) {
+    val kinds = remember(sources) { sources.map { it.kind }.distinct().sorted() }
+    val groups = remember(sources, filter, kind) {
         val f = filter.trim().lowercase()
-        val visible = if (f.isEmpty()) sources else sources.filter { it.displayName.lowercase().contains(f) }
+        val visible = sources
+            .filter { kind == null || it.kind == kind }
+            .filter { f.isEmpty() || it.displayName.lowercase().contains(f) }
         visible
             .groupBy { it.language }
             .toList()
@@ -71,11 +75,28 @@ private fun SourceList(sources: List<SourceDescriptor>, onOpen: (SourceDescripto
         OutlinedTextField(
             value = filter,
             onValueChange = { filter = it },
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp),
             placeholder = { Text("Filter sources") },
             leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
             singleLine = true,
         )
+        if (kinds.size > 1) {
+            androidx.compose.foundation.lazy.LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+            ) {
+                item {
+                    androidx.compose.material3.FilterChip(selected = kind == null, onClick = { kind = null }, label = { Text("All") })
+                }
+                items(kinds, key = { it }) { k ->
+                    androidx.compose.material3.FilterChip(
+                        selected = kind == k,
+                        onClick = { kind = if (kind == k) null else k },
+                        label = { Text(k.lowercase().replaceFirstChar { it.uppercase() }) },
+                    )
+                }
+            }
+        }
         LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
             groups.forEach { (language, list) ->
                 item(key = "hdr-${language ?: "multi"}") {

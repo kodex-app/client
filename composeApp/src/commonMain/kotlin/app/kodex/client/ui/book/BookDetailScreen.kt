@@ -84,6 +84,7 @@ fun BookDetailScreen(
     var menuOpen by remember { mutableStateOf(false) }
     var editOpen by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var bookmarksOpen by remember { mutableStateOf(false) }
 
     LaunchedEffect(bookId, server?.id, reloadTick) {
         val s = server ?: return@LaunchedEffect
@@ -113,6 +114,7 @@ fun BookDetailScreen(
                         IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Book actions") }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(text = { Text("Edit metadata") }, onClick = { menuOpen = false; editOpen = true })
+                            DropdownMenuItem(text = { Text("Bookmarks") }, onClick = { menuOpen = false; bookmarksOpen = true })
                             DropdownMenuItem(text = { Text("Re-analyze") }, onClick = {
                                 menuOpen = false
                                 val s = server ?: return@DropdownMenuItem
@@ -167,6 +169,23 @@ fun BookDetailScreen(
             onSave = { patch ->
                 editOpen = false
                 action("Metadata updated") { api.updateBookMetadata(s.baseUrl, s.apiKey, bookId, patch) }
+            },
+        )
+    }
+
+    if (bookmarksOpen && s != null) {
+        app.kodex.client.ui.bookmark.BookmarksSheet(
+            onDismiss = { bookmarksOpen = false },
+            load = {
+                api.bookBookmarks(s.baseUrl, s.apiKey, bookId).map { bm ->
+                    app.kodex.client.ui.bookmark.BookmarkRow(
+                        id = bm.id,
+                        title = bm.label?.takeIf { it.isNotBlank() } ?: (bm.page?.let { "Page $it" } ?: "Bookmark"),
+                        subtitle = bm.page?.let { "Page $it" }.takeIf { bm.label != null && bm.label.isNotBlank() },
+                        onOpen = { bookmarksOpen = false; onRead(bookId) },
+                        onDelete = { api.deleteBookmark(s.baseUrl, s.apiKey, bookId, bm.id) },
+                    )
+                }
             },
         )
     }

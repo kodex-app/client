@@ -141,6 +141,100 @@ class KodexApi(private val client: HttpClient) {
         }
     }
 
+    /**
+     * The full series query behind the Library grid (with grouping filters) and faceted Search. Every
+     * list param maps to a repeated query parameter; nulls/empties are omitted.
+     */
+    suspend fun querySeries(
+        baseUrl: String,
+        apiKey: String,
+        libraryId: String? = null,
+        search: String? = null,
+        sort: String = "title,asc",
+        genres: List<String> = emptyList(),
+        statuses: List<String> = emptyList(),
+        readingStatuses: List<String> = emptyList(),
+        languages: List<String> = emptyList(),
+        tags: List<String> = emptyList(),
+        labelIds: List<String> = emptyList(),
+        sources: List<String> = emptyList(),
+        categoryIds: List<String> = emptyList(),
+        size: Int = LIBRARY_SERIES_SIZE,
+    ): List<SeriesDto> =
+        client.get("$baseUrl/api/v1/series") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("size", size)
+            parameter("sort", sort)
+            if (libraryId != null) parameter("libraryId", libraryId)
+            if (!search.isNullOrBlank()) parameter("search", search)
+            genres.forEach { parameter("genre", it) }
+            statuses.forEach { parameter("status", it) }
+            readingStatuses.forEach { parameter("readingStatus", it) }
+            languages.forEach { parameter("language", it) }
+            tags.forEach { parameter("tag", it) }
+            labelIds.forEach { parameter("labelId", it) }
+            sources.forEach { parameter("source", it) }
+            categoryIds.forEach { parameter("categoryId", it) }
+        }.body<PageResponse<SeriesDto>>().content
+
+    /** Live per-group counts for the Library grouping tabs. [groupBy] is status | source | category. */
+    suspend fun seriesGroups(baseUrl: String, apiKey: String, groupBy: String, libraryId: String? = null): List<SeriesGroupCount> =
+        client.get("$baseUrl/api/v1/series/groups") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("groupBy", groupBy)
+            if (libraryId != null) parameter("libraryId", libraryId)
+        }.body()
+
+    /** Sub-series of a parent series (LOCAL nested libraries). */
+    suspend fun subSeries(baseUrl: String, apiKey: String, parentId: String): List<SeriesDto> =
+        client.get("$baseUrl/api/v1/series") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("parentId", parentId)
+            parameter("size", 200)
+            parameter("sort", "title,asc")
+        }.body<PageResponse<SeriesDto>>().content
+
+    /** Re-analyze every book in a series. */
+    suspend fun analyzeSeries(baseUrl: String, apiKey: String, seriesId: String) {
+        client.post("$baseUrl/api/v1/series/$seriesId/analyze") { header(HEADER_API_KEY, apiKey) }
+    }
+
+    // ── Facet vocab + labels + categories ────────────────────────────────────────────────────────
+
+    suspend fun seriesGenres(baseUrl: String, apiKey: String): List<String> =
+        client.get("$baseUrl/api/v1/series/genres") { header(HEADER_API_KEY, apiKey) }.body()
+
+    suspend fun seriesTags(baseUrl: String, apiKey: String): List<String> =
+        client.get("$baseUrl/api/v1/series/tags") { header(HEADER_API_KEY, apiKey) }.body()
+
+    suspend fun seriesLanguages(baseUrl: String, apiKey: String): List<String> =
+        client.get("$baseUrl/api/v1/series/languages") { header(HEADER_API_KEY, apiKey) }.body()
+
+    suspend fun labels(baseUrl: String, apiKey: String): List<LabelDto> =
+        client.get("$baseUrl/api/v1/labels") { header(HEADER_API_KEY, apiKey) }.body()
+
+    suspend fun categories(baseUrl: String, apiKey: String): List<CategoryDto> =
+        client.get("$baseUrl/api/v1/categories") { header(HEADER_API_KEY, apiKey) }.body()
+
+    // ── Bookmarks ────────────────────────────────────────────────────────────────────────────────
+
+    suspend fun bookBookmarks(baseUrl: String, apiKey: String, bookId: String): List<BookmarkDto> =
+        client.get("$baseUrl/api/v1/books/$bookId/bookmarks") { header(HEADER_API_KEY, apiKey) }.body()
+
+    suspend fun addBookmark(baseUrl: String, apiKey: String, bookId: String, page: Int, label: String?): BookmarkDto =
+        client.post("$baseUrl/api/v1/books/$bookId/bookmarks") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(CreateBookmarkRequest(page = page, label = label))
+        }.body()
+
+    suspend fun deleteBookmark(baseUrl: String, apiKey: String, bookId: String, bookmarkId: String) {
+        client.delete("$baseUrl/api/v1/books/$bookId/bookmarks/$bookmarkId") { header(HEADER_API_KEY, apiKey) }
+    }
+
+    suspend fun seriesBookmarks(baseUrl: String, apiKey: String, seriesId: String): List<SeriesBookmarkDto> =
+        client.get("$baseUrl/api/v1/series/$seriesId/bookmarks") { header(HEADER_API_KEY, apiKey) }.body()
+
     // ── Series / book detail ─────────────────────────────────────────────────────────────────────
 
     suspend fun seriesDetail(baseUrl: String, apiKey: String, seriesId: String): SeriesDetailDto =

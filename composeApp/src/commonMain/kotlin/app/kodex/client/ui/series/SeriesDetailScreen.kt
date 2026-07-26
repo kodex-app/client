@@ -105,6 +105,7 @@ fun SeriesDetailScreen(
     var reloadTick by remember { mutableIntStateOf(0) }
     var sortDesc by remember { mutableStateOf(true) }
     var menuOpen by remember { mutableStateOf(false) }
+    var bookmarksOpen by remember { mutableStateOf(false) }
 
     fun reload() { selection.clear(); reloadTick++ }
 
@@ -178,6 +179,10 @@ fun SeriesDetailScreen(
                                     DropdownMenuItem(text = { Text("Refresh metadata") }, onClick = {
                                         menuOpen = false; runAction("Refreshing metadata…") { api.refreshSeriesMetadata(s!!.baseUrl, s.apiKey, seriesId) }
                                     })
+                                    DropdownMenuItem(text = { Text("Re-analyze") }, onClick = {
+                                        menuOpen = false; runAction("Analyzing…") { api.analyzeSeries(s!!.baseUrl, s.apiKey, seriesId) }
+                                    })
+                                    DropdownMenuItem(text = { Text("Bookmarks") }, onClick = { menuOpen = false; bookmarksOpen = true })
                                 }
                             }
                         },
@@ -194,6 +199,23 @@ fun SeriesDetailScreen(
                 }
             }
         }
+
+    if (bookmarksOpen && s != null) {
+        app.kodex.client.ui.bookmark.BookmarksSheet(
+            onDismiss = { bookmarksOpen = false },
+            load = {
+                api.seriesBookmarks(s.baseUrl, s.apiKey, seriesId).map { bm ->
+                    app.kodex.client.ui.bookmark.BookmarkRow(
+                        id = bm.id,
+                        title = bm.label?.takeIf { it.isNotBlank() } ?: (bm.bookName ?: "Bookmark"),
+                        subtitle = listOfNotNull(bm.bookName?.takeIf { bm.label != null && bm.label.isNotBlank() }, bm.page?.let { "Page $it" }).joinToString(" · ").ifBlank { null },
+                        onOpen = { bookmarksOpen = false; bm.bookId?.let { onOpenReader(it) } },
+                        onDelete = bm.bookId?.let { bid -> { api.deleteBookmark(s.baseUrl, s.apiKey, bid, bm.id) } },
+                    )
+                }
+            },
+        )
+    }
     }
 
 private sealed interface SeriesPhase {

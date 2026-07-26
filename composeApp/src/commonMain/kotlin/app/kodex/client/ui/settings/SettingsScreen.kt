@@ -9,8 +9,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -67,19 +70,27 @@ fun SettingsScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) {
         Box(Modifier.fillMaxSize().padding(padding)) {
             LoadedContent(
                 key = server?.id,
-                load = { val s = server!!; api.userSettings(s.baseUrl, s.apiKey) },
-            ) { settings ->
+                load = { val s = server!!; SettingsData(api.userSettings(s.baseUrl, s.apiKey), api.libraries(s.baseUrl, s.apiKey)) },
+            ) { data ->
                 val s = server ?: return@LoadedContent
-                SettingsForm(s.baseUrl, s.apiKey, api, settings)
+                SettingsForm(s.baseUrl, s.apiKey, api, data.settings, data.libraries)
             }
         }
     }
 }
 
+private data class SettingsData(val settings: JsonObject, val libraries: List<app.kodex.client.network.LibraryDto>)
+
 private const val CHAPTER_SORT_DEFAULT = "number,desc"
 
 @Composable
-private fun SettingsForm(baseUrl: String, apiKey: String, api: KodexApi, initial: JsonObject) {
+private fun SettingsForm(
+    baseUrl: String,
+    apiKey: String,
+    api: KodexApi,
+    initial: JsonObject,
+    libraries: List<app.kodex.client.network.LibraryDto>,
+) {
     val scope = rememberCoroutineScope()
 
     var autoUpdate by remember {
@@ -88,39 +99,98 @@ private fun SettingsForm(baseUrl: String, apiKey: String, api: KodexApi, initial
     var chapterSort by remember {
         mutableStateOf(initial["series.chapterSort"]?.jsonPrimitive?.contentOrNull ?: CHAPTER_SORT_DEFAULT)
     }
+    // sync.libraries: empty selection ⇒ all libraries sync (server default).
+    var syncLibs by remember {
+        mutableStateOf(
+            (initial["sync.libraries"] as? kotlinx.serialization.json.JsonArray)
+                ?.mapNotNull { it.jsonPrimitive.contentOrNull }?.toSet() ?: emptySet(),
+        )
+    }
+    var comicPrefs by remember { mutableStateOf(app.kodex.client.ui.reader.parseReaderDefault(initial, "comic")) }
+    var pdfPrefs by remember { mutableStateOf(app.kodex.client.ui.reader.parseReaderDefault(initial, "pdf")) }
 
     fun save(key: String, value: kotlinx.serialization.json.JsonElement) {
         scope.launch { runCatching { api.saveUserSetting(baseUrl, apiKey, key, value) } }
     }
 
-    Column(Modifier.fillMaxSize().padding(vertical = 8.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
         SectionHeader("Series")
-
         SwitchRow(
             title = "Auto-update on open",
             subtitle = "Check for new chapters when opening a series",
             checked = autoUpdate,
-            onCheckedChange = {
-                autoUpdate = it
-                save("series.autoUpdateOnOpen", JsonPrimitive(it))
-            },
+            onCheckedChange = { autoUpdate = it; save("series.autoUpdateOnOpen", JsonPrimitive(it)) },
         )
-
-        ChapterSortRow(
-            current = chapterSort,
-            onSelect = {
-                chapterSort = it
-                save("series.chapterSort", JsonPrimitive(it))
-            },
-        )
+        ChapterSortRow(current = chapterSort, onSelect = { chapterSort = it; save("series.chapterSort", JsonPrimitive(it)) })
 
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
+        SectionHeader("Reader defaults")
+        ReaderDefaultsRows("Comics", comicPrefs) { p ->
+            comicPrefs = p
+            scope.launch { runCatching { app.kodex.client.ui.reader.saveReaderDefault(api, baseUrl, apiKey, "comic", p) } }
+        }
+        ReaderDefaultsRows("PDF", pdfPrefs) { p ->
+            pdfPrefs = p
+            scope.launch { runCatching { app.kodex.client.ui.reader.saveReaderDefault(api, baseUrl, apiKey, "pdf", p) } }
+        }
+
+        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+        SectionHeader("Sync to reading devices")
         Text(
-            "Reader defaults and device sync will appear here.",
+            if (syncLibs.isEmpty()) "All libraries sync to KOReader / Kobo." else "${syncLibs.size} librar${if (syncLibs.size == 1) "y" else "ies"} selected.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
         )
+        libraries.forEach { lib ->
+            CheckRow(lib.name, lib.id in syncLibs) {
+                syncLibs = if (lib.id in syncLibs) syncLibs - lib.id else syncLibs + lib.id
+                save("sync.libraries", kotlinx.serialization.json.JsonArray(syncLibs.map { JsonPrimitive(it) }))
+            }
+        }
+        androidx.compose.foundation.layout.Spacer(Modifier.padding(bottom = 24.dp))
+    }
+}
+
+private val READER_MODES = listOf("auto" to "Auto", "paged" to "Paged", "continuous" to "Continuous")
+private val READER_DIRS = listOf("ltr" to "Left→Right", "rtl" to "Right→Left")
+private val READER_ZOOMS = listOf("height" to "Fit height", "width" to "Fit width", "original" to "Original")
+
+@Composable
+private fun ReaderDefaultsRows(label: String, prefs: app.kodex.client.ui.reader.ReaderPrefs, onChange: (app.kodex.client.ui.reader.ReaderPrefs) -> Unit) {
+    Text(label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 16.dp, top = 6.dp))
+    PickerRow("Mode", READER_MODES, prefs.mode) { onChange(prefs.copy(mode = it)) }
+    PickerRow("Direction", READER_DIRS, prefs.direction) { onChange(prefs.copy(direction = it)) }
+    PickerRow("Zoom", READER_ZOOMS, prefs.zoom) { onChange(prefs.copy(zoom = it)) }
+}
+
+@Composable
+private fun PickerRow(label: String, options: List<Pair<String, String>>, current: String, onSelect: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Row(
+        Modifier.fillMaxWidth().padding(start = 32.dp, end = 16.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+        Box {
+            TextButton(onClick = { open = true }) { Text(options.firstOrNull { it.first == current }?.second ?: current) }
+            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                options.forEach { (value, text) ->
+                    DropdownMenuItem(text = { Text(text) }, onClick = { open = false; onSelect(value) })
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CheckRow(label: String, checked: Boolean, onToggle: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onToggle() }.padding(horizontal = 16.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(checked = checked, onCheckedChange = { onToggle() })
+        Text(label, style = MaterialTheme.typography.bodyMedium)
     }
 }
 

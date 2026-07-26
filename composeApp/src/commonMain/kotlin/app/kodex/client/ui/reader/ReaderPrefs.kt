@@ -78,6 +78,10 @@ suspend fun saveReaderOverride(api: KodexApi, baseUrl: String, apiKey: String, k
     api.saveUserSetting(baseUrl, apiKey, key, prefsJson.encodeToJsonElement(prefs))
 }
 
+/** The user's default prefs for a kind, parsed from an already-fetched settings object (no request). */
+fun parseReaderDefault(settings: JsonObject, kind: String): ReaderPrefs =
+    settings.prefsAt(defaultKey(kind), kind) ?: defaultReaderPrefs(kind)
+
 /** Save the current prefs as the user-wide default for this kind. */
 suspend fun saveReaderDefault(api: KodexApi, baseUrl: String, apiKey: String, kind: String, prefs: ReaderPrefs) {
     api.saveUserSetting(baseUrl, apiKey, defaultKey(kind), prefsJson.encodeToJsonElement(prefs))

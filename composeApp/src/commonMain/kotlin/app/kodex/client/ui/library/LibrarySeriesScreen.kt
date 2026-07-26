@@ -5,9 +5,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -28,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -40,9 +44,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
 import app.kodex.client.data.AppSettings
+import app.kodex.client.network.CategoryDto
 import app.kodex.client.network.KodexApi
 import app.kodex.client.network.LibraryDto
 import app.kodex.client.network.SeriesDto
+import app.kodex.client.network.SeriesGroupCount
 import app.kodex.client.network.ServerEvent
 import app.kodex.client.ui.EmptyMessage
 import app.kodex.client.ui.LoadedContent
@@ -92,6 +98,17 @@ fun LibrarySeriesScreen(
     var readFilter by remember { mutableStateOf(READ_FILTERS.first()) }
     var reloadTick by remember { mutableIntStateOf(0) }
     var sheetOpen by remember { mutableStateOf(false) }
+    var selectedStatus by remember { mutableStateOf<String?>(null) }
+    var selectedCategory by remember { mutableStateOf<String?>(null) }
+    var groups by remember { mutableStateOf<List<SeriesGroupCount>>(emptyList()) }
+    var categories by remember { mutableStateOf<List<CategoryDto>>(emptyList()) }
+
+    // Live per-status counts (grouping tabs) + WEB categories.
+    LaunchedEffect(library.id, server?.id, reloadTick) {
+        val s = server ?: return@LaunchedEffect
+        groups = runCatching { api.seriesGroups(s.baseUrl, s.apiKey, "status", library.id) }.getOrDefault(emptyList()).filter { it.count > 0 }
+        categories = if (library.isWeb) runCatching { api.categories(s.baseUrl, s.apiKey) }.getOrDefault(emptyList()) else emptyList()
+    }
 
     // A finished scan of THIS library means the series list changed → reload.
     OnServerEvent(ServerEvent.LIBRARY_SCAN_COMPLETED) { e ->
@@ -122,21 +139,38 @@ fun LibrarySeriesScreen(
             )
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
-            LoadedContent(
-                key = listOf(library.id, server?.id, sort, readFilter.value, reloadTick),
-                load = {
-                    val s = server!!
-                    api.seriesInLibrary(s.baseUrl, s.apiKey, library.id, sort.expr, readFilter.value)
-                },
-            ) { series ->
-                val s = server
-                when {
-                    series.isEmpty() -> EmptyMessage(
-                        if (readFilter.value != null) "No ${readFilter.label.lowercase()} series." else "No series in this library yet.",
-                    )
-                    s != null && gridView -> SeriesGrid(s.baseUrl, s.apiKey, series, onOpenSeries)
-                    s != null -> SeriesListView(s.baseUrl, s.apiKey, series, onOpenSeries)
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            if (groups.isNotEmpty() || categories.isNotEmpty()) {
+                GroupChips(
+                    statuses = groups,
+                    selectedStatus = selectedStatus,
+                    onStatus = { selectedStatus = it; selectedCategory = null },
+                    categories = categories,
+                    selectedCategory = selectedCategory,
+                    onCategory = { selectedCategory = it; selectedStatus = null },
+                )
+            }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                LoadedContent(
+                    key = listOf(library.id, server?.id, sort, readFilter.value, selectedStatus, selectedCategory, reloadTick),
+                    load = {
+                        val s = server!!
+                        api.querySeries(
+                            s.baseUrl, s.apiKey,
+                            libraryId = library.id,
+                            sort = sort.expr,
+                            readingStatuses = readFilter.value?.let { listOf(it) } ?: emptyList(),
+                            statuses = selectedStatus?.let { listOf(it) } ?: emptyList(),
+                            categoryIds = selectedCategory?.let { listOf(it) } ?: emptyList(),
+                        )
+                    },
+                ) { series ->
+                    val s = server
+                    when {
+                        series.isEmpty() -> EmptyMessage("No series match this filter.")
+                        s != null && gridView -> SeriesGrid(s.baseUrl, s.apiKey, series, onOpenSeries)
+                        s != null -> SeriesListView(s.baseUrl, s.apiKey, series, onOpenSeries)
+                    }
                 }
             }
         }
@@ -186,6 +220,52 @@ fun LibrarySeriesScreen(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+/** Horizontally-scrolling status group chips (+ WEB category chips) above the grid. */
+@Composable
+private fun GroupChips(
+    statuses: List<SeriesGroupCount>,
+    selectedStatus: String?,
+    onStatus: (String?) -> Unit,
+    categories: List<CategoryDto>,
+    selectedCategory: String?,
+    onCategory: (String?) -> Unit,
+) {
+    if (statuses.isNotEmpty()) {
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            item {
+                FilterChip(selected = selectedStatus == null, onClick = { onStatus(null) }, label = { Text("All") })
+            }
+            items(statuses, key = { it.key }) { g ->
+                FilterChip(
+                    selected = selectedStatus == g.key,
+                    onClick = { onStatus(if (selectedStatus == g.key) null else g.key) },
+                    label = { Text("${g.key.lowercase().replace('_', ' ').replaceFirstChar { it.uppercase() }} (${g.count})") },
+                )
+            }
+        }
+    }
+    if (categories.isNotEmpty()) {
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            item {
+                FilterChip(selected = selectedCategory == null, onClick = { onCategory(null) }, label = { Text("All categories") })
+            }
+            items(categories, key = { it.id }) { c ->
+                FilterChip(
+                    selected = selectedCategory == c.id,
+                    onClick = { onCategory(if (selectedCategory == c.id) null else c.id) },
+                    label = { Text("${c.name} (${c.seriesCount})") },
+                )
             }
         }
     }
