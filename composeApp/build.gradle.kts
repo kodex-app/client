@@ -93,7 +93,23 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // Stable signing key for the debug/nightly APK so a new nightly installs over a previous one
+    // (Android rejects an update whose signature differs from the installed app). The default debug
+    // keystore is regenerated per CI run, which is exactly what caused the "signatures don't match"
+    // failure — so we ship a fixed keystore. This is a throwaway nightly key, not a release key.
+    signingConfigs {
+        create("nightly") {
+            storeFile = rootProject.file("keystore/nightly.jks")
+            storePassword = "kodexnightly"
+            keyAlias = "nightly"
+            keyPassword = "kodexnightly"
+        }
+    }
+
     buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("nightly")
+        }
         getByName("release") {
             isMinifyEnabled = false
         }
