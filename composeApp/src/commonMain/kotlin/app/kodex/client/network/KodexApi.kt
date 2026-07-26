@@ -73,6 +73,14 @@ class KodexApi(private val client: HttpClient) {
             parameter("size", HOME_ROW_SIZE)
         }.body<PageResponse<BookDto>>().content
 
+    /** A larger page of books by [sort] — backs Home's "See all" for a book rail. */
+    suspend fun booksList(baseUrl: String, apiKey: String, sort: String, size: Int = 300): List<BookDto> =
+        client.get("$baseUrl/api/v1/books") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("sort", sort)
+            parameter("size", size)
+        }.body<PageResponse<BookDto>>().content
+
     /** Most recently added series. */
     suspend fun recentSeries(baseUrl: String, apiKey: String): List<SeriesDto> =
         series(baseUrl, apiKey, sort = "createdDate,desc")

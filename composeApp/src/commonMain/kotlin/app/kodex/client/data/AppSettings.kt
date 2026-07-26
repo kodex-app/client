@@ -30,6 +30,18 @@ class AppSettings(private val settings: Settings = Settings()) {
     private val _libraryGridView = MutableStateFlow(settings.getBoolean(KEY_LIBRARY_GRID, true))
     val libraryGridView: StateFlow<Boolean> = _libraryGridView.asStateFlow()
 
+    /** Global incognito reading: when on, no reader saves progress/history. */
+    private val _incognito = MutableStateFlow(settings.getBoolean(KEY_INCOGNITO, false))
+    val incognitoMode: StateFlow<Boolean> = _incognito.asStateFlow()
+
+    /** Favourited content-source ids (Browse quick access). */
+    private val _favoriteSources = MutableStateFlow(readList(KEY_FAV_SOURCES).toSet())
+    val favoriteSources: StateFlow<Set<String>> = _favoriteSources.asStateFlow()
+
+    /** Most-recently-opened source ids, newest first (capped). */
+    private val _recentSources = MutableStateFlow(readList(KEY_RECENT_SOURCES))
+    val recentSources: StateFlow<List<String>> = _recentSources.asStateFlow()
+
     fun setThemeMode(value: ThemeMode) {
         settings.putString(KEY_MODE, value.name); _themeMode.value = value
     }
@@ -50,6 +62,23 @@ class AppSettings(private val settings: Settings = Settings()) {
         settings.putBoolean(KEY_LIBRARY_GRID, value); _libraryGridView.value = value
     }
 
+    fun setIncognitoMode(value: Boolean) {
+        settings.putBoolean(KEY_INCOGNITO, value); _incognito.value = value
+    }
+
+    fun toggleFavoriteSource(id: String) {
+        val next = if (id in _favoriteSources.value) _favoriteSources.value - id else _favoriteSources.value + id
+        settings.putString(KEY_FAV_SOURCES, next.joinToString(",")); _favoriteSources.value = next
+    }
+
+    fun pushRecentSource(id: String) {
+        val next = (listOf(id) + _recentSources.value.filter { it != id }).take(RECENT_CAP)
+        settings.putString(KEY_RECENT_SOURCES, next.joinToString(",")); _recentSources.value = next
+    }
+
+    private fun readList(key: String): List<String> =
+        settings.getStringOrNull(key)?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
+
     private inline fun <reified T : Enum<T>> readEnum(key: String, values: List<T>, fallback: T): T {
         val stored = settings.getStringOrNull(key) ?: return fallback
         return values.firstOrNull { it.name == stored } ?: fallback
@@ -61,5 +90,9 @@ class AppSettings(private val settings: Settings = Settings()) {
         const val KEY_AMOLED = "appearance.amoled"
         const val KEY_DYNAMIC = "appearance.dynamicColor"
         const val KEY_LIBRARY_GRID = "library.gridView"
+        const val KEY_INCOGNITO = "reader.incognito"
+        const val KEY_FAV_SOURCES = "browse.favoriteSources"
+        const val KEY_RECENT_SOURCES = "browse.recentSources"
+        const val RECENT_CAP = 8
     }
 }

@@ -148,15 +148,24 @@ fun <T> CoverSection(
     title: String,
     items: List<T>,
     key: (T) -> Any,
+    onSeeAll: (() -> Unit)? = null,
     card: @Composable (T) -> Unit,
 ) {
     Column {
-        Text(
-            title,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-        )
+        androidx.compose.foundation.layout.Row(
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+            if (onSeeAll != null) {
+                androidx.compose.material3.TextButton(onClick = onSeeAll) { Text("See all") }
+            }
+        }
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),

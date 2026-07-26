@@ -17,6 +17,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -46,9 +48,14 @@ import app.kodex.client.ui.EmptyMessage
 import app.kodex.client.ui.LoadedContent
 import app.kodex.client.ui.collectAsStateSafe
 
-/** Browse installed content sources, grouped by language, with a name filter. Tap one to open its feed. */
+/** Browse installed content sources — favourites + recents on top, grouped by language, with filters. */
 @Composable
-fun BrowseTab(session: SessionManager, api: KodexApi, onOpenSource: (SourceDescriptor, String) -> Unit) {
+fun BrowseTab(
+    session: SessionManager,
+    api: KodexApi,
+    appSettings: app.kodex.client.data.AppSettings,
+    onOpenSource: (SourceDescriptor, String) -> Unit,
+) {
     val server by session.activeServer.collectAsStateSafe()
 
     LoadedContent(
@@ -58,16 +65,30 @@ fun BrowseTab(session: SessionManager, api: KodexApi, onOpenSource: (SourceDescr
         if (sources.isEmpty()) {
             EmptyMessage("No content sources installed.\nInstall a plugin on your server to browse.")
         } else {
-            SourceList(sources, onOpenSource)
+            SourceList(
+                sources = sources,
+                appSettings = appSettings,
+                onOpen = { src, feed -> appSettings.pushRecentSource(src.id); onOpenSource(src, feed) },
+            )
         }
     }
 }
 
 @Composable
-private fun SourceList(sources: List<SourceDescriptor>, onOpen: (SourceDescriptor, String) -> Unit) {
+private fun SourceList(
+    sources: List<SourceDescriptor>,
+    appSettings: app.kodex.client.data.AppSettings,
+    onOpen: (SourceDescriptor, String) -> Unit,
+) {
+    val favorites by appSettings.favoriteSources.collectAsStateSafe()
+    val recents by appSettings.recentSources.collectAsStateSafe()
     var filter by remember { mutableStateOf("") }
     var kind by remember { mutableStateOf<String?>(null) }
     var lang by remember { mutableStateOf<String?>(null) }
+
+    val byId = remember(sources) { sources.associateBy { it.id } }
+    val favoriteSources = remember(sources, favorites) { sources.filter { it.id in favorites } }
+    val recentSources = remember(sources, recents) { recents.mapNotNull { byId[it] } }
 
     val kinds = remember(sources) { sources.map { it.kind }.distinct().sorted() }
     val langs = remember(sources) {
@@ -125,27 +146,46 @@ private fun SourceList(sources: List<SourceDescriptor>, onOpen: (SourceDescripto
             }
         }
         LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
-            groups.forEach { (language, list) ->
-                item(key = "hdr-${language ?: "multi"}") {
-                    Text(
-                        languageLabel(language),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 12.dp, bottom = 8.dp),
+            fun sourceItems(list: List<SourceDescriptor>, prefix: String) {
+                items(list, key = { "$prefix-${it.id}" }) { source ->
+                    SourceRow(
+                        source = source,
+                        isFavorite = source.id in favorites,
+                        onToggleFavorite = { appSettings.toggleFavoriteSource(source.id) },
+                        onOpen = { feed -> onOpen(source, feed) },
                     )
-                }
-                items(list, key = { it.id }) { source ->
-                    SourceRow(source, onOpen = { feed -> onOpen(source, feed) })
                     Spacer(Modifier.size(10.dp))
                 }
+            }
+            if (favoriteSources.isNotEmpty()) {
+                item(key = "hdr-fav") { SourceSectionHeader("Favorites") }
+                sourceItems(favoriteSources, "fav")
+            }
+            if (recentSources.isNotEmpty()) {
+                item(key = "hdr-recent") { SourceSectionHeader("Recently used") }
+                sourceItems(recentSources, "recent")
+            }
+            groups.forEach { (language, list) ->
+                item(key = "hdr-${language ?: "multi"}") { SourceSectionHeader(languageLabel(language)) }
+                sourceItems(list, "grp")
             }
         }
     }
 }
 
 @Composable
-private fun SourceRow(source: SourceDescriptor, onOpen: (String) -> Unit) {
+private fun SourceSectionHeader(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 12.dp, bottom = 8.dp),
+    )
+}
+
+@Composable
+private fun SourceRow(source: SourceDescriptor, isFavorite: Boolean, onToggleFavorite: () -> Unit, onOpen: (String) -> Unit) {
     Card(onClick = { onOpen("popular") }, modifier = Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
@@ -156,9 +196,16 @@ private fun SourceRow(source: SourceDescriptor, onOpen: (String) -> Unit) {
             Column(Modifier.weight(1f)) {
                 Text(source.displayName, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (source.adultContent) { Chip("18+"); Spacer(Modifier.size(6.dp)) }
-                    Chip(source.kind)
+                    if (source.adultContent) { app.kodex.client.ui.catalog.ColorBadge("18+"); Spacer(Modifier.size(6.dp)) }
+                    app.kodex.client.ui.catalog.ColorBadge(source.kind)
                 }
+            }
+            IconButton(onClick = onToggleFavorite) {
+                Icon(
+                    Icons.Filled.Star,
+                    contentDescription = if (isFavorite) "Unfavorite" else "Favorite",
+                    tint = if (isFavorite) androidx.compose.ui.graphics.Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                )
             }
             // Direct entry into the source's Latest feed (when supported).
             if (source.supportsLatest) {

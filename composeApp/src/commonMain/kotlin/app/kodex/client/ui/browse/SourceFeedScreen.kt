@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -203,6 +204,14 @@ fun SourceFeedScreen(
                 },
             )
         },
+        floatingActionButton = {
+            val filterCount = appliedFilters.filters.count { it.isActive() }
+            androidx.compose.material3.ExtendedFloatingActionButton(
+                onClick = { openFilters() },
+                icon = { Icon(app.kodex.client.ui.icons.FilterIcon, contentDescription = null) },
+                text = { Text(if (filterCount > 0) "Filter ($filterCount)" else "Filter") },
+            )
+        },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             Row(
@@ -221,12 +230,6 @@ fun SourceFeedScreen(
                         label = { Text(if (query.isNotBlank()) "\"$query\"  ✕" else "Filtered  ✕") },
                     )
                 }
-                val filterCount = appliedFilters.filters.count { it.isActive() }
-                FilterChip(
-                    selected = filterCount > 0,
-                    onClick = { openFilters() },
-                    label = { Text(if (filterCount > 0) "Filters ($filterCount)" else "Filters") },
-                )
             }
 
             Box(Modifier.fillMaxSize()) {
@@ -251,12 +254,14 @@ fun SourceFeedScreen(
     if (filterSheetOpen) {
         FilterSheet(
             filters = loadedFilters,
+            initialQuery = query,
             onDismiss = { filterSheetOpen = false },
             onReset = { loadedFilters = loadedFilters?.map { it.reset() } },
-            onApply = { edited ->
+            onApply = { edited, q ->
                 filterSheetOpen = false
                 loadedFilters = edited
                 appliedFilters = FilterListDto(edited)
+                query = q
                 submitSearch()
             },
         )
@@ -264,33 +269,69 @@ fun SourceFeedScreen(
 }
 
 // ── Filter sheet ─────────────────────────────────────────────────────────────────────────────────
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun FilterSheet(
     filters: List<SourceFilter>?,
+    initialQuery: String,
     onDismiss: () -> Unit,
     onReset: () -> Unit,
-    onApply: (List<SourceFilter>) -> Unit,
+    onApply: (List<SourceFilter>, String) -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         if (filters == null) {
             Box(Modifier.fillMaxWidth().padding(48.dp), Alignment.Center) { CircularProgressIndicator() }
             return@ModalBottomSheet
         }
         val working = remember(filters) { filters.toMutableStateList() }
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(16.dp)) {
-            Text("Filters", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            androidx.compose.foundation.layout.Spacer(Modifier.size(8.dp))
-            working.forEachIndexed { i, f ->
-                FilterControl(f) { working[i] = it }
+        var query by remember(initialQuery) { mutableStateOf(initialQuery) }
+
+        Column(Modifier.fillMaxWidth().imePadding().padding(horizontal = 16.dp)) {
+            Text("Filter", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp))
+
+            // A search box that applies together with the filters below.
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                label = { Text("Search this source") },
+                singleLine = true,
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            // Active filters shown as removable badges (a quick view of what's applied).
+            val activeChips = working.toList().filterIndexed { _, f -> f.isActive() }
+            if (activeChips.isNotEmpty()) {
+                androidx.compose.foundation.layout.FlowRow(
+                    Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    working.forEachIndexed { i, f ->
+                        if (f.isActive()) {
+                            androidx.compose.material3.InputChip(
+                                selected = true,
+                                onClick = { working[i] = f.reset() },
+                                label = { Text(f.name, maxLines = 1) },
+                                trailingIcon = { Icon(Icons.Filled.Close, contentDescription = "Remove", modifier = Modifier.size(16.dp)) },
+                            )
+                        }
+                    }
+                }
             }
-            androidx.compose.foundation.layout.Spacer(Modifier.size(16.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onReset, modifier = Modifier.weight(1f)) { Text("Reset") }
-                Button(onClick = { onApply(working.toList()) }, modifier = Modifier.weight(1f)) { Text("Apply") }
+
+            // Scrollable filter body — capped so the footer stays visible in the half-height sheet.
+            Column(Modifier.fillMaxWidth().heightIn(max = 340.dp).verticalScroll(rememberScrollState()).padding(top = 8.dp)) {
+                working.forEachIndexed { i, f ->
+                    FilterControl(f) { working[i] = it }
+                }
             }
-            androidx.compose.foundation.layout.Spacer(Modifier.size(12.dp))
+
+            // Fixed footer.
+            Row(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { query = ""; onReset() }, modifier = Modifier.weight(1f)) { Text("Reset") }
+                Button(onClick = { onApply(working.toList(), query) }, modifier = Modifier.weight(1f)) { Text("Apply") }
+            }
         }
     }
 }

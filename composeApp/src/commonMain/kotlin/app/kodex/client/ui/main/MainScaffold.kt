@@ -37,6 +37,7 @@ import app.kodex.client.auth.SessionManager
 import app.kodex.client.data.AppSettings
 import app.kodex.client.network.KodexApi
 import app.kodex.client.platform.AppBackHandler
+import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.search.SearchScreen
 
 /** The five destinations of the main bottom navigation. */
@@ -54,6 +55,7 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
     var tab by remember { mutableStateOf(BottomTab.Home) }
     var searchOpen by remember { mutableStateOf(false) }
     val backStack = remember { mutableStateListOf<DetailRoute>() }
+    val incognito by appSettings.incognitoMode.collectAsStateSafe()
 
     val openSeries: (String) -> Unit = { backStack.add(DetailRoute.SeriesDetail(it)) }
     val openBook: (String) -> Unit = { backStack.add(DetailRoute.BookDetail(it)) }
@@ -87,10 +89,10 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
             onOpenSeries = openSeries,
             onOpenBook = openBook,
             onOpenSourceSeries = { source, seed -> backStack.add(DetailRoute.SourceSeries(source, seed)) },
-            onOpenReader = { backStack.add(DetailRoute.Reader(it)) },
-            onOpenReaderAt = { bookId, page -> backStack.add(DetailRoute.Reader(bookId, page)) },
+            onOpenReader = { backStack.add(DetailRoute.Reader(it, incognito = incognito)) },
+            onOpenReaderAt = { bookId, page -> backStack.add(DetailRoute.Reader(bookId, page, incognito = incognito)) },
             onOpenSourceReader = { providerId, chapterId, seriesId, chapterName ->
-                backStack.add(DetailRoute.SourceReader(providerId, chapterId, seriesId, chapterName))
+                backStack.add(DetailRoute.SourceReader(providerId, chapterId, seriesId, chapterName, incognito = incognito))
             },
             onOpenReaderIncognito = { backStack.add(DetailRoute.Reader(it, incognito = true)) },
             onOpenSourceReaderIncognito = { providerId, chapterId, seriesId, chapterName ->
@@ -135,19 +137,21 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
                     session, api,
                     onOpenBook = { openBook(it.id) },
                     onOpenSeries = { openSeries(it.id) },
+                    onSeeAll = { kind -> backStack.add(DetailRoute.SeeAll(kind)) },
                 )
                 BottomTab.Libraries -> LibrariesTab(session, api, onOpenLibrary = { backStack.add(DetailRoute.LibrarySeries(it)) })
                 BottomTab.Recents -> RecentsTab(
                     session, api,
-                    onOpenReader = { backStack.add(DetailRoute.Reader(it)) },
+                    onOpenReader = { backStack.add(DetailRoute.Reader(it, incognito = incognito)) },
                     onOpenSourceReader = { providerId, chapterId, seriesId, chapterName ->
-                        backStack.add(DetailRoute.SourceReader(providerId, chapterId, seriesId, chapterName))
+                        backStack.add(DetailRoute.SourceReader(providerId, chapterId, seriesId, chapterName, incognito = incognito))
                     },
                     onOpenSeries = openSeries,
                 )
-                BottomTab.Browse -> BrowseTab(session, api, onOpenSource = { src, feed -> backStack.add(DetailRoute.SourceFeed(src, feed)) })
+                BottomTab.Browse -> BrowseTab(session, api, appSettings, onOpenSource = { src, feed -> backStack.add(DetailRoute.SourceFeed(src, feed)) })
                 BottomTab.More -> MoreTab(
                     session,
+                    appSettings,
                     onOpenDownloads = { backStack.add(DetailRoute.Downloads) },
                     onOpenSettings = { backStack.add(DetailRoute.Settings) },
                     onOpenAppearance = { backStack.add(DetailRoute.Appearance) },

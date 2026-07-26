@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -242,12 +243,14 @@ private fun FacetSheet(
     onClear: () -> Unit,
     onApply: (Facets) -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     var working by remember(facets) { mutableStateOf(facets) }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp)) {
-            Text("Filter", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+            Text("Filter", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 4.dp))
+            // Scrollable filter body — capped so the fixed footer stays visible in the half-height sheet.
+            Column(Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
 
             FacetGroup("Reading status", READING_STATUSES.map { it.first }, working.readingStatuses,
                 labelOf = { v -> READING_STATUSES.first { it.first == v }.second },
@@ -271,14 +274,15 @@ private fun FacetSheet(
                     labelOf = { id -> vocab.labels.first { it.id == id }.name },
                     onToggle = { working = working.copy(labelIds = working.labelIds.toggle(it)) })
             }
+            } // ── end scrollable body; footer below stays fixed ──
 
-            Column(Modifier.padding(top = 16.dp)) {
-                androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { working = Facets(); onClear() }, modifier = Modifier.weight(1f)) { Text("Clear") }
-                    Button(onClick = { onApply(working) }, modifier = Modifier.weight(1f)) { Text("Apply") }
-                }
+            androidx.compose.foundation.layout.Row(
+                Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(onClick = { working = Facets(); onClear() }, modifier = Modifier.weight(1f)) { Text("Clear") }
+                Button(onClick = { onApply(working) }, modifier = Modifier.weight(1f)) { Text("Apply") }
             }
-            androidx.compose.foundation.layout.Spacer(Modifier.size(12.dp))
         }
     }
 }

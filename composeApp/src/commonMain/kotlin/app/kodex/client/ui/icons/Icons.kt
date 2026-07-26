@@ -1,0 +1,88 @@
+package app.kodex.client.ui.icons
+
+import androidx.compose.material.icons.materialIcon
+import androidx.compose.material.icons.materialPath
+import androidx.compose.ui.graphics.vector.ImageVector
+
+/** Material "file_download" glyph — not in material-icons-core, so defined here. */
+val DownloadIcon: ImageVector = materialIcon(name = "Filled.Download") {
+    materialPath {
+        moveTo(19f, 9f)
+        horizontalLineToRelative(-4f)
+        verticalLineTo(3f)
+        horizontalLineTo(9f)
+        verticalLineToRelative(6f)
+        horizontalLineTo(5f)
+        lineToRelative(7f, 7f)
+        lineToRelative(7f, -7f)
+        close()
+        moveTo(5f, 18f)
+        verticalLineToRelative(2f)
+        horizontalLineToRelative(14f)
+        verticalLineToRelative(-2f)
+        horizontalLineTo(5f)
+        close()
+    }
+}
+
+/** Material "filter_list" (funnel) glyph for the filter button. */
+val FilterIcon: ImageVector = materialIcon(name = "Filled.FilterList") {
+    materialPath {
+        moveTo(10f, 18f)
+        horizontalLineToRelative(4f)
+        verticalLineToRelative(-2f)
+        horizontalLineToRelative(-4f)
+        verticalLineToRelative(2f)
+        close()
+        moveTo(3f, 6f)
+        verticalLineToRelative(2f)
+        horizontalLineToRelative(18f)
+        verticalLineTo(6f)
+        horizontalLineTo(3f)
+        close()
+        moveTo(6f, 13f)
+        horizontalLineToRelative(12f)
+        verticalLineToRelative(-2f)
+        horizontalLineTo(6f)
+        verticalLineToRelative(2f)
+        close()
+    }
+}
+
+/** Material "visibility_off" (incognito-ish) glyph for the incognito toggle. */
+val IncognitoIcon: ImageVector = materialIcon(name = "Filled.VisibilityOff") {
+    materialPath {
+        moveTo(12f, 7f)
+        curveToRelative(2.76f, 0f, 5f, 2.24f, 5f, 5f)
+        curveToRelative(0f, 0.65f, -0.13f, 1.26f, -0.36f, 1.83f)
+        lineToRelative(2.92f, 2.92f)
+        curveToRelative(1.51f, -1.26f, 2.7f, -2.89f, 3.43f, -4.75f)
+        curveToRelative(-1.73f, -4.39f, -6f, -7.5f, -11f, -7.5f)
+        curveToRelative(-1.4f, 0f, -2.74f, 0.25f, -3.98f, 0.7f)
+        lineToRelative(2.16f, 2.16f)
+        curveTo(10.74f, 7.13f, 11.35f, 7f, 12f, 7f)
+        close()
+        moveTo(2f, 4.27f)
+        lineToRelative(2.28f, 2.28f)
+        lineToRelative(0.46f, 0.46f)
+        curveTo(3.08f, 8.3f, 1.78f, 10.02f, 1f, 12f)
+        curveToRelative(1.73f, 4.39f, 6f, 7.5f, 11f, 7.5f)
+        curveToRelative(1.55f, 0f, 3.03f, -0.3f, 4.38f, -0.84f)
+        lineToRelative(0.42f, 0.42f)
+        lineTo(19.73f, 22f)
+        lineTo(21f, 20.73f)
+        lineTo(3.27f, 3f)
+        lineTo(2f, 4.27f)
+        close()
+        moveTo(7.53f, 9.8f)
+        lineToRelative(1.55f, 1.55f)
+        curveToRelative(-0.05f, 0.21f, -0.08f, 0.43f, -0.08f, 0.65f)
+        curveToRelative(0f, 1.66f, 1.34f, 3f, 3f, 3f)
+        curveToRelative(0.22f, 0f, 0.44f, -0.03f, 0.65f, -0.08f)
+        lineToRelative(1.55f, 1.55f)
+        curveToRelative(-0.67f, 0.33f, -1.41f, 0.53f, -2.2f, 0.53f)
+        curveToRelative(-2.76f, 0f, -5f, -2.24f, -5f, -5f)
+        curveToRelative(0f, -0.79f, 0.2f, -1.53f, 0.53f, -2.2f)
+        close()
+    }
+}

@@ -43,6 +43,7 @@ import app.kodex.client.ui.collectAsStateSafe
 @Composable
 fun MoreTab(
     session: SessionManager,
+    appSettings: app.kodex.client.data.AppSettings,
     onOpenDownloads: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenAppearance: () -> Unit,
@@ -53,12 +54,13 @@ fun MoreTab(
 ) {
     val server by session.activeServer.collectAsStateSafe()
     val user by session.currentUser.collectAsStateSafe()
+    val incognito by appSettings.incognitoMode.collectAsStateSafe()
     val isManager = user?.let { it.isAdmin || it.isManager } == true
     val isAdmin = user?.isAdmin == true
 
     Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Card(Modifier.fillMaxWidth()) {
             Row(
@@ -100,9 +102,22 @@ fun MoreTab(
             }
         }
 
+        // Global incognito reading toggle — when on, no reader saves progress or history.
+        Card(Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(app.kodex.client.ui.icons.IncognitoIcon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(16.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Incognito mode", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                    Text("Don't save reading progress or history", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                androidx.compose.material3.Switch(checked = incognito, onCheckedChange = { appSettings.setIncognitoMode(it) })
+            }
+        }
+
         Card(Modifier.fillMaxWidth()) {
             Column {
-                HubRow(Icons.Filled.Settings, "Downloads", "Active and finished chapter downloads", onOpenDownloads)
+                HubRow(app.kodex.client.ui.icons.DownloadIcon, "Downloads", "Active and finished chapter downloads", onOpenDownloads)
                 HorizontalDivider(Modifier.padding(start = 56.dp))
                 HubRow(Icons.Filled.Settings, "Settings", "Series behaviour and reader defaults", onOpenSettings)
                 HorizontalDivider(Modifier.padding(start = 56.dp))

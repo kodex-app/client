@@ -65,7 +65,13 @@ private sealed interface HomeUiState {
  * error (with retry), matching the web's per-query behaviour.
  */
 @Composable
-fun HomeTab(session: SessionManager, api: KodexApi, onOpenBook: (BookDto) -> Unit = {}, onOpenSeries: (SeriesDto) -> Unit = {}) {
+fun HomeTab(
+    session: SessionManager,
+    api: KodexApi,
+    onOpenBook: (BookDto) -> Unit = {},
+    onOpenSeries: (SeriesDto) -> Unit = {},
+    onSeeAll: (app.kodex.client.ui.catalog.SeeAllKind) -> Unit = {},
+) {
     val server by session.activeServer.collectAsStateSafe()
     var reloadKey by remember { mutableStateOf(0) }
     var state by remember { mutableStateOf<HomeUiState>(HomeUiState.Loading) }
@@ -124,7 +130,7 @@ fun HomeTab(session: SessionManager, api: KodexApi, onOpenBook: (BookDto) -> Uni
                     verticalArrangement = Arrangement.spacedBy(24.dp),
                 ) {
                     if (s.data.continueReading.isNotEmpty()) item {
-                        CoverSection("Continue reading", s.data.continueReading, key = { it.id }) { b ->
+                        CoverSection("Continue reading", s.data.continueReading, key = { it.id }, onSeeAll = { onSeeAll(app.kodex.client.ui.catalog.SeeAllKind.KEEP_READING) }) { b ->
                             CoverCard(
                                 coverUrl = bookCoverUrl(baseUrl, b.id),
                                 apiKey = apiKey,
@@ -136,17 +142,17 @@ fun HomeTab(session: SessionManager, api: KodexApi, onOpenBook: (BookDto) -> Uni
                         }
                     }
                     if (s.data.recentSeries.isNotEmpty()) item {
-                        CoverSection("Recent series", s.data.recentSeries, key = { it.id }) { series ->
+                        CoverSection("Recent series", s.data.recentSeries, key = { it.id }, onSeeAll = { onSeeAll(app.kodex.client.ui.catalog.SeeAllKind.RECENT_SERIES) }) { series ->
                             SeriesCard(baseUrl, apiKey, series, onOpenSeries)
                         }
                     }
                     if (s.data.updatedSeries.isNotEmpty()) item {
-                        CoverSection("Recently updated", s.data.updatedSeries, key = { it.id }) { series ->
+                        CoverSection("Recently updated", s.data.updatedSeries, key = { it.id }, onSeeAll = { onSeeAll(app.kodex.client.ui.catalog.SeeAllKind.UPDATED_SERIES) }) { series ->
                             SeriesCard(baseUrl, apiKey, series, onOpenSeries)
                         }
                     }
                     if (s.data.recentBooks.isNotEmpty()) item {
-                        CoverSection("Recently added", s.data.recentBooks, key = { it.id }) { b ->
+                        CoverSection("Recently added", s.data.recentBooks, key = { it.id }, onSeeAll = { onSeeAll(app.kodex.client.ui.catalog.SeeAllKind.RECENT_BOOKS) }) { b ->
                             CoverCard(
                                 coverUrl = bookCoverUrl(baseUrl, b.id),
                                 apiKey = apiKey,

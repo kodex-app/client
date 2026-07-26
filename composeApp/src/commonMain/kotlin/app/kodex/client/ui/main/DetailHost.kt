@@ -50,6 +50,7 @@ sealed interface DetailRoute {
     data object Libraries : DetailRoute
     data object Labels : DetailRoute
     data object Plugins : DetailRoute
+    data class SeeAll(val kind: app.kodex.client.ui.catalog.SeeAllKind) : DetailRoute
     data class Migrate(
         val seriesId: String,
         val providerId: String,
@@ -130,6 +131,13 @@ fun DetailHost(
 
         is DetailRoute.Plugins ->
             PluginsScreen(session, api, onBack)
+
+        is DetailRoute.SeeAll ->
+            app.kodex.client.ui.catalog.SeeAllScreen(
+                session, api, route.kind, onBack,
+                onOpenSeries = { onOpenSeries(it.id) },
+                onOpenBook = { onOpenBook(it.id) },
+            )
 
         is DetailRoute.Migrate ->
             MigrateScreen(session, api, route.seriesId, route.providerId, route.sourceSeriesId, route.title, onBack)
