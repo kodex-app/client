@@ -30,7 +30,7 @@ import app.kodex.client.ui.settings.SettingsScreen
  */
 sealed interface DetailRoute {
     data class LibrarySeries(val library: LibraryDto) : DetailRoute
-    data class SourceFeed(val source: SourceDescriptor) : DetailRoute
+    data class SourceFeed(val source: SourceDescriptor, val feed: String = "popular") : DetailRoute
     data class SourceSeries(val source: SourceDescriptor, val seed: SourceSearchResult) : DetailRoute
     data class SeriesDetail(val seriesId: String) : DetailRoute
     data class BookDetail(val bookId: String) : DetailRoute
@@ -80,7 +80,7 @@ fun DetailHost(
             LibrarySeriesScreen(session, api, appSettings, route.library, onBack, onOpenSeries = { onOpenSeries(it.id) })
 
         is DetailRoute.SourceFeed ->
-            SourceFeedScreen(session, api, route.source, onBack, onOpenSourceSeries = { onOpenSourceSeries(route.source, it) })
+            SourceFeedScreen(session, api, route.source, onBack, onOpenSourceSeries = { onOpenSourceSeries(route.source, it) }, initialFeed = route.feed)
 
         is DetailRoute.SourceSeries ->
             SourceSeriesScreen(session, api, route.source, route.seed, onBack)

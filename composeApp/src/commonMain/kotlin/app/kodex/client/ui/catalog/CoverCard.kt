@@ -2,6 +2,7 @@ package app.kodex.client.ui.catalog
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -17,6 +18,9 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -58,6 +62,7 @@ fun CoverImage(url: String, apiKey: String, modifier: Modifier = Modifier) {
  * Poster-style card: cover (2:3), optional unread badge, title (2 lines), subtitle. Pass a non-null
  * [width] for horizontal rails; pass null to fill the width the parent gives (e.g. a grid cell).
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun CoverCard(
     coverUrl: String,
@@ -68,19 +73,35 @@ fun CoverCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     width: Dp? = CardWidth,
+    onLongClick: (() -> Unit)? = null,
+    selected: Boolean = false,
 ) {
     val sizing = if (width != null) Modifier.width(width) else Modifier.fillMaxWidth()
-    Column(modifier.then(sizing).clickable(onClick = onClick)) {
+    val clickModifier = if (onLongClick != null) {
+        Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+    } else {
+        Modifier.clickable(onClick = onClick)
+    }
+    Column(modifier.then(sizing).then(clickModifier)) {
         Box(
             Modifier
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f)
                 .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+                .background(if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant),
         ) {
             CoverImage(coverUrl, apiKey, Modifier.fillMaxSize())
             if (unread != null && unread > 0) {
                 UnreadBadge(unread, Modifier.align(Alignment.TopEnd).padding(6.dp))
+            }
+            if (selected) {
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)))
+                Icon(
+                    Icons.Filled.Check,
+                    contentDescription = "Selected",
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.align(Alignment.TopStart).padding(6.dp),
+                )
             }
         }
         Spacer(Modifier.height(8.dp))

@@ -21,6 +21,7 @@ fun SeriesGrid(
     series: List<SeriesDto>,
     onOpen: (SeriesDto) -> Unit,
     modifier: Modifier = Modifier,
+    selection: app.kodex.client.ui.SelectionState<String>? = null,
 ) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(112.dp),
@@ -36,8 +37,10 @@ fun SeriesGrid(
                 title = s.title,
                 subtitle = seriesSubtitle(s),
                 unread = seriesUnreadBadge(s),
-                onClick = { onOpen(s) },
+                onClick = { if (selection?.active == true) selection.toggle(s.id) else onOpen(s) },
                 width = null,
+                onLongClick = if (selection != null) ({ selection.toggle(s.id) }) else null,
+                selected = selection?.isSelected(s.id) == true,
             )
         }
     }
@@ -51,6 +54,7 @@ fun SeriesListView(
     series: List<SeriesDto>,
     onOpen: (SeriesDto) -> Unit,
     modifier: Modifier = Modifier,
+    selection: app.kodex.client.ui.SelectionState<String>? = null,
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -63,7 +67,9 @@ fun SeriesListView(
                 apiKey = apiKey,
                 title = s.title,
                 subtitle = seriesSubtitle(s),
-                onClick = { onOpen(s) },
+                onClick = { if (selection?.active == true) selection.toggle(s.id) else onOpen(s) },
+                onLongClick = if (selection != null) ({ selection.toggle(s.id) }) else null,
+                selected = selection?.isSelected(s.id) == true,
                 trailing = if (unread > 0) {
                     { UnreadPill(unread) }
                 } else null,

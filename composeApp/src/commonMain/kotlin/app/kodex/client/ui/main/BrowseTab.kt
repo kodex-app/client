@@ -39,7 +39,7 @@ import app.kodex.client.ui.collectAsStateSafe
 
 /** Browse installed content sources, grouped by language, with a name filter. Tap one to open its feed. */
 @Composable
-fun BrowseTab(session: SessionManager, api: KodexApi, onOpenSource: (SourceDescriptor) -> Unit) {
+fun BrowseTab(session: SessionManager, api: KodexApi, onOpenSource: (SourceDescriptor, String) -> Unit) {
     val server by session.activeServer.collectAsStateSafe()
 
     LoadedContent(
@@ -55,7 +55,7 @@ fun BrowseTab(session: SessionManager, api: KodexApi, onOpenSource: (SourceDescr
 }
 
 @Composable
-private fun SourceList(sources: List<SourceDescriptor>, onOpen: (SourceDescriptor) -> Unit) {
+private fun SourceList(sources: List<SourceDescriptor>, onOpen: (SourceDescriptor, String) -> Unit) {
     var filter by remember { mutableStateOf("") }
     var kind by remember { mutableStateOf<String?>(null) }
 
@@ -109,7 +109,7 @@ private fun SourceList(sources: List<SourceDescriptor>, onOpen: (SourceDescripto
                     )
                 }
                 items(list, key = { it.id }) { source ->
-                    SourceRow(source, onClick = { onOpen(source) })
+                    SourceRow(source, onOpen = { feed -> onOpen(source, feed) })
                     Spacer(Modifier.size(10.dp))
                 }
             }
@@ -118,10 +118,10 @@ private fun SourceList(sources: List<SourceDescriptor>, onOpen: (SourceDescripto
 }
 
 @Composable
-private fun SourceRow(source: SourceDescriptor, onClick: () -> Unit) {
-    Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+private fun SourceRow(source: SourceDescriptor, onOpen: (String) -> Unit) {
+    Card(onClick = { onOpen("popular") }, modifier = Modifier.fillMaxWidth()) {
         Row(
-            Modifier.fillMaxWidth().padding(12.dp),
+            Modifier.fillMaxWidth().padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.primary) {
@@ -134,18 +134,17 @@ private fun SourceRow(source: SourceDescriptor, onClick: () -> Unit) {
                 }
             }
             Spacer(Modifier.size(12.dp))
-            Text(
-                source.displayName,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            if (source.adultContent) {
-                Chip("18+")
-                Spacer(Modifier.size(6.dp))
+            Column(Modifier.weight(1f)) {
+                Text(source.displayName, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (source.adultContent) { Chip("18+"); Spacer(Modifier.size(6.dp)) }
+                    Chip(source.kind)
+                }
             }
-            Chip(source.kind)
+            // Direct entry into the source's Latest feed (when supported).
+            if (source.supportsLatest) {
+                androidx.compose.material3.TextButton(onClick = { onOpen("latest") }) { Text("Latest") }
+            }
         }
     }
 }

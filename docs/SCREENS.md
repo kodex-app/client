@@ -35,8 +35,8 @@ Legend: `[x]` done · `[~]` partial (built, gaps listed) · `[ ]` not started
 
 ## Phase 1 — core consumer
 
-- [x] Recents → **Updates** (`GET /v1/updates` infinite, day-grouped, sticky headers; tap → reader if downloaded else stream) — verified live
-- [x] Recents → **History** (`GET /v1/history` infinite, day-grouped; clear today / last-7-days / all via `DELETE /v1/history`) — verified live
+- [x] Recents → **Updates / History** — switched via a bottom **floating toggle button** (was top sub-tabs); Updates day-grouped infinite feed (tap → reader/stream), History with clear today/7d/all
+- [x] Browse — source list groups by language + **kind filter** chips; each source opens Popular on tap, with a **Latest** button for direct entry to the latest feed
 - [x] **Downloads** (`GET /v1/downloads`; per-job pause/resume/retry/cancel; global cancel-all/clear/retry-failed; 2s poll — SSE later) — verified live
 - [x] **More** hub (Account card, Downloads · Settings · About rows, switch/sign-out)
 - [x] **User settings** — `series.autoUpdateOnOpen` · `series.chapterSort` · **reader defaults** (comic/pdf: mode/direction/zoom → `reader.comic`/`reader.pdf`) · **`sync.libraries`** multi-select (empty = all)
@@ -49,7 +49,7 @@ Legend: `[x]` done · `[~]` partial (built, gaps listed) · `[ ]` not started
 
 ## Phase 2 — enrich existing screens
 
-- [~] Library series list: sort · reading-status filter · grid/list toggle · refresh (SSE-reload) · **status group tabs** (`/series/groups`) · **WEB category chips** (`/categories`) — **done**; Mihon import still pending (blocked — needs source plugins)
+- [~] Library series list: sort · reading-status filter · grid/list toggle · refresh (SSE-reload) · **Group by** None/Status/Source (`/series/groups`) w/ chips · WEB category chips · **long-press multi-select** → bulk mark read/unread — **done**; Mihon import still pending (blocked — needs source plugins)
 - [x] Series detail: chapter-sort · refresh-chapters · mark series read/unread · multi-select bulk · refresh-metadata · re-analyze · bookmarks (page-jump) · **edit-metadata sheet** · **sub-series rail** · **migrate**
 - [x] Book detail: re-analyze · delete · edit-metadata sheet · bookmarks (page-jump) · **identifiers + external links** (tap to open)
 - [~] Browse: **kind filter** chips · language grouping — **done**; favorites + recents quick-access still pending

@@ -140,7 +140,7 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
                         backStack.add(DetailRoute.SourceReader(providerId, chapterId, seriesId, chapterName))
                     },
                 )
-                BottomTab.Browse -> BrowseTab(session, api, onOpenSource = { backStack.add(DetailRoute.SourceFeed(it)) })
+                BottomTab.Browse -> BrowseTab(session, api, onOpenSource = { src, feed -> backStack.add(DetailRoute.SourceFeed(src, feed)) })
                 BottomTab.More -> MoreTab(
                     session,
                     onOpenDownloads = { backStack.add(DetailRoute.Downloads) },

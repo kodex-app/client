@@ -2,6 +2,7 @@ package app.kodex.client.ui.catalog
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,6 +27,7 @@ import androidx.compose.ui.unit.dp
  * A horizontal media row — small poster thumbnail, title + subtitle, optional trailing content.
  * The card shape shared by Updates, History, and Downloads. [coverUrl] blank → just the placeholder.
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun MediaRow(
     coverUrl: String,
@@ -36,9 +38,18 @@ fun MediaRow(
     caption: String? = null,
     dimmed: Boolean = false,
     onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
+    selected: Boolean = false,
     trailing: @Composable (() -> Unit)? = null,
 ) {
-    val base = if (onClick != null) modifier.clickable(onClick = onClick) else modifier
+    val clickable = when {
+        onLongClick != null && onClick != null -> Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+        onClick != null -> Modifier.clickable(onClick = onClick)
+        else -> Modifier
+    }
+    val base = modifier
+        .then(if (selected) Modifier.background(MaterialTheme.colorScheme.primaryContainer) else Modifier)
+        .then(clickable)
     Row(
         base.padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,

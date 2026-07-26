@@ -14,6 +14,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -56,6 +58,7 @@ import app.kodex.client.ui.OnServerEvent
 import app.kodex.client.ui.catalog.SeriesGrid
 import app.kodex.client.ui.catalog.SeriesListView
 import app.kodex.client.ui.collectAsStateSafe
+import app.kodex.client.ui.rememberSelection
 import app.kodex.client.ui.rememberSnackbar
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.contentOrNull
@@ -98,21 +101,43 @@ fun LibrarySeriesScreen(
     var readFilter by remember { mutableStateOf(READ_FILTERS.first()) }
     var reloadTick by remember { mutableIntStateOf(0) }
     var sheetOpen by remember { mutableStateOf(false) }
-    var selectedStatus by remember { mutableStateOf<String?>(null) }
+    var groupBy by remember { mutableStateOf("status") } // none | status | source
+    var selectedGroup by remember { mutableStateOf<String?>(null) }
     var selectedCategory by remember { mutableStateOf<String?>(null) }
     var groups by remember { mutableStateOf<List<SeriesGroupCount>>(emptyList()) }
     var categories by remember { mutableStateOf<List<CategoryDto>>(emptyList()) }
+    var sourceNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    val selection = rememberSelection<String>()
 
-    // Live per-status counts (grouping tabs) + WEB categories.
-    LaunchedEffect(library.id, server?.id, reloadTick) {
+    // Live per-group counts + WEB categories.
+    LaunchedEffect(library.id, server?.id, reloadTick, groupBy) {
         val s = server ?: return@LaunchedEffect
-        groups = runCatching { api.seriesGroups(s.baseUrl, s.apiKey, "status", library.id) }.getOrDefault(emptyList()).filter { it.count > 0 }
+        groups = if (groupBy == "none") emptyList()
+        else runCatching { api.seriesGroups(s.baseUrl, s.apiKey, groupBy, library.id) }.getOrDefault(emptyList()).filter { it.count > 0 }
         categories = if (library.isWeb) runCatching { api.categories(s.baseUrl, s.apiKey) }.getOrDefault(emptyList()) else emptyList()
+        if (groupBy == "source" && sourceNames.isEmpty()) {
+            sourceNames = runCatching { api.contentSources(s.baseUrl, s.apiKey).associate { it.id to it.displayName } }.getOrDefault(emptyMap())
+        }
     }
+
+    // System back exits selection mode first (before leaving the screen).
+    app.kodex.client.platform.AppBackHandler(enabled = selection.active) { selection.clear() }
 
     // A finished scan of THIS library means the series list changed → reload.
     OnServerEvent(ServerEvent.LIBRARY_SCAN_COMPLETED) { e ->
         if (e.data["libraryId"]?.jsonPrimitive?.contentOrNull == library.id) reloadTick++
+    }
+
+    fun bulkMark(read: Boolean) {
+        val s = server ?: return
+        val ids = selection.selected.toList()
+        if (ids.isEmpty()) return
+        scope.launch {
+            runCatching { ids.forEach { api.markSeriesRead(s.baseUrl, s.apiKey, it, read) } }.fold(
+                onSuccess = { snackbar?.show(if (read) "Marked read" else "Marked unread"); selection.clear(); reloadTick++ },
+                onFailure = { snackbar?.show("Action failed.") },
+            )
+        }
     }
 
     fun refresh() {
@@ -127,32 +152,43 @@ fun LibrarySeriesScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(library.name, fontWeight = FontWeight.SemiBold) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
-                },
-                actions = {
-                    IconButton(onClick = { refresh() }) { Icon(Icons.Filled.Refresh, contentDescription = "Refresh") }
-                    IconButton(onClick = { sheetOpen = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "View options") }
-                },
-            )
+            if (selection.active) {
+                SelectionTopBar(
+                    count = selection.count,
+                    onClose = { selection.clear() },
+                    onMarkRead = { bulkMark(true) },
+                    onMarkUnread = { bulkMark(false) },
+                )
+            } else {
+                TopAppBar(
+                    title = { Text(library.name, fontWeight = FontWeight.SemiBold) },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                    },
+                    actions = {
+                        IconButton(onClick = { refresh() }) { Icon(Icons.Filled.Refresh, contentDescription = "Refresh") }
+                        IconButton(onClick = { sheetOpen = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "View options") }
+                    },
+                )
+            }
         },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             if (groups.isNotEmpty() || categories.isNotEmpty()) {
                 GroupChips(
-                    statuses = groups,
-                    selectedStatus = selectedStatus,
-                    onStatus = { selectedStatus = it; selectedCategory = null },
+                    groupBy = groupBy,
+                    groups = groups,
+                    sourceNames = sourceNames,
+                    selectedGroup = selectedGroup,
+                    onGroup = { selectedGroup = it; selectedCategory = null },
                     categories = categories,
                     selectedCategory = selectedCategory,
-                    onCategory = { selectedCategory = it; selectedStatus = null },
+                    onCategory = { selectedCategory = it; selectedGroup = null },
                 )
             }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 LoadedContent(
-                    key = listOf(library.id, server?.id, sort, readFilter.value, selectedStatus, selectedCategory, reloadTick),
+                    key = listOf(library.id, server?.id, sort, readFilter.value, groupBy, selectedGroup, selectedCategory, reloadTick),
                     load = {
                         val s = server!!
                         api.querySeries(
@@ -160,7 +196,8 @@ fun LibrarySeriesScreen(
                             libraryId = library.id,
                             sort = sort.expr,
                             readingStatuses = readFilter.value?.let { listOf(it) } ?: emptyList(),
-                            statuses = selectedStatus?.let { listOf(it) } ?: emptyList(),
+                            statuses = if (groupBy == "status") selectedGroup?.let { listOf(it) } ?: emptyList() else emptyList(),
+                            sources = if (groupBy == "source") selectedGroup?.let { listOf(it) } ?: emptyList() else emptyList(),
                             categoryIds = selectedCategory?.let { listOf(it) } ?: emptyList(),
                         )
                     },
@@ -168,8 +205,8 @@ fun LibrarySeriesScreen(
                     val s = server
                     when {
                         series.isEmpty() -> EmptyMessage("No series match this filter.")
-                        s != null && gridView -> SeriesGrid(s.baseUrl, s.apiKey, series, onOpenSeries)
-                        s != null -> SeriesListView(s.baseUrl, s.apiKey, series, onOpenSeries)
+                        s != null && gridView -> SeriesGrid(s.baseUrl, s.apiKey, series, onOpenSeries, selection = selection)
+                        s != null -> SeriesListView(s.baseUrl, s.apiKey, series, onOpenSeries, selection = selection)
                     }
                 }
             }
@@ -220,34 +257,72 @@ fun LibrarySeriesScreen(
                         )
                     }
                 }
+
+                SheetLabel("Group by")
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                    val opts = listOf("none" to "None", "status" to "Status", "source" to "Source")
+                    opts.forEachIndexed { i, (value, label) ->
+                        SegmentedButton(
+                            selected = groupBy == value,
+                            onClick = { groupBy = value; selectedGroup = null },
+                            shape = SegmentedButtonDefaults.itemShape(i, opts.size),
+                        ) { Text(label) }
+                    }
+                }
             }
         }
     }
 }
 
-/** Horizontally-scrolling status group chips (+ WEB category chips) above the grid. */
+/** Contextual top bar shown while series are multi-selected in the library grid. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SelectionTopBar(count: Int, onClose: () -> Unit, onMarkRead: () -> Unit, onMarkUnread: () -> Unit) {
+    var menu by remember { mutableStateOf(false) }
+    TopAppBar(
+        colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ),
+        title = { Text("$count selected", fontWeight = FontWeight.SemiBold) },
+        navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "Cancel selection") } },
+        actions = {
+            IconButton(onClick = onMarkRead) { Icon(Icons.Filled.Check, contentDescription = "Mark read") }
+            IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More") }
+            androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                androidx.compose.material3.DropdownMenuItem(text = { Text("Mark unread") }, onClick = { menu = false; onMarkUnread() })
+            }
+        },
+    )
+}
+
+/** Horizontally-scrolling group chips (status or source) + WEB category chips above the grid. */
 @Composable
 private fun GroupChips(
-    statuses: List<SeriesGroupCount>,
-    selectedStatus: String?,
-    onStatus: (String?) -> Unit,
+    groupBy: String,
+    groups: List<SeriesGroupCount>,
+    sourceNames: Map<String, String>,
+    selectedGroup: String?,
+    onGroup: (String?) -> Unit,
     categories: List<CategoryDto>,
     selectedCategory: String?,
     onCategory: (String?) -> Unit,
 ) {
-    if (statuses.isNotEmpty()) {
+    if (groups.isNotEmpty()) {
         LazyRow(
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item {
-                FilterChip(selected = selectedStatus == null, onClick = { onStatus(null) }, label = { Text("All") })
+                FilterChip(selected = selectedGroup == null, onClick = { onGroup(null) }, label = { Text("All") })
             }
-            items(statuses, key = { it.key }) { g ->
+            items(groups, key = { it.key }) { g ->
+                val label = if (groupBy == "source") sourceNames[g.key] ?: g.key
+                else g.key.lowercase().replace('_', ' ').replaceFirstChar { it.uppercase() }
                 FilterChip(
-                    selected = selectedStatus == g.key,
-                    onClick = { onStatus(if (selectedStatus == g.key) null else g.key) },
-                    label = { Text("${g.key.lowercase().replace('_', ' ').replaceFirstChar { it.uppercase() }} (${g.count})") },
+                    selected = selectedGroup == g.key,
+                    onClick = { onGroup(if (selectedGroup == g.key) null else g.key) },
+                    label = { Text("$label (${g.count})") },
                 )
             }
         }

@@ -96,12 +96,13 @@ fun SourceFeedScreen(
     source: SourceDescriptor,
     onBack: () -> Unit,
     onOpenSourceSeries: (SourceSearchResult) -> Unit = {},
+    initialFeed: String = "popular",
 ) {
     val server by session.activeServer.collectAsStateSafe()
     val scope = rememberCoroutineScope()
     val snackbar = rememberSnackbar()
 
-    var feed by remember(source.id) { mutableStateOf("popular") }
+    var feed by remember(source.id) { mutableStateOf(initialFeed) }
     var searchOpen by remember(source.id) { mutableStateOf(false) }
     var query by remember(source.id) { mutableStateOf("") }
     var searching by remember(source.id) { mutableStateOf(false) }
