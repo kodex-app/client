@@ -1,5 +1,7 @@
 package app.kodex.client.ui.main
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -10,16 +12,23 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import coil3.compose.AsyncImage
+import io.ktor.http.Url
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -58,12 +67,17 @@ fun BrowseTab(session: SessionManager, api: KodexApi, onOpenSource: (SourceDescr
 private fun SourceList(sources: List<SourceDescriptor>, onOpen: (SourceDescriptor, String) -> Unit) {
     var filter by remember { mutableStateOf("") }
     var kind by remember { mutableStateOf<String?>(null) }
+    var lang by remember { mutableStateOf<String?>(null) }
 
     val kinds = remember(sources) { sources.map { it.kind }.distinct().sorted() }
-    val groups = remember(sources, filter, kind) {
+    val langs = remember(sources) {
+        sources.mapNotNull { it.language }.distinct().sortedBy { languageLabel(it) }
+    }
+    val groups = remember(sources, filter, kind, lang) {
         val f = filter.trim().lowercase()
         val visible = sources
             .filter { kind == null || it.kind == kind }
+            .filter { lang == null || it.language == lang }
             .filter { f.isEmpty() || it.displayName.lowercase().contains(f) }
         visible
             .groupBy { it.language }
@@ -81,18 +95,31 @@ private fun SourceList(sources: List<SourceDescriptor>, onOpen: (SourceDescripto
             singleLine = true,
         )
         if (kinds.size > 1) {
-            androidx.compose.foundation.lazy.LazyRow(
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                item {
-                    androidx.compose.material3.FilterChip(selected = kind == null, onClick = { kind = null }, label = { Text("All") })
-                }
+                item { FilterChip(selected = kind == null, onClick = { kind = null }, label = { Text("All types") }) }
                 items(kinds, key = { it }) { k ->
-                    androidx.compose.material3.FilterChip(
+                    FilterChip(
                         selected = kind == k,
                         onClick = { kind = if (kind == k) null else k },
                         label = { Text(k.lowercase().replaceFirstChar { it.uppercase() }) },
+                    )
+                }
+            }
+        }
+        if (langs.size > 1) {
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                item { FilterChip(selected = lang == null, onClick = { lang = null }, label = { Text("All languages") }) }
+                items(langs, key = { it }) { l ->
+                    FilterChip(
+                        selected = lang == l,
+                        onClick = { lang = if (lang == l) null else l },
+                        label = { Text(languageLabel(l)) },
                     )
                 }
             }
@@ -124,15 +151,7 @@ private fun SourceRow(source: SourceDescriptor, onOpen: (String) -> Unit) {
             Modifier.fillMaxWidth().padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.primary) {
-                Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
-                    Text(
-                        source.displayName.firstOrNull()?.uppercase() ?: "?",
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-            }
+            SourceAvatar(source)
             Spacer(Modifier.size(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(source.displayName, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -143,10 +162,46 @@ private fun SourceRow(source: SourceDescriptor, onOpen: (String) -> Unit) {
             }
             // Direct entry into the source's Latest feed (when supported).
             if (source.supportsLatest) {
-                androidx.compose.material3.TextButton(onClick = { onOpen("latest") }) { Text("Latest") }
+                TextButton(onClick = { onOpen("latest") }) { Text("Latest") }
             }
         }
     }
+}
+
+/**
+ * The source's "logo": its website favicon (via Google's favicon service, matching the web UI), with
+ * a coloured initial as the fallback when the source has no website / the favicon fails to load.
+ */
+@Composable
+private fun SourceAvatar(source: SourceDescriptor) {
+    val fav = remember(source.website) { faviconUrl(source.website) }
+    Box(
+        Modifier.size(40.dp).clip(RoundedCornerShape(10.dp))
+            .background(if (fav != null) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primary),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (fav != null) {
+            AsyncImage(
+                model = fav,
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.size(28.dp),
+            )
+        } else {
+            Text(
+                source.displayName.firstOrNull()?.uppercase() ?: "?",
+                color = MaterialTheme.colorScheme.onPrimary,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    }
+}
+
+/** A source's favicon URL via Google's favicon service, or null when it has no website. */
+private fun faviconUrl(website: String?): String? {
+    if (website.isNullOrBlank()) return null
+    val host = runCatching { Url(website).host }.getOrNull()?.takeIf { it.isNotBlank() } ?: return null
+    return "https://www.google.com/s2/favicons?sz=64&domain=$host"
 }
 
 @Composable

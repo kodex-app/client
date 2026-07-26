@@ -36,7 +36,7 @@ Legend: `[x]` done · `[~]` partial (built, gaps listed) · `[ ]` not started
 ## Phase 1 — core consumer
 
 - [x] Recents → **Updates / History** — switched via a bottom **floating toggle button** (was top sub-tabs); Updates day-grouped infinite feed (tap → reader/stream), History with clear today/7d/all
-- [x] Browse — source list groups by language + **kind filter** chips; each source opens Popular on tap, with a **Latest** button for direct entry to the latest feed
+- [x] Browse — source list grouped by language; **kind + language filter** chips; per-source **favicon logo** (Google favicon service from `website`, coloured-initial fallback); tap → Popular, **Latest** button → latest feed
 - [x] **Downloads** (`GET /v1/downloads`; per-job pause/resume/retry/cancel; global cancel-all/clear/retry-failed; 2s poll — SSE later) — verified live
 - [x] **More** hub (Account card, Downloads · Settings · About rows, switch/sign-out)
 - [x] **User settings** — `series.autoUpdateOnOpen` · `series.chapterSort` · **reader defaults** (comic/pdf: mode/direction/zoom → `reader.comic`/`reader.pdf`) · **`sync.libraries`** multi-select (empty = all)
