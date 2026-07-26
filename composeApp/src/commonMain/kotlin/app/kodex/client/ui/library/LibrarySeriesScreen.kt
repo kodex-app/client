@@ -67,8 +67,13 @@ import kotlinx.serialization.json.jsonPrimitive
 private enum class SeriesSort(val label: String, val expr: String) {
     TITLE_ASC("Title (A–Z)", "title,asc"),
     TITLE_DESC("Title (Z–A)", "title,desc"),
+    NAME_ASC("Name (A–Z)", "name,asc"),
+    NAME_DESC("Name (Z–A)", "name,desc"),
     RECENTLY_ADDED("Recently added", "createdDate,desc"),
     RECENTLY_UPDATED("Recently updated", "lastModifiedDate,desc"),
+    MOST_CHAPTERS("Total chapters", "totalChapters,desc"),
+    MOST_UNREAD("Unread count", "unreadCount,desc"),
+    LAST_READ("Last read", "lastRead,desc"),
 }
 
 // Reading-status filter (server `readingStatus`); null = all.
@@ -101,22 +106,21 @@ fun LibrarySeriesScreen(
     var readFilter by remember { mutableStateOf(READ_FILTERS.first()) }
     var reloadTick by remember { mutableIntStateOf(0) }
     var sheetOpen by remember { mutableStateOf(false) }
-    var groupBy by remember { mutableStateOf("status") } // none | status | source
+    var groupBy by remember { mutableStateOf("status") } // none | status | source | category
     var selectedGroup by remember { mutableStateOf<String?>(null) }
-    var selectedCategory by remember { mutableStateOf<String?>(null) }
     var groups by remember { mutableStateOf<List<SeriesGroupCount>>(emptyList()) }
-    var categories by remember { mutableStateOf<List<CategoryDto>>(emptyList()) }
-    var sourceNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var groupNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) } // key → friendly label (source/category)
     val selection = rememberSelection<String>()
 
-    // Live per-group counts + WEB categories.
+    // Live per-group counts for the current grouping dimension.
     LaunchedEffect(library.id, server?.id, reloadTick, groupBy) {
         val s = server ?: return@LaunchedEffect
         groups = if (groupBy == "none") emptyList()
         else runCatching { api.seriesGroups(s.baseUrl, s.apiKey, groupBy, library.id) }.getOrDefault(emptyList()).filter { it.count > 0 }
-        categories = if (library.isWeb) runCatching { api.categories(s.baseUrl, s.apiKey) }.getOrDefault(emptyList()) else emptyList()
-        if (groupBy == "source" && sourceNames.isEmpty()) {
-            sourceNames = runCatching { api.contentSources(s.baseUrl, s.apiKey).associate { it.id to it.displayName } }.getOrDefault(emptyMap())
+        groupNames = when (groupBy) {
+            "source" -> runCatching { api.contentSources(s.baseUrl, s.apiKey).associate { it.id to it.displayName } }.getOrDefault(emptyMap())
+            "category" -> runCatching { api.categories(s.baseUrl, s.apiKey).associate { it.id to it.name } }.getOrDefault(emptyMap())
+            else -> emptyMap()
         }
     }
 
@@ -174,21 +178,18 @@ fun LibrarySeriesScreen(
         },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            if (groups.isNotEmpty() || categories.isNotEmpty()) {
+            if (groups.isNotEmpty()) {
                 GroupChips(
                     groupBy = groupBy,
                     groups = groups,
-                    sourceNames = sourceNames,
+                    groupNames = groupNames,
                     selectedGroup = selectedGroup,
-                    onGroup = { selectedGroup = it; selectedCategory = null },
-                    categories = categories,
-                    selectedCategory = selectedCategory,
-                    onCategory = { selectedCategory = it; selectedGroup = null },
+                    onGroup = { selectedGroup = it },
                 )
             }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 LoadedContent(
-                    key = listOf(library.id, server?.id, sort, readFilter.value, groupBy, selectedGroup, selectedCategory, reloadTick),
+                    key = listOf(library.id, server?.id, sort, readFilter.value, groupBy, selectedGroup, reloadTick),
                     load = {
                         val s = server!!
                         api.querySeries(
@@ -198,7 +199,7 @@ fun LibrarySeriesScreen(
                             readingStatuses = readFilter.value?.let { listOf(it) } ?: emptyList(),
                             statuses = if (groupBy == "status") selectedGroup?.let { listOf(it) } ?: emptyList() else emptyList(),
                             sources = if (groupBy == "source") selectedGroup?.let { listOf(it) } ?: emptyList() else emptyList(),
-                            categoryIds = selectedCategory?.let { listOf(it) } ?: emptyList(),
+                            categoryIds = if (groupBy == "category") selectedGroup?.let { listOf(it) } ?: emptyList() else emptyList(),
                         )
                     },
                 ) { series ->
@@ -260,7 +261,10 @@ fun LibrarySeriesScreen(
 
                 SheetLabel("Group by")
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-                    val opts = listOf("none" to "None", "status" to "Status", "source" to "Source")
+                    val opts = buildList {
+                        add("none" to "None"); add("status" to "Status"); add("source" to "Source")
+                        if (library.isWeb) add("category" to "Category")
+                    }
                     opts.forEachIndexed { i, (value, label) ->
                         SegmentedButton(
                             selected = groupBy == value,
@@ -296,52 +300,32 @@ private fun SelectionTopBar(count: Int, onClose: () -> Unit, onMarkRead: () -> U
     )
 }
 
-/** Horizontally-scrolling group chips (status or source) + WEB category chips above the grid. */
+/** Horizontally-scrolling group chips for the selected dimension (status / source / category). */
 @Composable
 private fun GroupChips(
     groupBy: String,
     groups: List<SeriesGroupCount>,
-    sourceNames: Map<String, String>,
+    groupNames: Map<String, String>,
     selectedGroup: String?,
     onGroup: (String?) -> Unit,
-    categories: List<CategoryDto>,
-    selectedCategory: String?,
-    onCategory: (String?) -> Unit,
 ) {
-    if (groups.isNotEmpty()) {
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            item {
-                FilterChip(selected = selectedGroup == null, onClick = { onGroup(null) }, label = { Text("All") })
-            }
-            items(groups, key = { it.key }) { g ->
-                val label = if (groupBy == "source") sourceNames[g.key] ?: g.key
-                else g.key.lowercase().replace('_', ' ').replaceFirstChar { it.uppercase() }
-                FilterChip(
-                    selected = selectedGroup == g.key,
-                    onClick = { onGroup(if (selectedGroup == g.key) null else g.key) },
-                    label = { Text("$label (${g.count})") },
-                )
-            }
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item {
+            FilterChip(selected = selectedGroup == null, onClick = { onGroup(null) }, label = { Text("All") })
         }
-    }
-    if (categories.isNotEmpty()) {
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            item {
-                FilterChip(selected = selectedCategory == null, onClick = { onCategory(null) }, label = { Text("All categories") })
+        items(groups, key = { it.key }) { g ->
+            val label = when (groupBy) {
+                "source", "category" -> groupNames[g.key] ?: g.key
+                else -> g.key.lowercase().replace('_', ' ').replaceFirstChar { it.uppercase() }
             }
-            items(categories, key = { it.id }) { c ->
-                FilterChip(
-                    selected = selectedCategory == c.id,
-                    onClick = { onCategory(if (selectedCategory == c.id) null else c.id) },
-                    label = { Text("${c.name} (${c.seriesCount})") },
-                )
-            }
+            FilterChip(
+                selected = selectedGroup == g.key,
+                onClick = { onGroup(if (selectedGroup == g.key) null else g.key) },
+                label = { Text("$label (${g.count})") },
+            )
         }
     }
 }

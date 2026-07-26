@@ -32,6 +32,7 @@ fun SourceReaderScreen(
     seriesId: String?,
     chapterName: String?,
     onBack: () -> Unit,
+    incognito: Boolean = false,
 ) {
     val server by session.activeServer.collectAsStateSafe()
     var state by remember(chapterId) { mutableStateOf<SourceReaderState>(SourceReaderState.Loading) }
@@ -67,12 +68,12 @@ fun SourceReaderScreen(
                             apiKey = s.apiKey,
                             // Source page images are 0-indexed; the reader speaks 1-based pages.
                             pageUrlFor = { pg -> sourcePageUrl(s.baseUrl, providerId, chapterId, pg - 1) },
-                            onPersist = { pg, completed ->
+                            onPersist = if (incognito) ({ _, _ -> }) else ({ pg, completed ->
                                 api.saveSourceProgress(
                                     s.baseUrl, s.apiKey, providerId, chapterId,
                                     page = pg, completed = completed, seriesId = seriesId, chapterName = chapterName,
                                 )
-                            },
+                            }),
                         )
                     }
                     ImageReaderScreen(session, api, source, onBack)

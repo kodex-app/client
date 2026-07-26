@@ -92,6 +92,10 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
             onOpenSourceReader = { providerId, chapterId, seriesId, chapterName ->
                 backStack.add(DetailRoute.SourceReader(providerId, chapterId, seriesId, chapterName))
             },
+            onOpenReaderIncognito = { backStack.add(DetailRoute.Reader(it, incognito = true)) },
+            onOpenSourceReaderIncognito = { providerId, chapterId, seriesId, chapterName ->
+                backStack.add(DetailRoute.SourceReader(providerId, chapterId, seriesId, chapterName, incognito = true))
+            },
             onOpenMigrate = { seriesId, providerId, sourceSeriesId, title ->
                 backStack.add(DetailRoute.Migrate(seriesId, providerId, sourceSeriesId, title))
             },
@@ -139,6 +143,7 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
                     onOpenSourceReader = { providerId, chapterId, seriesId, chapterName ->
                         backStack.add(DetailRoute.SourceReader(providerId, chapterId, seriesId, chapterName))
                     },
+                    onOpenSeries = openSeries,
                 )
                 BottomTab.Browse -> BrowseTab(session, api, onOpenSource = { src, feed -> backStack.add(DetailRoute.SourceFeed(src, feed)) })
                 BottomTab.More -> MoreTab(

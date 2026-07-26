@@ -49,8 +49,8 @@ Legend: `[x]` done · `[~]` partial (built, gaps listed) · `[ ]` not started
 
 ## Phase 2 — enrich existing screens
 
-- [~] Library series list: sort · reading-status filter · grid/list toggle · refresh (SSE-reload) · **Group by** None/Status/Source (`/series/groups`) w/ chips · WEB category chips · **long-press multi-select** → bulk mark read/unread — **done**; Mihon import still pending (blocked — needs source plugins)
-- [x] Series detail: chapter-sort · refresh-chapters · mark series read/unread · multi-select bulk · refresh-metadata · re-analyze · bookmarks (page-jump) · **edit-metadata sheet** · **sub-series rail** · **migrate**
+- [~] Library series list: **full sort** (title/name A–Z/Z–A · added · updated · total chapters · unread · last read) · reading-status filter · grid/list toggle · refresh · **Group by** None/Status/Source/Category (WEB) w/ chips · **long-press multi-select** → bulk mark read/unread — **done**; Mihon import still pending (blocked)
+- [x] Series detail: header (author/artist/library/source · genres/tags · **3-line summary + Read more**) · **Start Reading/Continue** button + **Read incognito** · chapter-sort · refresh-chapters · mark read/unread · multi-select bulk · edit-metadata · re-analyze · bookmarks (page-jump) · sub-series rail · migrate
 - [x] Book detail: re-analyze · delete · edit-metadata sheet · bookmarks (page-jump) · **identifiers + external links** (tap to open)
 - [~] Browse: **kind filter** chips · language grouping — **done**; favorites + recents quick-access still pending
 - [~] Source catalogue (WebBrowse): Search · source `FilterList` filters (polymorphic) — **done** (live data blocked — no source plugins); multi-select add-to-library still pending

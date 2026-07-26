@@ -40,6 +40,7 @@ fun MediaRow(
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
     selected: Boolean = false,
+    onCoverClick: (() -> Unit)? = null,
     trailing: @Composable (() -> Unit)? = null,
 ) {
     val clickable = when {
@@ -57,7 +58,8 @@ fun MediaRow(
         Box(
             Modifier.size(width = 44.dp, height = 60.dp)
                 .clip(RoundedCornerShape(6.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .then(if (onCoverClick != null) Modifier.clickable { onCoverClick() } else Modifier),
         ) {
             if (coverUrl.isNotBlank()) CoverImage(coverUrl, apiKey, Modifier.fillMaxSize())
         }

@@ -32,14 +32,15 @@ fun RecentsTab(
     api: KodexApi,
     onOpenReader: (String) -> Unit,
     onOpenSourceReader: OpenSourceReader,
+    onOpenSeries: (String) -> Unit,
 ) {
     var showHistory by remember { mutableStateOf(false) }
 
     Box(Modifier.fillMaxSize()) {
         if (showHistory) {
-            HistoryList(session, api, onOpenReader, onOpenSourceReader)
+            HistoryList(session, api, onOpenReader, onOpenSourceReader, onOpenSeries)
         } else {
-            UpdatesList(session, api, onOpenReader, onOpenSourceReader)
+            UpdatesList(session, api, onOpenReader, onOpenSourceReader, onOpenSeries)
         }
 
         // Tapping opens the other section; the label/icon show where you'll go.

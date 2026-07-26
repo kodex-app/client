@@ -34,12 +34,13 @@ sealed interface DetailRoute {
     data class SourceSeries(val source: SourceDescriptor, val seed: SourceSearchResult) : DetailRoute
     data class SeriesDetail(val seriesId: String) : DetailRoute
     data class BookDetail(val bookId: String) : DetailRoute
-    data class Reader(val bookId: String, val startPage: Int? = null) : DetailRoute
+    data class Reader(val bookId: String, val startPage: Int? = null, val incognito: Boolean = false) : DetailRoute
     data class SourceReader(
         val providerId: String,
         val chapterId: String,
         val seriesId: String?,
         val chapterName: String?,
+        val incognito: Boolean = false,
     ) : DetailRoute
 
     data object Downloads : DetailRoute
@@ -72,6 +73,8 @@ fun DetailHost(
     onOpenReader: (String) -> Unit,
     onOpenReaderAt: (bookId: String, page: Int) -> Unit,
     onOpenSourceReader: OpenSourceReader,
+    onOpenReaderIncognito: (String) -> Unit,
+    onOpenSourceReaderIncognito: OpenSourceReader,
     onOpenMigrate: (seriesId: String, providerId: String, sourceSeriesId: String, title: String) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -94,16 +97,18 @@ fun DetailHost(
                 onOpenMigrate = onOpenMigrate,
                 onOpenReaderAt = onOpenReaderAt,
                 onOpenSeries = onOpenSeries,
+                onOpenReaderIncognito = onOpenReaderIncognito,
+                onOpenSourceReaderIncognito = onOpenSourceReaderIncognito,
             )
 
         is DetailRoute.BookDetail ->
             BookDetailScreen(session, api, route.bookId, onBack, onRead = onOpenReader, onOpenReaderAt = onOpenReaderAt)
 
         is DetailRoute.Reader ->
-            ReaderScreen(session, api, route.bookId, onBack, route.startPage)
+            ReaderScreen(session, api, route.bookId, onBack, route.startPage, route.incognito)
 
         is DetailRoute.SourceReader ->
-            SourceReaderScreen(session, api, route.providerId, route.chapterId, route.seriesId, route.chapterName, onBack)
+            SourceReaderScreen(session, api, route.providerId, route.chapterId, route.seriesId, route.chapterName, onBack, route.incognito)
 
         is DetailRoute.Downloads ->
             DownloadsScreen(session, api, onBack)

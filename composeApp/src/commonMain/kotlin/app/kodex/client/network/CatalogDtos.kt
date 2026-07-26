@@ -75,6 +75,8 @@ data class SeriesDto(
 @Serializable
 data class SeriesDetailDto(
     val id: String,
+    val libraryId: String? = null,
+    val name: String = "",
     val title: String = "",
     val bookCount: Int = 0,
     val unreadCount: Int = 0,
@@ -83,6 +85,8 @@ data class SeriesDetailDto(
     val status: String? = null,
     val summary: String = "",
     val publisher: String = "",
+    val author: String = "",
+    val artist: String = "",
     val language: String = "",
     val readingDirection: String? = null,
     val genres: List<String> = emptyList(),

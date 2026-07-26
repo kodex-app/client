@@ -38,7 +38,7 @@ private sealed interface ReaderState {
 
 /** Reader for a downloaded local book (comic/DIVINA + PDF). EPUB is gated with a message. */
 @Composable
-fun ReaderScreen(session: SessionManager, api: KodexApi, bookId: String, onBack: () -> Unit, startPage: Int? = null) {
+fun ReaderScreen(session: SessionManager, api: KodexApi, bookId: String, onBack: () -> Unit, startPage: Int? = null, incognito: Boolean = false) {
     val server by session.activeServer.collectAsStateSafe()
     var state by remember(bookId) { mutableStateOf<ReaderState>(ReaderState.Loading) }
 
@@ -69,7 +69,7 @@ fun ReaderScreen(session: SessionManager, api: KodexApi, bookId: String, onBack:
                             seriesId = book.seriesId,
                             apiKey = s.apiKey,
                             pageUrlFor = { pg -> bookPageUrl(s.baseUrl, book.id, pg) },
-                            onPersist = { pg, completed -> api.saveReadProgress(s.baseUrl, s.apiKey, book.id, pg, completed) },
+                            onPersist = if (incognito) ({ _, _ -> }) else ({ pg, completed -> api.saveReadProgress(s.baseUrl, s.apiKey, book.id, pg, completed) }),
                         )
                     }
                     ImageReaderScreen(session, api, source, onBack)

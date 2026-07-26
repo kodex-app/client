@@ -48,6 +48,7 @@ fun UpdatesList(
     api: KodexApi,
     onOpenReader: (String) -> Unit,
     onOpenSourceReader: OpenSourceReader,
+    onOpenSeries: (String) -> Unit = {},
 ) {
     val server by session.activeServer.collectAsStateSafe()
     val current = server ?: return
@@ -81,6 +82,7 @@ fun UpdatesList(
                 subtitle = u.chapterName ?: "New chapter",
                 caption = relativeTime(u.foundDate) + (if (u.bookId != null) " · downloaded" else ""),
                 onClick = open,
+                onCoverClick = u.seriesId?.let { sid -> { onOpenSeries(sid) } },
             )
         }
     }
@@ -96,6 +98,7 @@ fun HistoryList(
     api: KodexApi,
     onOpenReader: (String) -> Unit,
     onOpenSourceReader: OpenSourceReader,
+    onOpenSeries: (String) -> Unit = {},
 ) {
     val server by session.activeServer.collectAsStateSafe()
     val current = server ?: return
@@ -138,7 +141,7 @@ fun HistoryList(
 
         PagedList(paged, emptyText = "No reading history yet.") { items ->
             groupedByDay(items, dayKeyOf = { isoDayKey(it.readDate) }) { h ->
-                HistoryRow(baseUrl, apiKey, h, onOpenReader, onOpenSourceReader)
+                HistoryRow(baseUrl, apiKey, h, onOpenReader, onOpenSourceReader, onOpenSeries)
             }
         }
     }
@@ -151,6 +154,7 @@ private fun HistoryRow(
     h: HistoryEntryDto,
     onOpenReader: (String) -> Unit,
     onOpenSourceReader: OpenSourceReader,
+    onOpenSeries: (String) -> Unit,
 ) {
     val cover = when {
         h.isBook && h.bookId != null -> bookCoverUrl(baseUrl, h.bookId!!)
@@ -173,6 +177,7 @@ private fun HistoryRow(
         subtitle = h.title ?: "",
         caption = "${relativeTime(h.readDate)} · $progress",
         onClick = open,
+        onCoverClick = h.seriesId?.let { sid -> { onOpenSeries(sid) } },
     )
 }
 

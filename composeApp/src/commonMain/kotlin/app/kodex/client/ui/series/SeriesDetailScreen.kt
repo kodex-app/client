@@ -79,9 +79,11 @@ private data class SeriesContent(
     val books: List<BookDto>,
     val chapters: List<SeriesChapterDto>,
     val subseries: List<app.kodex.client.network.SeriesDto> = emptyList(),
+    val libraryName: String? = null,
+    val sourceName: String? = null,
 )
 
-private data class Resume(val label: String, val open: () -> Unit)
+private data class Resume(val label: String, val open: () -> Unit, val openIncognito: () -> Unit)
 
 /**
  * A series: cover + metadata header with a Read/Continue button, then its content — the books grid
@@ -101,6 +103,8 @@ fun SeriesDetailScreen(
     onOpenMigrate: (seriesId: String, providerId: String, sourceSeriesId: String, title: String) -> Unit = { _, _, _, _ -> },
     onOpenReaderAt: (bookId: String, page: Int) -> Unit = { _, _ -> },
     onOpenSeries: (String) -> Unit = {},
+    onOpenReaderIncognito: (String) -> Unit = {},
+    onOpenSourceReaderIncognito: OpenSourceReader = { _, _, _, _ -> },
 ) {
     val server by session.activeServer.collectAsStateSafe()
     val snackbar = rememberSnackbar()
@@ -131,8 +135,10 @@ fun SeriesDetailScreen(
         phase = runCatching {
             val detail = api.seriesDetail(s0.baseUrl, s0.apiKey, seriesId)
             val subs = runCatching { api.subSeries(s0.baseUrl, s0.apiKey, seriesId) }.getOrDefault(emptyList())
-            if (detail.isWeb) SeriesContent(detail, emptyList(), api.seriesChapters(s0.baseUrl, s0.apiKey, seriesId), subs)
-            else SeriesContent(detail, api.seriesBooks(s0.baseUrl, s0.apiKey, seriesId), emptyList(), subs)
+            val libName = detail.libraryId?.let { lid -> runCatching { api.libraries(s0.baseUrl, s0.apiKey).firstOrNull { it.id == lid }?.name }.getOrNull() }
+            val srcName = detail.sourceProviderId?.let { pid -> runCatching { api.contentSources(s0.baseUrl, s0.apiKey).firstOrNull { it.id == pid }?.displayName }.getOrNull() }
+            if (detail.isWeb) SeriesContent(detail, emptyList(), api.seriesChapters(s0.baseUrl, s0.apiKey, seriesId), subs, libName, srcName)
+            else SeriesContent(detail, api.seriesBooks(s0.baseUrl, s0.apiKey, seriesId), emptyList(), subs, libName, srcName)
         }.fold({ SeriesPhase.Ready(it) }, { SeriesPhase.Error(it.friendlyMessage()) })
     }
 
@@ -208,8 +214,8 @@ fun SeriesDetailScreen(
                 when {
                     errorMsg != null && content == null -> ErrorRetry(errorMsg) { reloadTick++ }
                     content == null -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
-                    s != null && isWeb -> ChaptersLayout(s.baseUrl, s.apiKey, content, sortDesc, { sortDesc = !sortDesc }, selection, onOpenReader, onOpenSourceReader)
-                    s != null -> BooksLayout(s.baseUrl, s.apiKey, content, selection, onOpenBook, onOpenReader, onOpenSeries)
+                    s != null && isWeb -> ChaptersLayout(s.baseUrl, s.apiKey, content, sortDesc, { sortDesc = !sortDesc }, selection, onOpenReader, onOpenSourceReader, onOpenReaderIncognito, onOpenSourceReaderIncognito)
+                    s != null -> BooksLayout(s.baseUrl, s.apiKey, content, selection, onOpenBook, onOpenReader, onOpenSeries, onOpenReaderIncognito)
                 }
             }
         }
@@ -356,8 +362,9 @@ private fun BooksLayout(
     onOpenBook: (String) -> Unit,
     onOpenReader: (String) -> Unit,
     onOpenSeries: (String) -> Unit,
+    onOpenReaderIncognito: (String) -> Unit,
 ) {
-    val resume = localResume(content.books, onOpenReader)
+    val resume = localResume(content.books, onOpenReader, onOpenReaderIncognito)
     LazyVerticalGrid(
         columns = GridCells.Adaptive(112.dp),
         modifier = Modifier.fillMaxSize(),
@@ -371,6 +378,8 @@ private fun BooksLayout(
                     baseUrl, apiKey, content.detail,
                     countLabel = "${content.books.size} ${if (content.books.size == 1) "book" else "books"}",
                     unread = content.books.count { it.readProgress?.completed != true },
+                    libraryName = content.libraryName,
+                    sourceName = content.sourceName,
                 )
                 ReadButton(resume)
             }
@@ -425,19 +434,23 @@ private fun ChaptersLayout(
     selection: SelectionState<String>,
     onOpenReader: (String) -> Unit,
     onOpenSourceReader: OpenSourceReader,
+    onOpenReaderIncognito: (String) -> Unit,
+    onOpenSourceReaderIncognito: OpenSourceReader,
 ) {
     val providerId = content.detail.sourceProviderId.orEmpty()
     val seriesId = content.detail.id
     val ascending = content.chapters.sortedWith(compareBy(nullsLast()) { it.number })
     val display = if (sortDesc) ascending.asReversed() else ascending
     val downloaded = ascending.count { it.downloaded }
-    val resume = webResume(ascending, providerId, seriesId, onOpenReader, onOpenSourceReader)
+    val resume = webResume(ascending, providerId, seriesId, onOpenReader, onOpenSourceReader, onOpenReaderIncognito, onOpenSourceReaderIncognito)
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
         item {
             SeriesHeader(
                 baseUrl, apiKey, content.detail,
                 countLabel = "${ascending.size} chapters · $downloaded downloaded",
                 unread = ascending.count { !it.read },
+                libraryName = content.libraryName,
+                sourceName = content.sourceName,
             )
             ReadButton(resume)
             Spacer(Modifier.height(20.dp))
@@ -529,11 +542,23 @@ private fun ReadButton(resume: Resume?) {
     if (resume == null) return
     Spacer(Modifier.height(16.dp))
     Button(onClick = resume.open, modifier = Modifier.fillMaxWidth()) { Text(resume.label) }
+    Spacer(Modifier.height(8.dp))
+    androidx.compose.material3.OutlinedButton(onClick = resume.openIncognito, modifier = Modifier.fillMaxWidth()) {
+        Text("Read incognito")
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SeriesHeader(baseUrl: String, apiKey: String, detail: SeriesDetailDto, countLabel: String, unread: Int) {
+private fun SeriesHeader(
+    baseUrl: String,
+    apiKey: String,
+    detail: SeriesDetailDto,
+    countLabel: String,
+    unread: Int,
+    libraryName: String? = null,
+    sourceName: String? = null,
+) {
     Column {
         Row {
             Box(Modifier.width(120.dp).height(180.dp).clip(RoundedCornerShape(12.dp))) {
@@ -543,16 +568,28 @@ private fun SeriesHeader(baseUrl: String, apiKey: String, detail: SeriesDetailDt
             Column(Modifier.weight(1f)) {
                 Text(detail.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(6.dp))
+                // Author / artist (artist shown only when it differs from the author).
+                val people = listOfNotNull(
+                    detail.author.takeIf { it.isNotBlank() },
+                    detail.artist.takeIf { it.isNotBlank() && !it.equals(detail.author, ignoreCase = true) },
+                ).joinToString(" · ")
+                if (people.isNotBlank()) {
+                    Text(people, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                }
                 Text(countLabel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (unread > 0) {
                     Text("$unread unread", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 }
                 if (detail.publisher.isNotBlank()) {
-                    Spacer(Modifier.height(6.dp))
                     Text(detail.publisher, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                if (detail.language.isNotBlank()) {
-                    Text(detail.language.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val provenance = listOfNotNull(
+                    sourceName?.takeIf { it.isNotBlank() } ?: libraryName?.takeIf { it.isNotBlank() },
+                    detail.language.takeIf { it.isNotBlank() }?.uppercase(),
+                ).joinToString(" · ")
+                if (provenance.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(provenance, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -565,7 +602,34 @@ private fun SeriesHeader(baseUrl: String, apiKey: String, detail: SeriesDetailDt
         }
         if (detail.summary.isNotBlank()) {
             Spacer(Modifier.height(14.dp))
-            Text(detail.summary, style = MaterialTheme.typography.bodyMedium)
+            ExpandableSummary(detail.summary)
+        }
+    }
+}
+
+/** Series summary capped at 3 lines with a "Read more" toggle when it overflows. */
+@Composable
+private fun ExpandableSummary(text: String) {
+    var expanded by remember(text) { mutableStateOf(false) }
+    var overflows by remember(text) { mutableStateOf(false) }
+    Column {
+        Text(
+            text,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = if (expanded) Int.MAX_VALUE else 3,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            onTextLayout = { if (!expanded) overflows = it.hasVisualOverflow },
+        )
+        if (overflows || expanded) {
+            Text(
+                if (expanded) "Read less" else "Read more",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.clip(RoundedCornerShape(6.dp))
+                    .combinedClickable(onClick = { expanded = !expanded }, onLongClick = { expanded = !expanded })
+                    .padding(vertical = 4.dp),
+            )
         }
     }
 }
@@ -575,17 +639,17 @@ private fun SectionLabel(text: String) {
     Text(text, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
-private fun localResume(books: List<BookDto>, onOpenReader: (String) -> Unit): Resume? {
+private fun localResume(books: List<BookDto>, onOpenReader: (String) -> Unit, onOpenReaderIncognito: (String) -> Unit): Resume? {
     if (books.isEmpty()) return null
     val inProgress = books.firstOrNull { it.readProgress?.completed == false }
     val firstUnread = books.firstOrNull { it.readProgress == null }
     val target = inProgress ?: firstUnread ?: books.first()
     val label = when {
         inProgress != null -> "Continue"
-        firstUnread != null -> "Read"
+        firstUnread != null -> "Start Reading"
         else -> "Read again"
     }
-    return Resume(label) { onOpenReader(target.id) }
+    return Resume(label, { onOpenReader(target.id) }, { onOpenReaderIncognito(target.id) })
 }
 
 private fun webResume(
@@ -594,6 +658,8 @@ private fun webResume(
     seriesId: String,
     onOpenReader: (String) -> Unit,
     onOpenSourceReader: OpenSourceReader,
+    onOpenReaderIncognito: (String) -> Unit,
+    onOpenSourceReaderIncognito: OpenSourceReader,
 ): Resume? {
     if (chapters.isEmpty()) return null
     val firstUnread = chapters.firstOrNull { !it.read }
@@ -601,13 +667,12 @@ private fun webResume(
     val label = when {
         firstUnread == null -> "Read again"
         target.page != null -> "Continue"
-        else -> "Read"
+        else -> "Start Reading"
     }
-    return Resume(label) {
-        val bookId = target.bookId
-        if (bookId != null) onOpenReader(bookId)
-        else onOpenSourceReader(providerId, target.chapterId, seriesId, target.name)
-    }
+    val bookId = target.bookId
+    val open = { if (bookId != null) onOpenReader(bookId) else onOpenSourceReader(providerId, target.chapterId, seriesId, target.name) }
+    val openIncognito = { if (bookId != null) onOpenReaderIncognito(bookId) else onOpenSourceReaderIncognito(providerId, target.chapterId, seriesId, target.name) }
+    return Resume(label, open, openIncognito)
 }
 
 private fun bookLabel(book: BookDto): String = book.title.ifBlank { book.numberDisplay ?: "Book" }
