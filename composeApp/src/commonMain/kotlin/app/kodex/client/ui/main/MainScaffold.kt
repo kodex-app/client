@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
 import app.kodex.client.data.AppSettings
 import app.kodex.client.network.KodexApi
+import app.kodex.client.platform.AppBackHandler
 import app.kodex.client.ui.search.SearchScreen
 
 /** The five destinations of the main bottom navigation. */
@@ -56,6 +57,16 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
 
     val openSeries: (String) -> Unit = { backStack.add(DetailRoute.SeriesDetail(it)) }
     val openBook: (String) -> Unit = { backStack.add(DetailRoute.BookDetail(it)) }
+
+    // System back navigates within the app: close search → pop a detail screen → return to Home tab.
+    // Disabled only on the Home tab with nothing open, so back there exits the app (expected).
+    AppBackHandler(enabled = searchOpen || backStack.isNotEmpty() || tab != BottomTab.Home) {
+        when {
+            searchOpen -> searchOpen = false
+            backStack.isNotEmpty() -> backStack.removeAt(backStack.lastIndex)
+            else -> tab = BottomTab.Home
+        }
+    }
 
     if (searchOpen) {
         SearchScreen(
