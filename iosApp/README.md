@@ -14,7 +14,9 @@ The Swift sources are here, but the **Xcode project (`iosApp.xcodeproj`) must be
    ./gradlew :composeApp:embedAndSignAppleFrameworkForXcode
    ```
 3. Set `Framework Search Paths` to `$(SRCROOT)/../composeApp/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)`.
-4. Link the `ComposeApp` framework, then build & run.
+4. Add `iosApp/Assets.xcassets` to the target and set `ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon`
+   — it already holds the 1024×1024 app icon (opaque, as iOS requires) rendered from `logo/logo_kx.svg`.
+5. Link the `ComposeApp` framework, then build & run.
 
 Everything else (login, multi-server, navigation, API) is already in `:composeApp/src/commonMain`
 and needs no per-platform code.

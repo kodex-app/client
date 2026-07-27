@@ -22,6 +22,7 @@ fun SeriesGrid(
     onOpen: (SeriesDto) -> Unit,
     modifier: Modifier = Modifier,
     selection: app.kodex.client.ui.SelectionState<String>? = null,
+    titleOf: (SeriesDto) -> String = { it.title },
 ) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(112.dp),
@@ -34,7 +35,7 @@ fun SeriesGrid(
             CoverCard(
                 coverUrl = seriesCoverUrl(baseUrl, s),
                 apiKey = apiKey,
-                title = s.title,
+                title = titleOf(s),
                 subtitle = seriesSubtitle(s),
                 unread = seriesUnreadBadge(s),
                 onClick = { if (selection?.active == true) selection.toggle(s.id) else onOpen(s) },
@@ -55,6 +56,7 @@ fun SeriesListView(
     onOpen: (SeriesDto) -> Unit,
     modifier: Modifier = Modifier,
     selection: app.kodex.client.ui.SelectionState<String>? = null,
+    titleOf: (SeriesDto) -> String = { it.title },
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -65,7 +67,7 @@ fun SeriesListView(
             MediaRow(
                 coverUrl = seriesCoverUrl(baseUrl, s),
                 apiKey = apiKey,
-                title = s.title,
+                title = titleOf(s),
                 subtitle = seriesSubtitle(s),
                 onClick = { if (selection?.active == true) selection.toggle(s.id) else onOpen(s) },
                 onLongClick = if (selection != null) ({ selection.toggle(s.id) }) else null,

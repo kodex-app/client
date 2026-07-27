@@ -30,6 +30,10 @@ class AppSettings(private val settings: Settings = Settings()) {
     private val _libraryGridView = MutableStateFlow(settings.getBoolean(KEY_LIBRARY_GRID, true))
     val libraryGridView: StateFlow<Boolean> = _libraryGridView.asStateFlow()
 
+    /** What to display as a series' name: "title" (metadata) or "name" (folder). */
+    private val _libraryDisplayBy = MutableStateFlow(settings.getStringOrNull(KEY_LIBRARY_DISPLAY) ?: "title")
+    val libraryDisplayBy: StateFlow<String> = _libraryDisplayBy.asStateFlow()
+
     /** Global incognito reading: when on, no reader saves progress/history. */
     private val _incognito = MutableStateFlow(settings.getBoolean(KEY_INCOGNITO, false))
     val incognitoMode: StateFlow<Boolean> = _incognito.asStateFlow()
@@ -58,6 +62,10 @@ class AppSettings(private val settings: Settings = Settings()) {
         settings.putBoolean(KEY_INCOGNITO, value); _incognito.value = value
     }
 
+    fun setLibraryDisplayBy(value: String) {
+        settings.putString(KEY_LIBRARY_DISPLAY, value); _libraryDisplayBy.value = value
+    }
+
     private inline fun <reified T : Enum<T>> readEnum(key: String, values: List<T>, fallback: T): T {
         val stored = settings.getStringOrNull(key) ?: return fallback
         return values.firstOrNull { it.name == stored } ?: fallback
@@ -69,6 +77,7 @@ class AppSettings(private val settings: Settings = Settings()) {
         const val KEY_AMOLED = "appearance.amoled"
         const val KEY_DYNAMIC = "appearance.dynamicColor"
         const val KEY_LIBRARY_GRID = "library.gridView"
+        const val KEY_LIBRARY_DISPLAY = "library.displayBy"
         const val KEY_INCOGNITO = "reader.incognito"
     }
 }

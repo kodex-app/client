@@ -64,6 +64,7 @@ data class WebLinkDto(val label: String = "", val url: String = "")
 @Serializable
 data class SeriesDto(
     val id: String,
+    val name: String = "",
     val title: String = "",
     val bookCount: Int = 0,
     val unreadCount: Int = 0,

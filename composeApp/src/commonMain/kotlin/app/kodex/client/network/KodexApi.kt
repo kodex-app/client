@@ -168,6 +168,9 @@ class KodexApi(private val client: HttpClient) {
         labelIds: List<String> = emptyList(),
         sources: List<String> = emptyList(),
         categoryIds: List<String> = emptyList(),
+        readingStatusExcludes: List<String> = emptyList(),
+        statusExcludes: List<String> = emptyList(),
+        downloaded: Boolean? = null,
         size: Int = LIBRARY_SERIES_SIZE,
     ): List<SeriesDto> =
         client.get("$baseUrl/api/v1/series") {
@@ -184,6 +187,9 @@ class KodexApi(private val client: HttpClient) {
             labelIds.forEach { parameter("labelId", it) }
             sources.forEach { parameter("source", it) }
             categoryIds.forEach { parameter("categoryId", it) }
+            readingStatusExcludes.forEach { parameter("readingStatusExclude", it) }
+            statusExcludes.forEach { parameter("statusExclude", it) }
+            if (downloaded != null) parameter("downloaded", downloaded)
         }.body<PageResponse<SeriesDto>>().content
 
     /** Live per-group counts for the Library grouping tabs. [groupBy] is status | source | category. */
@@ -224,6 +230,15 @@ class KodexApi(private val client: HttpClient) {
 
     suspend fun categories(baseUrl: String, apiKey: String): List<CategoryDto> =
         client.get("$baseUrl/api/v1/categories") { header(HEADER_API_KEY, apiKey) }.body()
+
+    /** Bulk add/remove categories across series. */
+    suspend fun assignCategories(baseUrl: String, apiKey: String, seriesIds: List<String>, add: List<String>, remove: List<String>) {
+        client.post("$baseUrl/api/v1/categories/assign") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(AssignCategoriesRequest(seriesIds, add, remove))
+        }
+    }
 
     // ── Bookmarks ────────────────────────────────────────────────────────────────────────────────
 

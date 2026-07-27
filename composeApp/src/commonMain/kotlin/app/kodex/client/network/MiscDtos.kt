@@ -19,6 +19,14 @@ data class CategoryDto(
     val seriesCount: Long = 0,
 )
 
+/** Body of `POST /api/v1/categories/assign` — bulk add/remove categories across series. */
+@Serializable
+data class AssignCategoriesRequest(
+    val seriesIds: List<String>,
+    val addCategoryIds: List<String> = emptyList(),
+    val removeCategoryIds: List<String> = emptyList(),
+)
+
 /** One group's live series count (`GET /api/v1/series/groups`); [key] is a status/providerId/categoryId. */
 @Serializable
 data class SeriesGroupCount(

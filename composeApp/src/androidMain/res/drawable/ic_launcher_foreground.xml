@@ -3,14 +3,14 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Open book, centered in the adaptive safe zone. -->
+    <!-- Kodex "KX" mark (logo/logo_kx.svg), sized to stay inside the 66dp adaptive safe circle. -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M54,38 C46,33 34,33 26,36 L26,72 C34,69 46,69 54,74 Z" />
+        android:fillColor="#2BA8E6"
+        android:pathData="M30.00,31.96 L37.23,31.96 L37.23,71.27 L30.00,71.27 Z" />
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M54,38 C62,33 74,33 82,36 L82,72 C74,69 62,69 54,74 Z" />
+        android:fillColor="#2BA8E6"
+        android:pathData="M38.10,54.28 L51.66,41.82 L71.92,73.23 L78.00,69.32 L53.08,30.68 L33.20,48.95 Z" />
     <path
-        android:fillColor="#D9CFFF"
-        android:pathData="M52,40 h4 v34 h-4 z" />
+        android:fillColor="#2BA8E6"
+        android:pathData="M32.89,53.95 L52.76,77.32 L78.00,38.21 L71.92,34.30 L51.97,65.23 L38.40,49.28 Z" />
 </vector>
