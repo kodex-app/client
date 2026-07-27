@@ -2,6 +2,10 @@
 
 package app.kodex.client.ui.series
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -18,11 +22,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -45,6 +53,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -168,6 +177,23 @@ fun SeriesDetailScreen(
         else -> localResume(content.books, onOpenReader, onOpenReaderIncognito)
     }
 
+    // Scroll state drives the collapsing toolbar: the title fades in (and the bar turns opaque, masking
+    // content behind the status bar) once the header has scrolled up past the toolbar.
+    val listState = rememberLazyListState()
+    val gridState = rememberLazyGridState()
+    val titleVisible by remember(isWeb) {
+        derivedStateOf {
+            val idx: Int; val off: Int
+            if (isWeb) { idx = listState.firstVisibleItemIndex; off = listState.firstVisibleItemScrollOffset }
+            else { idx = gridState.firstVisibleItemIndex; off = gridState.firstVisibleItemScrollOffset }
+            idx > 0 || off > 280
+        }
+    }
+    val barColor by animateColorAsState(
+        if (titleVisible) MaterialTheme.colorScheme.surface else androidx.compose.ui.graphics.Color.Transparent,
+        label = "seriesBarColor",
+    )
+
     Scaffold(
             topBar = {
                 if (selection.active) {
@@ -181,10 +207,19 @@ fun SeriesDetailScreen(
                         onDownload = { downloadSelected(api, s, content, selection, snackbar, scope) { reload() } },
                     )
                 } else {
-                    // Mihon-style: no title in the toolbar — just back + the actions menu, over the backdrop.
+                    // Mihon-style: transparent over the backdrop, but the title fades in and the bar turns
+                    // opaque once scrolled (which also masks list content passing behind the status bar).
                     TopAppBar(
-                        colors = TopAppBarDefaults.topAppBarColors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
-                        title = {},
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = barColor,
+                            scrolledContainerColor = barColor,
+                            titleContentColor = MaterialTheme.colorScheme.onSurface,
+                        ),
+                        title = {
+                            AnimatedVisibility(titleVisible && detail != null, enter = fadeIn(), exit = fadeOut()) {
+                                Text(detail?.title.orEmpty(), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+                            }
+                        },
                         navigationIcon = {
                             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                         },
@@ -240,6 +275,7 @@ fun SeriesDetailScreen(
             },
         ) { padding ->
             val topInset = padding.calculateTopPadding()
+            val bottomInset = padding.calculateBottomPadding()
             Box(Modifier.fillMaxSize()) {
                 // Blurred cover backdrop from the top (behind the toolbar) down to just below the cover.
                 if (content != null && s != null) {
@@ -248,8 +284,8 @@ fun SeriesDetailScreen(
                 when {
                     errorMsg != null && content == null -> Box(Modifier.fillMaxSize().padding(padding)) { ErrorRetry(errorMsg) { reloadTick++ } }
                     content == null -> Box(Modifier.fillMaxSize().padding(padding), Alignment.Center) { CircularProgressIndicator() }
-                    s != null && isWeb -> ChaptersLayout(s.baseUrl, s.apiKey, content, sortDesc, { sortDesc = !sortDesc }, selection, onOpenReader, onOpenSourceReader, onOpenReaderIncognito, onOpenSourceReaderIncognito, topInset)
-                    s != null -> BooksLayout(s.baseUrl, s.apiKey, content, selection, onOpenBook, onOpenReader, onOpenSeries, onOpenReaderIncognito, topInset)
+                    s != null && isWeb -> ChaptersLayout(s.baseUrl, s.apiKey, content, sortDesc, { sortDesc = !sortDesc }, selection, onOpenReader, onOpenSourceReader, onOpenReaderIncognito, onOpenSourceReaderIncognito, listState, topInset, bottomInset)
+                    s != null -> BooksLayout(s.baseUrl, s.apiKey, content, selection, onOpenBook, onOpenReader, onOpenSeries, onOpenReaderIncognito, gridState, topInset, bottomInset)
                 }
             }
         }
@@ -397,12 +433,15 @@ private fun BooksLayout(
     onOpenReader: (String) -> Unit,
     onOpenSeries: (String) -> Unit,
     onOpenReaderIncognito: (String) -> Unit,
+    gridState: LazyGridState,
     topInset: androidx.compose.ui.unit.Dp,
+    bottomInset: androidx.compose.ui.unit.Dp,
 ) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(112.dp),
+        state = gridState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = topInset + 8.dp, bottom = 96.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = topInset + 8.dp, bottom = 96.dp + bottomInset),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -467,14 +506,16 @@ private fun ChaptersLayout(
     onOpenSourceReader: OpenSourceReader,
     onOpenReaderIncognito: (String) -> Unit,
     onOpenSourceReaderIncognito: OpenSourceReader,
+    listState: LazyListState,
     topInset: androidx.compose.ui.unit.Dp,
+    bottomInset: androidx.compose.ui.unit.Dp,
 ) {
     val providerId = content.detail.sourceProviderId.orEmpty()
     val seriesId = content.detail.id
     val ascending = content.chapters.sortedWith(compareBy(nullsLast()) { it.number })
     val display = if (sortDesc) ascending.asReversed() else ascending
     val downloaded = ascending.count { it.downloaded }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = topInset + 8.dp, bottom = 96.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = topInset + 8.dp, bottom = 96.dp + bottomInset)) {
         item {
             SeriesHeader(
                 baseUrl, apiKey, content.detail,

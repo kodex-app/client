@@ -3,7 +3,6 @@ package app.kodex.client.ui.library
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,12 +29,10 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -106,6 +103,12 @@ private val READING_OPTIONS = listOf(
     ReadingOption("Started", "IN_PROGRESS"),
     ReadingOption("Read", "COMPLETED"),
 )
+
+// One tab in the group strip shown over the grid when a grouping dimension is active.
+private data class GroupTab(val key: String, val label: String, val count: Int)
+
+// Fixed order for the status dimension's tabs (mirrors the web's STATUS_ORDER).
+private val STATUS_ORDER = listOf("ONGOING", "COMPLETED", "PUBLISHING_FINISHED", "LICENSED", "CANCELLED", "ON_HIATUS", "UNKNOWN")
 
 /** A single library's series, with sort · reading-status filter · grid/list toggle · refresh. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -231,6 +234,20 @@ fun LibrarySeriesScreen(
         }
     }
 
+    // Group strip: when a dimension is active, series split into tabs (one per group), sorted for display.
+    val tabGroups: List<GroupTab> = groups.map { g ->
+        val label = when (groupBy) {
+            "source", "category" -> groupNames[g.key] ?: g.key
+            else -> g.key.lowercase().replace('_', ' ').replaceFirstChar { it.uppercase() }
+        }
+        GroupTab(g.key, label, g.count.toInt())
+    }.let { list ->
+        if (groupBy == "status") list.sortedBy { STATUS_ORDER.indexOf(it.key).let { i -> if (i < 0) Int.MAX_VALUE else i } }
+        else list.sortedBy { it.label.lowercase() }
+    }
+    // The tab actually queried: the user's pick if still present, else the first group.
+    val activeGroup = selectedGroup?.takeIf { key -> tabGroups.any { it.key == key } } ?: tabGroups.firstOrNull()?.key
+
     Scaffold(
         topBar = {
             if (selection.active) {
@@ -260,13 +277,16 @@ fun LibrarySeriesScreen(
             }
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            if (groupBy != "none" && tabGroups.isNotEmpty()) {
+                GroupTabs(tabGroups, activeGroup, onSelect = { selectedGroup = it })
+            }
             LoadedContent(
-                key = listOf(library.id, server?.id, sortExpr, readingInclude, readingExclude, downloadedTri, statusTri, groupBy, selectedGroup, reloadTick),
+                key = listOf(library.id, server?.id, sortExpr, readingInclude, readingExclude, downloadedTri, statusTri, groupBy, activeGroup, reloadTick),
                 load = {
                     val s = server!!
                     val statuses = buildList {
-                        if (groupBy == "status") selectedGroup?.let { add(it) }
+                        if (groupBy == "status") activeGroup?.let { add(it) }
                         if (statusTri == Tri.INCLUDE) add("COMPLETED")
                     }
                     api.querySeries(
@@ -278,8 +298,8 @@ fun LibrarySeriesScreen(
                         statuses = statuses,
                         statusExcludes = if (statusTri == Tri.EXCLUDE) listOf("COMPLETED") else emptyList(),
                         downloaded = downloadedTri?.let { it == Tri.INCLUDE },
-                        sources = if (groupBy == "source") selectedGroup?.let { listOf(it) } ?: emptyList() else emptyList(),
-                        categoryIds = if (groupBy == "category") selectedGroup?.let { listOf(it) } ?: emptyList() else emptyList(),
+                        sources = if (groupBy == "source") activeGroup?.let { listOf(it) } ?: emptyList() else emptyList(),
+                        categoryIds = if (groupBy == "category") activeGroup?.let { listOf(it) } ?: emptyList() else emptyList(),
                     )
                 },
             ) { series ->
@@ -366,22 +386,13 @@ fun LibrarySeriesScreen(
                                 ) { Text(label) }
                             }
                         }
-                        if (groups.isNotEmpty()) {
-                            SheetLabel("Show group")
-                            FlowRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                FilterChip(selected = selectedGroup == null, onClick = { selectedGroup = null }, label = { Text("All") })
-                                groups.forEach { g ->
-                                    val lbl = when (groupBy) {
-                                        "source", "category" -> groupNames[g.key] ?: g.key
-                                        else -> g.key.lowercase().replace('_', ' ').replaceFirstChar { it.uppercase() }
-                                    }
-                                    FilterChip(
-                                        selected = selectedGroup == g.key,
-                                        onClick = { selectedGroup = if (selectedGroup == g.key) null else g.key },
-                                        label = { Text("$lbl (${g.count})") },
-                                    )
-                                }
-                            }
+                        if (groupBy != "none") {
+                            Text(
+                                "Series split into a tab per group.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            )
                         }
                     }
 
@@ -471,6 +482,21 @@ private fun SelectionTopBar(
             }
         },
     )
+}
+
+/** Horizontal tab strip over the grid: one tab per group (with count) when a dimension is active. */
+@Composable
+private fun GroupTabs(tabs: List<GroupTab>, activeKey: String?, onSelect: (String) -> Unit) {
+    val index = tabs.indexOfFirst { it.key == activeKey }.coerceAtLeast(0)
+    androidx.compose.material3.ScrollableTabRow(selectedTabIndex = index, edgePadding = 12.dp) {
+        tabs.forEachIndexed { i, tab ->
+            Tab(
+                selected = i == index,
+                onClick = { onSelect(tab.key) },
+                text = { Text("${tab.label} (${tab.count})") },
+            )
+        }
+    }
 }
 
 /** A tri-state filter row: tap cycles the leading glyph neutral → include (check) → exclude (cross). */
