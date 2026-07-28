@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
@@ -245,23 +246,15 @@ fun LibrarySeriesScreen(
         if (groupBy == "status") list.sortedBy { STATUS_ORDER.indexOf(it.key).let { i -> if (i < 0) Int.MAX_VALUE else i } }
         else list.sortedBy { it.label.lowercase() }
     }
-    // The tab actually queried: the user's pick if still present, else the first group.
-    val activeGroup = selectedGroup?.takeIf { key -> tabGroups.any { it.key == key } } ?: tabGroups.firstOrNull()?.key
 
     Scaffold(
         topBar = {
             if (selection.active) {
                 SelectionTopBar(
                     count = selection.count,
-                    isWeb = library.isWeb,
                     onClose = { selection.clear() },
                     onSelectAll = { selection.selectAll(allSeriesIds) },
-                    onMarkRead = { bulkMark(true) },
-                    onMarkUnread = { bulkMark(false) },
-                    onUpdate = { bulkForEach("Updating…") { b, k, id -> api.refreshSeriesChapters(b, k, id) } },
-                    onDownload = { bulkForEach("Downloading…") { b, k, id -> api.downloadWebSeries(b, k, library.id, id, null) } },
-                    onCategories = { categoriesDialog = true },
-                    onRemove = { confirmRemove = true },
+                    onSelectInverse = { selection.selectInverse(allSeriesIds) },
                 )
             } else {
                 TopAppBar(
@@ -276,41 +269,52 @@ fun LibrarySeriesScreen(
                 )
             }
         },
+        bottomBar = {
+            if (selection.active) {
+                SelectionBottomBar(
+                    isWeb = library.isWeb,
+                    onMarkRead = { bulkMark(true) },
+                    onMarkUnread = { bulkMark(false) },
+                    onUpdate = { bulkForEach("Updating…") { b, k, id -> api.refreshSeriesChapters(b, k, id) } },
+                    onDownload = { bulkForEach("Downloading…") { b, k, id -> api.downloadWebSeries(b, k, library.id, id, null) } },
+                    onCategories = { categoriesDialog = true },
+                    onRemove = { confirmRemove = true },
+                )
+            }
+        },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
+            val filters = SeriesFilterArgs(
+                libraryId = library.id, sortExpr = sortExpr,
+                readingInclude = readingInclude, readingExclude = readingExclude,
+                statusInclude = statusTri == Tri.INCLUDE, statusExclude = statusTri == Tri.EXCLUDE,
+                downloaded = downloadedTri?.let { it == Tri.INCLUDE }, groupBy = groupBy,
+            )
             if (groupBy != "none" && tabGroups.isNotEmpty()) {
-                GroupTabs(tabGroups, activeGroup, onSelect = { selectedGroup = it })
-            }
-            LoadedContent(
-                key = listOf(library.id, server?.id, sortExpr, readingInclude, readingExclude, downloadedTri, statusTri, groupBy, activeGroup, reloadTick),
-                load = {
-                    val s = server!!
-                    val statuses = buildList {
-                        if (groupBy == "status") activeGroup?.let { add(it) }
-                        if (statusTri == Tri.INCLUDE) add("COMPLETED")
-                    }
-                    api.querySeries(
-                        s.baseUrl, s.apiKey,
-                        libraryId = library.id,
-                        sort = sortExpr,
-                        readingStatuses = readingInclude,
-                        readingStatusExcludes = readingExclude,
-                        statuses = statuses,
-                        statusExcludes = if (statusTri == Tri.EXCLUDE) listOf("COMPLETED") else emptyList(),
-                        downloaded = downloadedTri?.let { it == Tri.INCLUDE },
-                        sources = if (groupBy == "source") activeGroup?.let { listOf(it) } ?: emptyList() else emptyList(),
-                        categoryIds = if (groupBy == "category") activeGroup?.let { listOf(it) } ?: emptyList() else emptyList(),
-                    )
-                },
-            ) { series ->
-                val s = server
-                allSeriesIds = series.map { it.id }
-                val titleOf: (SeriesDto) -> String = { if (displayBy == "name") it.name.ifBlank { it.title } else it.title.ifBlank { it.name } }
-                when {
-                    series.isEmpty() -> EmptyMessage("No series match this filter.")
-                    s != null && gridView -> SeriesGrid(s.baseUrl, s.apiKey, series, onOpenSeries, selection = selection, titleOf = titleOf)
-                    s != null -> SeriesListView(s.baseUrl, s.apiKey, series, onOpenSeries, selection = selection, titleOf = titleOf)
+                // Grouped: a tab per group, and the content is a pager so groups can be swiped between.
+                val initialPage = tabGroups.indexOfFirst { it.key == selectedGroup }.coerceAtLeast(0)
+                val pagerState = androidx.compose.foundation.pager.rememberPagerState(initialPage) { tabGroups.size }
+                // Keep the persisted/active group in sync with the page the user swiped or tapped to.
+                LaunchedEffect(pagerState.currentPage, tabGroups) {
+                    tabGroups.getOrNull(pagerState.currentPage)?.let { selectedGroup = it.key }
                 }
+                GroupTabs(tabGroups, tabGroups.getOrNull(pagerState.currentPage)?.key, onSelect = { key ->
+                    val idx = tabGroups.indexOfFirst { it.key == key }
+                    if (idx >= 0) scope.launch { pagerState.animateScrollToPage(idx) }
+                })
+                androidx.compose.foundation.pager.HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+                    LibrarySeriesResults(
+                        server, api, filters, groupKey = tabGroups.getOrNull(page)?.key, reloadTick = reloadTick,
+                        gridView = gridView, displayBy = displayBy, selection = selection, onOpenSeries = onOpenSeries,
+                        onIdsLoaded = { if (page == pagerState.currentPage) allSeriesIds = it },
+                    )
+                }
+            } else {
+                LibrarySeriesResults(
+                    server, api, filters, groupKey = null, reloadTick = reloadTick,
+                    gridView = gridView, displayBy = displayBy, selection = selection, onOpenSeries = onOpenSeries,
+                    onIdsLoaded = { allSeriesIds = it },
+                )
             }
         }
     }
@@ -373,22 +377,16 @@ fun LibrarySeriesScreen(
 
                     2 -> {
                         SheetLabel("Group by")
-                        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-                            val opts = buildList {
-                                add("none" to "None"); add("status" to "Status"); add("source" to "Source")
-                                if (library.isWeb) add("category" to "Category")
-                            }
-                            opts.forEachIndexed { i, (value, label) ->
-                                SegmentedButton(
-                                    selected = groupBy == value,
-                                    onClick = { groupBy = value; selectedGroup = null },
-                                    shape = SegmentedButtonDefaults.itemShape(i, opts.size),
-                                ) { Text(label) }
-                            }
+                        val opts = buildList {
+                            add("none" to "None"); add("status" to "Status"); add("source" to "Source")
+                            if (library.isWeb) add("category" to "Category")
+                        }
+                        opts.forEach { (value, label) ->
+                            CheckRow(label, groupBy == value) { groupBy = value; selectedGroup = null }
                         }
                         if (groupBy != "none") {
                             Text(
-                                "Series split into a tab per group.",
+                                "Series split into a tab per group — swipe to switch.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -444,14 +442,36 @@ fun LibrarySeriesScreen(
     }
 }
 
-/** Contextual top bar shown while series are multi-selected. Matches the Mihon action set. */
+/** Contextual top bar while series are multi-selected: count + Select all / Select inverse (Mihon-style). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SelectionTopBar(
     count: Int,
-    isWeb: Boolean,
     onClose: () -> Unit,
     onSelectAll: () -> Unit,
+    onSelectInverse: () -> Unit,
+) {
+    TopAppBar(
+        colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ),
+        title = { Text("$count selected", fontWeight = FontWeight.SemiBold) },
+        navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "Cancel selection") } },
+        actions = {
+            IconButton(onClick = onSelectAll) { Icon(app.kodex.client.ui.icons.SelectAllIcon, contentDescription = "Select all") }
+            IconButton(onClick = onSelectInverse) { Icon(app.kodex.client.ui.icons.InvertSelectionIcon, contentDescription = "Select inverse") }
+        },
+    )
+}
+
+/** Contextual bottom action bar for the multi-select mode — the bulk functions as icon buttons. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SelectionBottomBar(
+    isWeb: Boolean,
     onMarkRead: () -> Unit,
     onMarkUnread: () -> Unit,
     onUpdate: () -> Unit,
@@ -459,29 +479,86 @@ private fun SelectionTopBar(
     onCategories: () -> Unit,
     onRemove: () -> Unit,
 ) {
-    var menu by remember { mutableStateOf(false) }
-    TopAppBar(
-        colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-            titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        ),
-        title = { Text("$count selected", fontWeight = FontWeight.SemiBold) },
-        navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "Cancel selection") } },
-        actions = {
-            IconButton(onClick = onMarkRead) { Icon(Icons.Filled.Check, contentDescription = "Mark read") }
-            IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More") }
-            androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                androidx.compose.material3.DropdownMenuItem(text = { Text("Select all") }, onClick = { menu = false; onSelectAll() })
-                androidx.compose.material3.DropdownMenuItem(text = { Text("Mark as unread") }, onClick = { menu = false; onMarkUnread() })
-                if (isWeb) {
-                    androidx.compose.material3.DropdownMenuItem(text = { Text("Update") }, onClick = { menu = false; onUpdate() })
-                    androidx.compose.material3.DropdownMenuItem(text = { Text("Download") }, onClick = { menu = false; onDownload() })
-                    androidx.compose.material3.DropdownMenuItem(text = { Text("Add to categories") }, onClick = { menu = false; onCategories() })
-                    androidx.compose.material3.DropdownMenuItem(text = { Text("Remove") }, onClick = { menu = false; onRemove() })
-                }
+    androidx.compose.material3.BottomAppBar(
+        containerColor = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+    ) {
+        androidx.compose.foundation.layout.Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onMarkRead) { Icon(Icons.Filled.Check, contentDescription = "Mark as read") }
+            IconButton(onClick = onMarkUnread) { Icon(app.kodex.client.ui.icons.MarkUnreadIcon, contentDescription = "Mark as unread") }
+            if (isWeb) {
+                IconButton(onClick = onUpdate) { Icon(Icons.Filled.Refresh, contentDescription = "Update") }
+                IconButton(onClick = onDownload) { Icon(app.kodex.client.ui.icons.DownloadIcon, contentDescription = "Download") }
+                IconButton(onClick = onCategories) { Icon(app.kodex.client.ui.icons.LabelIcon, contentDescription = "Add to categories") }
+                IconButton(onClick = onRemove) { Icon(Icons.Filled.Delete, contentDescription = "Remove") }
             }
+        }
+    }
+}
+
+/** The shared query facets (everything except the group key), passed to each pager page / the flat list. */
+private data class SeriesFilterArgs(
+    val libraryId: String,
+    val sortExpr: String,
+    val readingInclude: List<String>,
+    val readingExclude: List<String>,
+    val statusInclude: Boolean,
+    val statusExclude: Boolean,
+    val downloaded: Boolean?,
+    val groupBy: String,
+)
+
+/**
+ * One group's series (or the whole library when [groupKey] is null): loads with the active filters and
+ * renders the grid/list. Extracted so it can back both the flat list and each swipeable pager page.
+ */
+@Composable
+private fun LibrarySeriesResults(
+    server: app.kodex.client.data.model.ServerConnection?,
+    api: KodexApi,
+    filters: SeriesFilterArgs,
+    groupKey: String?,
+    reloadTick: Int,
+    gridView: Boolean,
+    displayBy: String,
+    selection: app.kodex.client.ui.SelectionState<String>,
+    onOpenSeries: (SeriesDto) -> Unit,
+    onIdsLoaded: (List<String>) -> Unit,
+) {
+    LoadedContent(
+        key = listOf(filters.libraryId, server?.id, filters.sortExpr, filters.readingInclude, filters.readingExclude, filters.downloaded, filters.statusInclude, filters.statusExclude, filters.groupBy, groupKey, reloadTick),
+        load = {
+            val s = server!!
+            val statuses = buildList {
+                if (filters.groupBy == "status") groupKey?.let { add(it) }
+                if (filters.statusInclude) add("COMPLETED")
+            }
+            api.querySeries(
+                s.baseUrl, s.apiKey,
+                libraryId = filters.libraryId,
+                sort = filters.sortExpr,
+                readingStatuses = filters.readingInclude,
+                readingStatusExcludes = filters.readingExclude,
+                statuses = statuses,
+                statusExcludes = if (filters.statusExclude) listOf("COMPLETED") else emptyList(),
+                downloaded = filters.downloaded,
+                sources = if (filters.groupBy == "source") groupKey?.let { listOf(it) } ?: emptyList() else emptyList(),
+                categoryIds = if (filters.groupBy == "category") groupKey?.let { listOf(it) } ?: emptyList() else emptyList(),
+            )
         },
-    )
+    ) { series ->
+        onIdsLoaded(series.map { it.id })
+        val titleOf: (SeriesDto) -> String = { if (displayBy == "name") it.name.ifBlank { it.title } else it.title.ifBlank { it.name } }
+        when {
+            series.isEmpty() -> EmptyMessage("No series match this filter.")
+            server != null && gridView -> SeriesGrid(server.baseUrl, server.apiKey, series, onOpenSeries, selection = selection, titleOf = titleOf)
+            server != null -> SeriesListView(server.baseUrl, server.apiKey, series, onOpenSeries, selection = selection, titleOf = titleOf)
+        }
+    }
 }
 
 /** Horizontal tab strip over the grid: one tab per group (with count) when a dimension is active. */

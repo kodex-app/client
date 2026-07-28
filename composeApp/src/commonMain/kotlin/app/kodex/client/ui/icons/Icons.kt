@@ -2,6 +2,7 @@ package app.kodex.client.ui.icons
 
 import androidx.compose.material.icons.materialIcon
 import androidx.compose.material.icons.materialPath
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.vector.ImageVector
 
 /** Material "file_download" glyph — not in material-icons-core, so defined here. */
@@ -45,6 +46,82 @@ val FilterIcon: ImageVector = materialIcon(name = "Filled.FilterList") {
         verticalLineToRelative(-2f)
         horizontalLineTo(6f)
         verticalLineToRelative(2f)
+        close()
+    }
+}
+
+/** Material "check_box" glyph — filled checkbox, used for the "Select all" selection action. */
+val SelectAllIcon: ImageVector = materialIcon(name = "Filled.CheckBox") {
+    materialPath {
+        moveTo(19f, 3f)
+        horizontalLineTo(5f)
+        curveToRelative(-1.11f, 0f, -2f, 0.9f, -2f, 2f)
+        verticalLineToRelative(14f)
+        curveToRelative(0f, 1.1f, 0.89f, 2f, 2f, 2f)
+        horizontalLineToRelative(14f)
+        curveToRelative(1.11f, 0f, 2f, -0.9f, 2f, -2f)
+        verticalLineTo(5f)
+        curveToRelative(0f, -1.1f, -0.89f, -2f, -2f, -2f)
+        close()
+        moveToRelative(-9f, 14f)
+        lineToRelative(-5f, -5f)
+        lineToRelative(1.41f, -1.41f)
+        lineTo(10f, 14.17f)
+        lineToRelative(7.59f, -7.59f)
+        lineTo(19f, 8f)
+        lineToRelative(-9f, 9f)
+        close()
+    }
+}
+
+/** Material "invert_colors" glyph — half-filled drop, used for the "Select inverse" action. */
+val InvertSelectionIcon: ImageVector = materialIcon(name = "Filled.InvertColors") {
+    materialPath {
+        moveTo(17.66f, 7.93f)
+        lineTo(12f, 2.27f)
+        lineTo(6.34f, 7.93f)
+        curveToRelative(-3.12f, 3.12f, -3.12f, 8.19f, 0f, 11.31f)
+        curveTo(7.9f, 20.8f, 9.95f, 21.58f, 12f, 21.58f)
+        curveToRelative(2.05f, 0f, 4.1f, -0.78f, 5.66f, -2.34f)
+        curveToRelative(3.12f, -3.12f, 3.12f, -8.19f, 0f, -11.31f)
+        close()
+        moveTo(12f, 19.59f)
+        curveToRelative(-1.6f, 0f, -3.11f, -0.62f, -4.24f, -1.76f)
+        curveTo(6.62f, 16.69f, 6f, 15.19f, 6f, 13.59f)
+        reflectiveCurveToRelative(0.62f, -3.11f, 1.76f, -4.24f)
+        lineTo(12f, 5.1f)
+        verticalLineToRelative(14.49f)
+        close()
+    }
+}
+
+/** A ring (outlined circle) — used for the "Mark as unread" bottom-bar action. */
+val MarkUnreadIcon: ImageVector = materialIcon(name = "Filled.MarkUnread") {
+    materialPath(pathFillType = PathFillType.EvenOdd) {
+        moveTo(12f, 3f)
+        arcToRelative(9f, 9f, 0f, true, true, 0f, 18f)
+        arcToRelative(9f, 9f, 0f, true, true, 0f, -18f)
+        close()
+        moveTo(12f, 6f)
+        arcToRelative(6f, 6f, 0f, true, false, 0f, 12f)
+        arcToRelative(6f, 6f, 0f, true, false, 0f, -12f)
+        close()
+    }
+}
+
+/** Material "label" (tag) glyph — used for the "Add to categories" bottom-bar action. */
+val LabelIcon: ImageVector = materialIcon(name = "Filled.Label") {
+    materialPath {
+        moveTo(17.63f, 5.84f)
+        curveTo(17.27f, 5.33f, 16.67f, 5f, 16f, 5f)
+        lineTo(5f, 5.01f)
+        curveTo(3.9f, 5.01f, 3f, 5.9f, 3f, 7f)
+        verticalLineToRelative(10f)
+        curveToRelative(0f, 1.1f, 0.9f, 1.99f, 2f, 1.99f)
+        lineTo(16f, 19f)
+        curveToRelative(0.67f, 0f, 1.27f, -0.33f, 1.63f, -0.84f)
+        lineTo(22f, 12f)
+        lineToRelative(-4.37f, -6.16f)
         close()
     }
 }

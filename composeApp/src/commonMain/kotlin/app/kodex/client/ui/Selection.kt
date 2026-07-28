@@ -27,6 +27,13 @@ class SelectionState<T> {
         items.addAll(ids)
     }
 
+    /** Select exactly the items in [ids] that aren't currently selected (Mihon-style "invert"). */
+    fun selectInverse(ids: Collection<T>) {
+        val inverse = ids.filterNot { it in items }
+        items.clear()
+        items.addAll(inverse)
+    }
+
     fun clear() = items.clear()
 }
 
