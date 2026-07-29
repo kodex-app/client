@@ -3,6 +3,7 @@ package app.kodex.client
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -53,7 +54,10 @@ fun App() {
             LocalSnackbar provides snackbar,
         ) {
             Surface(Modifier.fillMaxSize()) {
-                Box(Modifier.fillMaxSize()) {
+                // Reserve the system navigation-bar space app-wide so bottom content (nav bar, FABs,
+                // last list rows) is never hidden under it. Bottom-only, so top backdrops stay edge-to-edge.
+                // Consuming the inset here also prevents descendant Scaffolds from double-padding it.
+                Box(Modifier.fillMaxSize().navigationBarsPadding()) {
                     val activeServer by graph.session.activeServer.collectAsStateSafe()
                     if (activeServer == null) {
                         LoginScreen(graph.session)

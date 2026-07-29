@@ -16,10 +16,15 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -84,7 +89,8 @@ private fun SourceList(
     val recents by sourcePrefs.recents.collectAsStateSafe()
     var filter by remember { mutableStateOf("") }
     var kind by remember { mutableStateOf<String?>(null) }
-    var lang by remember { mutableStateOf<String?>(null) }
+    var selectedLangs by remember { mutableStateOf<Set<String>>(emptySet()) } // empty = all languages
+    var langMenu by remember { mutableStateOf(false) }
 
     val byId = remember(sources) { sources.associateBy { it.id } }
     val favoriteSources = remember(sources, favorites) { sources.filter { it.id in favorites } }
@@ -94,11 +100,11 @@ private fun SourceList(
     val langs = remember(sources) {
         sources.mapNotNull { it.language }.distinct().sortedBy { languageLabel(it) }
     }
-    val groups = remember(sources, filter, kind, lang) {
+    val groups = remember(sources, filter, kind, selectedLangs) {
         val f = filter.trim().lowercase()
         val visible = sources
             .filter { kind == null || it.kind == kind }
-            .filter { lang == null || it.language == lang }
+            .filter { selectedLangs.isEmpty() || it.language in selectedLangs }
             .filter { f.isEmpty() || it.displayName.lowercase().contains(f) }
         visible
             .groupBy { it.language }
@@ -107,14 +113,47 @@ private fun SourceList(
     }
 
     Column(Modifier.fillMaxSize()) {
-        OutlinedTextField(
-            value = filter,
-            onValueChange = { filter = it },
-            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp),
-            placeholder = { Text("Filter sources") },
-            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-            singleLine = true,
-        )
+        Row(
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedTextField(
+                value = filter,
+                onValueChange = { filter = it },
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("Filter sources") },
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                singleLine = true,
+            )
+            if (langs.size > 1) {
+                Spacer(Modifier.size(8.dp))
+                Box {
+                    BadgedBox(badge = { if (selectedLangs.isNotEmpty()) Badge { Text("${selectedLangs.size}") } }) {
+                        IconButton(onClick = { langMenu = true }) {
+                            Icon(
+                                app.kodex.client.ui.icons.LanguageIcon,
+                                contentDescription = "Filter by language",
+                                tint = if (selectedLangs.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    DropdownMenu(expanded = langMenu, onDismissRequest = { langMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("All languages") },
+                            onClick = { selectedLangs = emptySet() },
+                            leadingIcon = { if (selectedLangs.isEmpty()) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary) },
+                        )
+                        langs.forEach { l ->
+                            DropdownMenuItem(
+                                text = { Text(languageLabel(l)) },
+                                onClick = { selectedLangs = if (l in selectedLangs) selectedLangs - l else selectedLangs + l },
+                                leadingIcon = { if (l in selectedLangs) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
         if (kinds.size > 1) {
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
@@ -126,21 +165,6 @@ private fun SourceList(
                         selected = kind == k,
                         onClick = { kind = if (kind == k) null else k },
                         label = { Text(k.lowercase().replaceFirstChar { it.uppercase() }) },
-                    )
-                }
-            }
-        }
-        if (langs.size > 1) {
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                item { FilterChip(selected = lang == null, onClick = { lang = null }, label = { Text("All languages") }) }
-                items(langs, key = { it }) { l ->
-                    FilterChip(
-                        selected = lang == l,
-                        onClick = { lang = if (lang == l) null else l },
-                        label = { Text(languageLabel(l)) },
                     )
                 }
             }
