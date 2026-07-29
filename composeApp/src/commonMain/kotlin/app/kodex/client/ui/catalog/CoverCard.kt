@@ -107,7 +107,7 @@ fun CoverCard(
         Spacer(Modifier.height(8.dp))
         Text(
             title,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.Medium,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,

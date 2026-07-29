@@ -11,6 +11,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -32,6 +35,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -58,12 +64,15 @@ import app.kodex.client.network.BookDto
 import app.kodex.client.network.KodexApi
 import app.kodex.client.network.LabelDto
 import app.kodex.client.network.SeriesDto
+import app.kodex.client.network.SourceDescriptor
+import app.kodex.client.network.SourceSearchResult
 import app.kodex.client.ui.catalog.CoverCard
 import app.kodex.client.ui.catalog.bookCoverUrl
 import app.kodex.client.ui.catalog.bookSubtitle
 import app.kodex.client.ui.catalog.seriesCoverUrl
 import app.kodex.client.ui.catalog.seriesSubtitle
 import app.kodex.client.ui.catalog.seriesUnreadBadge
+import app.kodex.client.ui.catalog.sourceCoverUrl
 import app.kodex.client.ui.collectAsStateSafe
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -97,6 +106,15 @@ private sealed interface SearchUiState {
     data class Ready(val series: List<SeriesDto>, val books: List<BookDto>) : SearchUiState
 }
 
+/** Online (source) search: results grouped per content source. */
+private data class SourceResults(val source: SourceDescriptor, val items: List<SourceSearchResult>, val error: Boolean)
+
+private sealed interface OnlineState {
+    data object Idle : OnlineState
+    data object Loading : OnlineState
+    data class Ready(val perSource: List<SourceResults>) : OnlineState
+}
+
 private val SERIES_STATUSES = listOf("ONGOING", "COMPLETED", "PUBLISHING_FINISHED", "LICENSED", "CANCELLED", "ON_HIATUS", "UNKNOWN")
 private val READING_STATUSES = listOf("NOT_STARTED" to "Unread", "IN_PROGRESS" to "In progress", "COMPLETED" to "Read")
 
@@ -113,14 +131,48 @@ fun SearchScreen(
     onClose: () -> Unit,
     onOpenSeries: (SeriesDto) -> Unit = {},
     onOpenBook: (BookDto) -> Unit = {},
+    onOpenSourceSeries: (SourceDescriptor, SourceSearchResult) -> Unit = { _, _ -> },
 ) {
     val server by session.activeServer.collectAsStateSafe()
     var query by remember { mutableStateOf("") }
+    var online by remember { mutableStateOf(false) } // false = library (local), true = sources (online)
     var facets by remember { mutableStateOf(Facets()) }
     var state by remember { mutableStateOf<SearchUiState>(SearchUiState.Idle) }
     var sheetOpen by remember { mutableStateOf(false) }
+    var sourceSheetOpen by remember { mutableStateOf(false) }
     var vocab by remember { mutableStateOf<FacetVocab?>(null) }
+    // Online mode: installed sources + which to search (empty = all) + per-source results.
+    var sources by remember { mutableStateOf<List<SourceDescriptor>>(emptyList()) }
+    var selectedSources by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var onlineState by remember { mutableStateOf<OnlineState>(OnlineState.Idle) }
     val focusRequester = remember { FocusRequester() }
+
+    // Load the installed content sources once per server (for the online-mode source picker + search).
+    LaunchedEffect(server?.id) {
+        val s = server ?: return@LaunchedEffect
+        sources = runCatching { api.contentSources(s.baseUrl, s.apiKey) }.getOrDefault(emptyList())
+    }
+
+    // Online search: fan out the query across the selected sources (or all) and group results per source.
+    LaunchedEffect(query, selectedSources, online, server?.id, sources) {
+        if (!online) return@LaunchedEffect
+        val current = server ?: return@LaunchedEffect
+        val text = query.trim()
+        if (text.isEmpty()) { onlineState = OnlineState.Idle; return@LaunchedEffect }
+        val targets = if (selectedSources.isEmpty()) sources else sources.filter { it.id in selectedSources }
+        if (targets.isEmpty()) { onlineState = OnlineState.Ready(emptyList()); return@LaunchedEffect }
+        delay(350)
+        onlineState = OnlineState.Loading
+        val perSource = coroutineScope {
+            targets.map { src ->
+                async {
+                    runCatching { api.sourceSearch(current.baseUrl, current.apiKey, src.id, text, 1) }
+                        .fold({ SourceResults(src, it.items, error = false) }, { SourceResults(src, emptyList(), error = true) })
+                }
+            }.map { it.await() }
+        }
+        onlineState = OnlineState.Ready(perSource)
+    }
 
     LaunchedEffect(query, facets, server?.id) {
         val current = server ?: return@LaunchedEffect
@@ -188,7 +240,7 @@ fun SearchScreen(
                         value = query,
                         onValueChange = { query = it },
                         modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
-                        placeholder = { Text("Search your library") },
+                        placeholder = { Text(if (online) "Search all sources" else "Search your library") },
                         singleLine = true,
                         leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
                         trailingIcon = {
@@ -204,21 +256,46 @@ fun SearchScreen(
                     )
                 },
                 actions = {
-                    TextButton(onClick = { sheetOpen = true }) {
-                        Text(if (facets.count > 0) "Filters (${facets.count})" else "Filters")
+                    if (online) {
+                        TextButton(onClick = { sourceSheetOpen = true }) {
+                            Text(if (selectedSources.isNotEmpty()) "Sources (${selectedSources.size})" else "Sources")
+                        }
+                    } else {
+                        TextButton(onClick = { sheetOpen = true }) {
+                            Text(if (facets.count > 0) "Filters (${facets.count})" else "Filters")
+                        }
                     }
                 },
             )
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
-            when (val s = state) {
-                is SearchUiState.Idle -> Hint("Search series and books, or tap Filters to browse by genre, status, and more.")
-                is SearchUiState.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
-                is SearchUiState.Error -> Hint(s.message)
-                is SearchUiState.Ready ->
-                    if (s.series.isEmpty() && s.books.isEmpty()) Hint("No results.")
-                    else Results(server?.baseUrl ?: "", server?.apiKey ?: "", s, onOpenSeries, onOpenBook)
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            // Local (library) vs Online (installed sources) mode.
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                SegmentedButton(selected = !online, onClick = { online = false }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("Library") }
+                SegmentedButton(selected = online, onClick = { online = true }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("Online") }
+            }
+            Box(Modifier.fillMaxSize()) {
+                if (online) {
+                    when (val os = onlineState) {
+                        is OnlineState.Idle ->
+                            if (sources.isEmpty()) Hint("No content sources installed. Install one from Browse → Extensions.")
+                            else Hint("Search across your installed sources.")
+                        is OnlineState.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
+                        is OnlineState.Ready ->
+                            if (os.perSource.all { it.items.isEmpty() }) Hint("No results.")
+                            else OnlineResults(server?.baseUrl ?: "", server?.apiKey ?: "", os.perSource, onOpenSourceSeries)
+                    }
+                } else {
+                    when (val s = state) {
+                        is SearchUiState.Idle -> Hint("Search series and books, or tap Filters to browse by genre, status, and more.")
+                        is SearchUiState.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
+                        is SearchUiState.Error -> Hint(s.message)
+                        is SearchUiState.Ready ->
+                            if (s.series.isEmpty() && s.books.isEmpty()) Hint("No results.")
+                            else Results(server?.baseUrl ?: "", server?.apiKey ?: "", s, onOpenSeries, onOpenBook)
+                    }
+                }
             }
         }
     }
@@ -230,6 +307,15 @@ fun SearchScreen(
             onDismiss = { sheetOpen = false },
             onClear = { facets = Facets() },
             onApply = { facets = it; sheetOpen = false },
+        )
+    }
+    if (sourceSheetOpen) {
+        SourcePickerSheet(
+            sources = sources,
+            selected = selectedSources,
+            onDismiss = { sourceSheetOpen = false },
+            onClear = { selectedSources = emptySet() },
+            onApply = { selectedSources = it; sourceSheetOpen = false },
         )
     }
 }
@@ -348,6 +434,102 @@ private fun Results(
                     onClick = { onOpenBook(book) },
                     width = null,
                 )
+            }
+        }
+    }
+}
+
+/** Online-mode results: one horizontal row of covers per content source (Mihon-style). */
+@Composable
+private fun OnlineResults(
+    baseUrl: String,
+    apiKey: String,
+    perSource: List<SourceResults>,
+    onOpen: (SourceDescriptor, SourceSearchResult) -> Unit,
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        items(perSource, key = { it.source.id }) { sr ->
+            Column(Modifier.fillMaxWidth()) {
+                Text(
+                    sr.source.displayName.ifBlank { sr.source.id },
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                )
+                when {
+                    sr.error -> RowHint("Couldn't search this source.")
+                    sr.items.isEmpty() -> RowHint("No results.")
+                    else -> LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        items(sr.items, key = { it.externalId }) { item ->
+                            CoverCard(
+                                coverUrl = sourceCoverUrl(baseUrl, item.providerId ?: sr.source.id, item.coverUrl),
+                                apiKey = apiKey,
+                                title = item.title,
+                                subtitle = item.author,
+                                unread = null,
+                                onClick = { onOpen(sr.source, item) },
+                                width = 112.dp,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RowHint(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 16.dp),
+    )
+}
+
+/** Online-mode filter: pick which installed sources to search (none selected = all). */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun SourcePickerSheet(
+    sources: List<SourceDescriptor>,
+    selected: Set<String>,
+    onDismiss: () -> Unit,
+    onClear: () -> Unit,
+    onApply: (Set<String>) -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    var working by remember(selected) { mutableStateOf(selected) }
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+            Text("Sources", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 4.dp))
+            Text("None selected searches every source.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
+            Column(Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+                if (sources.isEmpty()) {
+                    Text("No sources installed.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 12.dp))
+                } else FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    sources.forEach { src ->
+                        FilterChip(
+                            selected = src.id in working,
+                            onClick = { working = working.toggle(src.id) },
+                            label = { Text(src.displayName.ifBlank { src.id }) },
+                        )
+                    }
+                }
+            }
+            androidx.compose.foundation.layout.Row(
+                Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(onClick = { working = emptySet(); onClear() }, modifier = Modifier.weight(1f)) { Text("All") }
+                Button(onClick = { onApply(working) }, modifier = Modifier.weight(1f)) { Text("Apply") }
             }
         }
     }

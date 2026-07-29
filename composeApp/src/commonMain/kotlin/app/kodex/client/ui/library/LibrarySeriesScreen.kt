@@ -30,8 +30,13 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
@@ -324,11 +329,24 @@ fun LibrarySeriesScreen(
         var sheetTab by remember { mutableStateOf(0) }
         ModalBottomSheet(onDismissRequest = { sheetOpen = false }, sheetState = sheetState) {
             val tabs = listOf("Sort", "Filter", "Group", "Display")
-            TabRow(selectedTabIndex = sheetTab) {
+            // Transparent container so the tab strip blends with the sheet (no mismatched white band/seam).
+            TabRow(
+                selectedTabIndex = sheetTab,
+                containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                contentColor = MaterialTheme.colorScheme.primary,
+                divider = {},
+            ) {
                 tabs.forEachIndexed { i, t ->
-                    Tab(selected = sheetTab == i, onClick = { sheetTab = i }, text = { Text(t) })
+                    Tab(
+                        selected = sheetTab == i,
+                        onClick = { sheetTab = i },
+                        text = { Text(t, style = MaterialTheme.typography.titleSmall) },
+                        selectedContentColor = MaterialTheme.colorScheme.primary,
+                        unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
+            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
             Column(
                 Modifier.fillMaxWidth().heightIn(min = 240.dp, max = 440.dp)
                     .verticalScroll(rememberScrollState()).padding(top = 8.dp, bottom = 24.dp),
@@ -461,8 +479,8 @@ private fun SelectionTopBar(
         title = { Text("$count selected", fontWeight = FontWeight.SemiBold) },
         navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "Cancel selection") } },
         actions = {
-            IconButton(onClick = onSelectAll) { Icon(app.kodex.client.ui.icons.SelectAllIcon, contentDescription = "Select all") }
-            IconButton(onClick = onSelectInverse) { Icon(app.kodex.client.ui.icons.InvertSelectionIcon, contentDescription = "Select inverse") }
+            TooltipIconButton("Select all", onSelectAll) { Icon(app.kodex.client.ui.icons.SelectAllIcon, contentDescription = "Select all") }
+            TooltipIconButton("Select inverse", onSelectInverse) { Icon(app.kodex.client.ui.icons.InvertSelectionIcon, contentDescription = "Select inverse") }
         },
     )
 }
@@ -488,15 +506,28 @@ private fun SelectionBottomBar(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onMarkRead) { Icon(Icons.Filled.Check, contentDescription = "Mark as read") }
-            IconButton(onClick = onMarkUnread) { Icon(app.kodex.client.ui.icons.MarkUnreadIcon, contentDescription = "Mark as unread") }
+            TooltipIconButton("Mark as read", onMarkRead) { Icon(Icons.Filled.Check, contentDescription = "Mark as read") }
+            TooltipIconButton("Mark as unread", onMarkUnread) { Icon(app.kodex.client.ui.icons.MarkUnreadIcon, contentDescription = "Mark as unread") }
             if (isWeb) {
-                IconButton(onClick = onUpdate) { Icon(Icons.Filled.Refresh, contentDescription = "Update") }
-                IconButton(onClick = onDownload) { Icon(app.kodex.client.ui.icons.DownloadIcon, contentDescription = "Download") }
-                IconButton(onClick = onCategories) { Icon(app.kodex.client.ui.icons.LabelIcon, contentDescription = "Add to categories") }
-                IconButton(onClick = onRemove) { Icon(Icons.Filled.Delete, contentDescription = "Remove") }
+                TooltipIconButton("Update", onUpdate) { Icon(Icons.Filled.Refresh, contentDescription = "Update") }
+                TooltipIconButton("Download", onDownload) { Icon(app.kodex.client.ui.icons.DownloadIcon, contentDescription = "Download") }
+                TooltipIconButton("Add to categories", onCategories) { Icon(app.kodex.client.ui.icons.LabelIcon, contentDescription = "Add to categories") }
+                TooltipIconButton("Remove", onRemove) { Icon(Icons.Filled.Delete, contentDescription = "Remove") }
             }
         }
+    }
+}
+
+/** An icon button with a plain tooltip (long-press / hover) showing [label]. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TooltipIconButton(label: String, onClick: () -> Unit, icon: @Composable () -> Unit) {
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = { PlainTooltip { Text(label) } },
+        state = rememberTooltipState(),
+    ) {
+        IconButton(onClick = onClick) { icon() }
     }
 }
 

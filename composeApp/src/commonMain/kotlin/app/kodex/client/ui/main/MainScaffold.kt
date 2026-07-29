@@ -76,6 +76,7 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
             onClose = { searchOpen = false },
             onOpenSeries = { searchOpen = false; openSeries(it.id) },
             onOpenBook = { searchOpen = false; openBook(it.id) },
+            onOpenSourceSeries = { source, seed -> searchOpen = false; backStack.add(DetailRoute.SourceSeries(source, seed)) },
         )
         return
     }
