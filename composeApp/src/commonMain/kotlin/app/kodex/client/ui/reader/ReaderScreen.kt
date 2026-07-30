@@ -70,6 +70,7 @@ fun ReaderScreen(session: SessionManager, api: KodexApi, bookId: String, onBack:
                             apiKey = s.apiKey,
                             pageUrlFor = { pg -> bookPageUrl(s.baseUrl, book.id, pg) },
                             onPersist = if (incognito) ({ _, _ -> }) else ({ pg, completed -> api.saveReadProgress(s.baseUrl, s.apiKey, book.id, pg, completed) }),
+                            incognito = incognito,
                         )
                     }
                     ImageReaderScreen(session, api, source, onBack)

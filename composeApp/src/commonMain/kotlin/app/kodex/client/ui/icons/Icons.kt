@@ -126,6 +126,22 @@ val LabelIcon: ImageVector = materialIcon(name = "Filled.Label") {
     }
 }
 
+/** Material "pause" glyph (two bars) — used for the reader's auto-scroll toggle. */
+val PauseIcon: ImageVector = materialIcon(name = "Filled.Pause") {
+    materialPath {
+        moveTo(6f, 19f)
+        horizontalLineToRelative(4f)
+        verticalLineTo(5f)
+        horizontalLineTo(6f)
+        close()
+        moveTo(14f, 5f)
+        verticalLineToRelative(14f)
+        horizontalLineToRelative(4f)
+        verticalLineTo(5f)
+        close()
+    }
+}
+
 /** Material "language" (globe) glyph — used for the Browse language filter button. */
 val LanguageIcon: ImageVector = materialIcon(name = "Filled.Language") {
     materialPath {

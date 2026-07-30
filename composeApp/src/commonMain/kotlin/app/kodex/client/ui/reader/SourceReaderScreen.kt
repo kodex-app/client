@@ -74,6 +74,7 @@ fun SourceReaderScreen(
                                     page = pg, completed = completed, seriesId = seriesId, chapterName = chapterName,
                                 )
                             }),
+                            incognito = incognito,
                         )
                     }
                     ImageReaderScreen(session, api, source, onBack)

@@ -2,43 +2,59 @@ package app.kodex.client.ui.reader
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -50,6 +66,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -57,6 +74,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -91,6 +110,7 @@ class ReaderSource(
     val apiKey: String,
     val pageUrlFor: (page: Int) -> String, // 1-based page → image URL
     val onPersist: suspend (page: Int, completed: Boolean) -> Unit,
+    val incognito: Boolean = false, // drives the persistent incognito badge
 )
 
 private fun bgColor(bg: String): Color = when (bg) {
@@ -114,13 +134,17 @@ fun ImageReaderScreen(session: SessionManager, api: KodexApi, source: ReaderSour
     var prefs by remember { mutableStateOf<ReaderPrefs?>(null) }
     var defaultPrefs by remember { mutableStateOf(defaultReaderPrefs(source.kind)) }
     var autoMode by remember { mutableStateOf<String?>(null) } // resolved paged/continuous when mode==auto
+    var preload by remember { mutableStateOf(PRELOAD_DEFAULT) }
+    var autoScroll by remember { mutableStateOf(false) }
+    var pickerOpen by remember { mutableStateOf(false) }
 
-    // Load persisted prefs (series override → user default → built-in).
+    // Load persisted prefs (series override → user default → built-in) + global preload count.
     LaunchedEffect(source.seriesId, source.kind, server?.id) {
         val s = server ?: return@LaunchedEffect
         val resolved = resolveReaderPrefs(api, s.baseUrl, s.apiKey, source.kind, source.seriesId)
         defaultPrefs = resolved.default
         prefs = resolved.effective
+        preload = resolved.preload
     }
 
     // Auto-detect webtoon vs paged by sampling page aspect ratios (Mihon long-strip heuristic).
@@ -148,6 +172,30 @@ fun ImageReaderScreen(session: SessionManager, api: KodexApi, source: ReaderSour
     var page by remember { mutableStateOf(source.initialPage.coerceIn(1, source.pageCount.coerceAtLeast(1))) }
     LaunchedEffect(page) {
         if (source.pageCount > 0) runCatching { source.onPersist(page, page >= source.pageCount) }
+    }
+
+    // Auto-scroll only makes sense in continuous mode; cancel it elsewhere.
+    LaunchedEffect(effectiveMode) { if (effectiveMode != MODE_CONTINUOUS) autoScroll = false }
+
+    // Prefetch the next [preload] pages into Coil's cache so turns feel instant.
+    LaunchedEffect(page, preload, effectiveMode, source.pageCount) {
+        if (preload <= 0 || source.pageCount <= 0) return@LaunchedEffect
+        val step = if (effectiveMode == MODE_PAGED && p?.isDouble == true) 2 else 1
+        val loader = SingletonImageLoader.get(context)
+        for (n in (page + step) until (page + step + preload)) {
+            if (n > source.pageCount) break
+            val req = ImageRequest.Builder(context)
+                .data(source.pageUrlFor(n))
+                .httpHeaders(NetworkHeaders.Builder().set("X-API-Key", source.apiKey).build())
+                .build()
+            loader.enqueue(req)
+        }
+    }
+
+    fun updatePreload(v: Int) {
+        preload = v.coerceIn(0, PRELOAD_MAX)
+        val s = server ?: return
+        scope.launch { runCatching { savePreloadCount(api, s.baseUrl, s.apiKey, preload) } }
     }
 
     var chrome by remember { mutableStateOf(true) }
@@ -193,19 +241,52 @@ fun ImageReaderScreen(session: SessionManager, api: KodexApi, source: ReaderSour
         if (p == null || effectiveMode == null) {
             CircularProgressIndicator(Modifier.align(Alignment.Center), color = Color.White)
         } else {
+            val step = if (effectiveMode == MODE_PAGED && p.isDouble) 2 else 1
+            val rangeEnd = (page + step - 1).coerceAtMost(source.pageCount)
+            val indicator = if (step == 2 && rangeEnd > page) "$page–$rangeEnd / ${source.pageCount}" else "$page / ${source.pageCount}"
+
             if (effectiveMode == MODE_CONTINUOUS) {
-                ContinuousReader(source, p, page, onPage = { page = it }, onToggleChrome = { chrome = !chrome })
+                ContinuousReader(source, p, page, autoScroll, onPage = { page = it }, onToggleChrome = { chrome = !chrome }, onAutoScrollEnd = { autoScroll = false })
             } else {
                 PagedReader(source, p, page, onJump = { page = it }, onToggleChrome = { chrome = !chrome })
+            }
+
+            // Paged edge page-turn buttons (page order), shown with the chrome.
+            if (effectiveMode == MODE_PAGED) {
+                AnimatedVisibility(chrome, modifier = Modifier.align(Alignment.CenterStart)) {
+                    EdgeButton(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous page") { page = (page - step).coerceAtLeast(1) }
+                }
+                AnimatedVisibility(chrome, modifier = Modifier.align(Alignment.CenterEnd)) {
+                    EdgeButton(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next page") { page = (page + step).coerceAtMost(source.pageCount) }
+                }
             }
 
             AnimatedVisibility(chrome, modifier = Modifier.align(Alignment.TopCenter)) {
                 TopBar(source.title, onBack) { settingsOpen = true }
             }
             AnimatedVisibility(chrome, modifier = Modifier.align(Alignment.BottomCenter)) {
-                BottomBar(page, source.pageCount, p.isRtl) { target -> page = target.coerceIn(1, source.pageCount) }
+                BottomBar(
+                    page = page,
+                    pageCount = source.pageCount,
+                    indicator = indicator,
+                    continuous = effectiveMode == MODE_CONTINUOUS,
+                    autoScroll = autoScroll,
+                    onToggleAutoScroll = { autoScroll = !autoScroll },
+                    onPrev = { page = (page - step).coerceAtLeast(1) },
+                    onNext = { page = (page + step).coerceAtMost(source.pageCount) },
+                    onSeek = { target -> page = target.coerceIn(1, source.pageCount) },
+                    onOpenPicker = { pickerOpen = true },
+                )
             }
+            // Page pill while the chrome is hidden.
+            AnimatedVisibility(!chrome, modifier = Modifier.align(Alignment.BottomCenter)) { PagePill(indicator) }
+            // Persistent incognito badge (always visible, above the auto-hiding chrome).
+            if (source.incognito) IncognitoBadge(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 6.dp))
         }
+    }
+
+    if (pickerOpen && p != null) {
+        PagePickerDialog(source, current = page, onPick = { page = it; pickerOpen = false }, onDismiss = { pickerOpen = false })
     }
 
     if (settingsOpen && p != null) {
@@ -213,6 +294,10 @@ fun ImageReaderScreen(session: SessionManager, api: KodexApi, source: ReaderSour
             SettingsSheet(
                 prefs = p,
                 effectiveMode = effectiveMode ?: MODE_PAGED,
+                autoScroll = autoScroll,
+                onToggleAutoScroll = { autoScroll = !autoScroll },
+                preload = preload,
+                onPreload = ::updatePreload,
                 onChange = ::update,
                 onSaveDefault = {
                     val s = server ?: return@SettingsSheet
@@ -399,10 +484,13 @@ private fun ContinuousReader(
     source: ReaderSource,
     prefs: ReaderPrefs,
     page: Int,
+    autoScroll: Boolean,
     onPage: (Int) -> Unit,
     onToggleChrome: () -> Unit,
+    onAutoScrollEnd: () -> Unit,
 ) {
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = (page - 1).coerceAtLeast(0))
+    val density = LocalDensity.current
     LaunchedEffect(listState) {
         androidx.compose.runtime.snapshotFlow { listState.firstVisibleItemIndex }.collect { onPage(it + 1) }
     }
@@ -410,6 +498,20 @@ private fun ContinuousReader(
     LaunchedEffect(page) {
         if (!listState.isScrollInProgress && (page - 1) != listState.firstVisibleItemIndex) {
             listState.scrollToItem((page - 1).coerceAtLeast(0))
+        }
+    }
+    // Auto-scroll engine: advance the scroll by scrollSpeed (dp/sec) each frame until the end / stopped.
+    LaunchedEffect(autoScroll, prefs.scrollSpeed) {
+        if (!autoScroll) return@LaunchedEffect
+        val pxPerSec = with(density) { prefs.scrollSpeed.dp.toPx() }
+        var last = withFrameNanos { it }
+        while (true) {
+            val now = withFrameNanos { it }
+            val dt = ((now - last).coerceAtLeast(0L)) / 1_000_000_000f
+            last = now
+            val dy = pxPerSec * dt
+            val consumed = listState.scrollBy(dy)
+            if (dy > 0f && consumed < dy - 0.5f) { onAutoScrollEnd(); break } // hit the bottom
         }
     }
     LazyColumn(
@@ -456,18 +558,120 @@ private fun TopBar(title: String, onBack: () -> Unit, onSettings: () -> Unit) {
 }
 
 @Composable
-private fun BottomBar(page: Int, pageCount: Int, rtl: Boolean, onSeek: (Int) -> Unit) {
-    Column(
-        Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.55f)).padding(horizontal = 16.dp, vertical = 8.dp),
+private fun BottomBar(
+    page: Int,
+    pageCount: Int,
+    indicator: String,
+    continuous: Boolean,
+    autoScroll: Boolean,
+    onToggleAutoScroll: () -> Unit,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onSeek: (Int) -> Unit,
+    onOpenPicker: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.55f)).padding(horizontal = 4.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("$page / $pageCount", color = Color.White, modifier = Modifier.align(Alignment.CenterHorizontally))
+        if (continuous) {
+            IconButton(onClick = onToggleAutoScroll) {
+                Icon(if (autoScroll) app.kodex.client.ui.icons.PauseIcon else Icons.Filled.PlayArrow, contentDescription = "Auto-scroll", tint = Color.White)
+            }
+        }
+        IconButton(onClick = onPrev, enabled = page > 1) {
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous page", tint = if (page > 1) Color.White else Color.White.copy(alpha = 0.4f))
+        }
         if (pageCount > 1) {
             Slider(
                 value = (page - 1).toFloat(),
                 onValueChange = { onSeek(it.toInt() + 1) },
                 valueRange = 0f..(pageCount - 1).toFloat(),
-                steps = (pageCount - 2).coerceAtLeast(0),
+                modifier = Modifier.weight(1f),
             )
+        } else {
+            Spacer(Modifier.weight(1f))
+        }
+        Text(indicator, color = Color.White, style = MaterialTheme.typography.labelMedium, modifier = Modifier.clickable(onClick = onOpenPicker).padding(horizontal = 6.dp, vertical = 4.dp))
+        IconButton(onClick = onNext, enabled = page < pageCount) {
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next page", tint = if (page < pageCount) Color.White else Color.White.copy(alpha = 0.4f))
+        }
+    }
+}
+
+/** Semi-transparent circular page-turn button overlaid at the paged reader's edges. */
+@Composable
+private fun EdgeButton(icon: androidx.compose.ui.graphics.vector.ImageVector, desc: String, onClick: () -> Unit) {
+    FilledIconButton(
+        onClick = onClick,
+        modifier = Modifier.padding(8.dp),
+        colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color.Black.copy(alpha = 0.45f), contentColor = Color.White),
+    ) {
+        Icon(icon, contentDescription = desc)
+    }
+}
+
+/** Small centered page pill shown while the chrome is hidden. */
+@Composable
+private fun PagePill(text: String) {
+    Box(Modifier.padding(bottom = 10.dp)) {
+        Text(
+            text,
+            color = Color.White,
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(999.dp)).padding(horizontal = 10.dp, vertical = 2.dp),
+        )
+    }
+}
+
+/** Indigo "Incognito" pill pinned to the top, above the auto-hiding chrome. */
+@Composable
+private fun IncognitoBadge(modifier: Modifier = Modifier) {
+    Row(
+        modifier.padding(top = 6.dp).background(Color(0xFF4A3F8F).copy(alpha = 0.92f), RoundedCornerShape(999.dp)).padding(horizontal = 10.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(app.kodex.client.ui.icons.IncognitoIcon, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+        Spacer(Modifier.width(4.dp))
+        Text("Incognito", color = Color.White, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+/** Thumbnail grid to jump to any page. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PagePickerDialog(source: ReaderSource, current: Int, onPick: (Int) -> Unit, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface) {
+            Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                Text("Go to page", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(8.dp))
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(84.dp),
+                    modifier = Modifier.heightIn(max = 480.dp),
+                    contentPadding = PaddingValues(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items((1..source.pageCount).toList(), key = { it }) { n ->
+                        Column(
+                            Modifier.clickable { onPick(n) },
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Box(
+                                Modifier.fillMaxWidth().height(112.dp)
+                                    .border(
+                                        if (n == current) 2.dp else 1.dp,
+                                        if (n == current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                                        RoundedCornerShape(6.dp),
+                                    ),
+                            ) {
+                                PageImage(source.pageUrlFor(n), source.apiKey, ContentScale.Crop, Modifier.fillMaxSize())
+                            }
+                            Text("$n", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -478,11 +682,18 @@ private fun BottomBar(page: Int, pageCount: Int, rtl: Boolean, onSeek: (Int) -> 
 private fun SettingsSheet(
     prefs: ReaderPrefs,
     effectiveMode: String,
+    autoScroll: Boolean,
+    onToggleAutoScroll: () -> Unit,
+    preload: Int,
+    onPreload: (Int) -> Unit,
     onChange: (ReaderPrefs) -> Unit,
     onSaveDefault: () -> Unit,
     onReset: () -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    Column(
+        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
         Text("Reader settings", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
 
         SegRow("Layout", prefs.mode, listOf(MODE_AUTO to "Auto", MODE_PAGED to "Paged", MODE_CONTINUOUS to "Continuous")) {
@@ -503,8 +714,30 @@ private fun SettingsSheet(
                 Switch(checked = prefs.tapToTurn, onCheckedChange = { onChange(prefs.copy(tapToTurn = it)) })
             }
         }
+        if (effectiveMode == MODE_CONTINUOUS) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Auto-scroll", Modifier.weight(1f))
+                Switch(checked = autoScroll, onCheckedChange = { onToggleAutoScroll() })
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Scroll speed", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
+                Slider(
+                    value = prefs.scrollSpeed.toFloat(),
+                    onValueChange = { onChange(prefs.copy(scrollSpeed = it.toInt().coerceIn(SCROLL_SPEED_MIN, SCROLL_SPEED_MAX))) },
+                    valueRange = SCROLL_SPEED_MIN.toFloat()..SCROLL_SPEED_MAX.toFloat(),
+                )
+            }
+        }
         SegRow("Background", prefs.bg, listOf(BG_WHITE to "White", BG_GRAY to "Gray", BG_BLACK to "Black")) {
             onChange(prefs.copy(bg = it))
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Preload pages", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PRELOAD_OPTIONS.forEach { n ->
+                    FilterChip(selected = preload == n, onClick = { onPreload(n) }, label = { Text("$n") })
+                }
+            }
         }
 
         Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

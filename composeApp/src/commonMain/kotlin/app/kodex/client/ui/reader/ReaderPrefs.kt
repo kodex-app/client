@@ -6,8 +6,10 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.intOrNull
 
 // Reader preference values (mirrors the web ImageReader's Prefs), stored as strings for stable JSON.
 const val MODE_AUTO = "auto"
@@ -24,6 +26,15 @@ const val BG_WHITE = "white"
 const val BG_GRAY = "gray"
 const val BG_BLACK = "black"
 
+const val SCROLL_SPEED_DEFAULT = 40
+const val SCROLL_SPEED_MIN = 10
+const val SCROLL_SPEED_MAX = 300
+
+const val PRELOAD_DEFAULT = 5
+const val PRELOAD_MAX = 20
+val PRELOAD_OPTIONS = listOf(0, 1, 5, 10, 20)
+private const val PRELOAD_KEY = "reader.preloadCount"
+
 @Serializable
 data class ReaderPrefs(
     val mode: String = MODE_AUTO,
@@ -32,13 +43,14 @@ data class ReaderPrefs(
     val spread: String = SPREAD_SINGLE,
     val bg: String = BG_GRAY,
     val tapToTurn: Boolean = false,
+    val scrollSpeed: Int = SCROLL_SPEED_DEFAULT,
 ) {
     val isDouble: Boolean get() = spread == SPREAD_DOUBLE
     val isRtl: Boolean get() = direction == DIR_RTL
 }
 
-/** Effective prefs to apply, plus the resolved default (used by "reset to default"). */
-data class ResolvedPrefs(val effective: ReaderPrefs, val default: ReaderPrefs)
+/** Effective prefs, the resolved default (for "reset"), and the global preload-page count. */
+data class ResolvedPrefs(val effective: ReaderPrefs, val default: ReaderPrefs, val preload: Int)
 
 private val prefsJson = Json { ignoreUnknownKeys = true }
 
@@ -55,7 +67,16 @@ private fun coerce(p: ReaderPrefs, kind: String): ReaderPrefs {
         zoom = pick(p.zoom, listOf(ZOOM_HEIGHT, ZOOM_WIDTH, ZOOM_ORIGINAL), d.zoom),
         spread = pick(p.spread, listOf(SPREAD_SINGLE, SPREAD_DOUBLE), d.spread),
         bg = pick(p.bg, listOf(BG_WHITE, BG_GRAY, BG_BLACK), d.bg),
+        scrollSpeed = p.scrollSpeed.coerceIn(SCROLL_SPEED_MIN, SCROLL_SPEED_MAX),
     )
+}
+
+/** Global preload count (how many pages ahead to prefetch), clamped to [0, PRELOAD_MAX]. */
+fun parsePreloadCount(settings: JsonObject): Int =
+    (settings[PRELOAD_KEY] as? JsonPrimitive)?.intOrNull?.coerceIn(0, PRELOAD_MAX) ?: PRELOAD_DEFAULT
+
+suspend fun savePreloadCount(api: KodexApi, baseUrl: String, apiKey: String, count: Int) {
+    api.saveUserSetting(baseUrl, apiKey, PRELOAD_KEY, JsonPrimitive(count.coerceIn(0, PRELOAD_MAX)))
 }
 
 private fun defaultKey(kind: String) = "reader.$kind"
@@ -69,7 +90,7 @@ suspend fun resolveReaderPrefs(api: KodexApi, baseUrl: String, apiKey: String, k
     val settings = runCatching { api.userSettings(baseUrl, apiKey) }.getOrElse { JsonObject(emptyMap()) }
     val default = settings.prefsAt(defaultKey(kind), kind) ?: defaultReaderPrefs(kind)
     val override = seriesId?.let { settings.prefsAt(seriesKey(kind, it), kind) }
-    return ResolvedPrefs(effective = override ?: default, default = default)
+    return ResolvedPrefs(effective = override ?: default, default = default, preload = parsePreloadCount(settings))
 }
 
 /** Save the current prefs where this reader stores overrides (series override, or the default if none). */
