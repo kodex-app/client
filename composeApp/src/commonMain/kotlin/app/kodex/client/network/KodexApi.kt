@@ -586,7 +586,26 @@ class KodexApi(private val client: HttpClient) {
         return if (text.isBlank()) null else runCatching { json.decodeFromString<ReadProgressDto>(text) }.getOrNull()
     }
 
-    /** Records streamed read progress (also drives History). [seriesId] is set for library WEB series. */
+    /**
+     * Every chapter of a Browse (not-followed) source series the user has progress for, keyed by
+     * chapter external id — drives the read marks and the resume action on the source series page.
+     */
+    suspend fun sourceSeriesProgress(
+        baseUrl: String,
+        apiKey: String,
+        providerId: String,
+        sourceSeriesId: String,
+    ): Map<String, ReadProgressDto> =
+        client.get("$baseUrl/api/v1/content-sources/$providerId/series-progress") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("sourceSeriesId", sourceSeriesId)
+        }.body()
+
+    /**
+     * Records streamed read progress (also drives History). [seriesId] is set for library WEB series;
+     * Browse reads instead pass [sourceSeriesId] plus the cached [sourceSeriesName]/[sourceCoverUrl] so
+     * History can render the entry without another source call.
+     */
     suspend fun saveSourceProgress(
         baseUrl: String,
         apiKey: String,
@@ -596,11 +615,25 @@ class KodexApi(private val client: HttpClient) {
         completed: Boolean,
         seriesId: String? = null,
         chapterName: String? = null,
+        sourceSeriesId: String? = null,
+        sourceSeriesName: String? = null,
+        sourceCoverUrl: String? = null,
     ) {
         client.put("$baseUrl/api/v1/content-sources/$providerId/progress") {
             header(HEADER_API_KEY, apiKey)
             contentType(ContentType.Application.Json)
-            setBody(SaveSourceProgressRequest(seriesId = seriesId, chapterId = chapterId, chapterName = chapterName, page = page, completed = completed))
+            setBody(
+                SaveSourceProgressRequest(
+                    seriesId = seriesId,
+                    sourceSeriesId = sourceSeriesId,
+                    sourceSeriesName = sourceSeriesName,
+                    sourceCoverUrl = sourceCoverUrl,
+                    chapterId = chapterId,
+                    chapterName = chapterName,
+                    page = page,
+                    completed = completed,
+                ),
+            )
         }
     }
 

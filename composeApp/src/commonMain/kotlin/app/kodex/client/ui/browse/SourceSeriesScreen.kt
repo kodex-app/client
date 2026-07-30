@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,12 +30,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -46,6 +49,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -72,6 +76,7 @@ import app.kodex.client.auth.SessionManager
 import app.kodex.client.data.model.ServerConnection
 import app.kodex.client.network.FollowedSeriesRef
 import app.kodex.client.network.KodexApi
+import app.kodex.client.network.ReadProgressDto
 import app.kodex.client.network.SourceChapter
 import app.kodex.client.network.SourceDescriptor
 import app.kodex.client.network.SourceSearchResult
@@ -81,6 +86,9 @@ import app.kodex.client.ui.catalog.CoverImage
 import app.kodex.client.ui.catalog.sourceCoverUrl
 import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.friendlyMessage
+import app.kodex.client.ui.icons.IncognitoIcon
+import app.kodex.client.ui.main.OpenBrowseReader
+import app.kodex.client.ui.main.SourceSeriesContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -89,12 +97,15 @@ private data class SourceSeriesData(
     val info: SourceSearchResult,
     val chapters: List<SourceChapter>,
     val followed: FollowedSeriesRef?,
+    /** Saved progress per chapter external id — read marks + the resume action, without following. */
+    val progress: Map<String, ReadProgressDto>,
 )
 
 /**
- * A content source's series page (Browse drill-down): source metadata + chapter list, with follow
- * (add to the WEB library), download-all, and unfollow actions. Styled to match the library series
- * detail — collapsing transparent toolbar + blurred backdrop, full-bleed chapter rows, sort/refresh.
+ * A content source's series page (Browse drill-down): source metadata + chapter list, with read-from-
+ * source per chapter (no library needed), follow (add to the WEB library), download-all, and unfollow
+ * actions. Styled to match the library series detail — collapsing transparent toolbar + blurred
+ * backdrop, full-bleed chapter rows, sort/refresh.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -104,6 +115,8 @@ fun SourceSeriesScreen(
     source: SourceDescriptor,
     seed: SourceSearchResult,
     onBack: () -> Unit,
+    onOpenReader: OpenBrowseReader = { _, _, _ -> },
+    onOpenReaderIncognito: OpenBrowseReader = { _, _, _ -> },
 ) {
     val server by session.activeServer.collectAsStateSafe()
     val scope = rememberCoroutineScope()
@@ -169,7 +182,11 @@ fun SourceSeriesScreen(
                         val info = async { api.sourceSeries(s.baseUrl, s.apiKey, source.id, seed.externalId) }
                         val chapters = async { api.sourceChapters(s.baseUrl, s.apiKey, source.id, seed.externalId) }
                         val followed = async { api.followedSeriesRef(s.baseUrl, s.apiKey, source.id, seed.externalId) }
-                        SourceSeriesData(info.await(), chapters.await(), followed.await())
+                        val progress = async {
+                            runCatching { api.sourceSeriesProgress(s.baseUrl, s.apiKey, source.id, seed.externalId) }
+                                .getOrDefault(emptyMap())
+                        }
+                        SourceSeriesData(info.await(), chapters.await(), followed.await(), progress.await())
                     }
                 },
             ) { data ->
@@ -180,6 +197,17 @@ fun SourceSeriesScreen(
                 val ascending = if (sortByDate) visible.sortedWith(compareBy(nullsLast()) { it.releaseDate })
                 else visible.sortedWith(compareBy(nullsLast()) { it.number })
                 val display = if (sortDesc) ascending.asReversed() else ascending
+                // Identity of this source series, carried into the reader (nav + progress attribution).
+                val context = SourceSeriesContext(
+                    providerId = source.id,
+                    externalId = seed.externalId,
+                    title = data.info.title.ifBlank { seed.title },
+                    coverUrl = data.info.coverUrl ?: seed.coverUrl,
+                    isNovel = source.kind == KIND_BOOK,
+                )
+                // No prominent read button for novel sources — the app has no EPUB reader yet, so tapping a
+                // chapter (which still explains that) is as far as it goes.
+                val resume = if (context.isNovel) null else resumeChapter(data.chapters, data.progress)
 
                 LazyColumn(
                     Modifier.fillMaxSize(),
@@ -192,8 +220,11 @@ fun SourceSeriesScreen(
                             Spacer(Modifier.height(16.dp))
                             Actions(
                                 followed = followed,
+                                resume = resume,
                                 busy = busy,
                                 message = message,
+                                onRead = { chapter -> onOpenReader(context, chapter.externalId, chapter.name) },
+                                onReadIncognito = { chapter -> onOpenReaderIncognito(context, chapter.externalId, chapter.name) },
                                 onFollow = {
                                     act { srv ->
                                         val lib = api.webLibrary(srv.baseUrl, srv.apiKey)
@@ -224,9 +255,31 @@ fun SourceSeriesScreen(
                             )
                         }
                     }
-                    items(display, key = { it.externalId }) { chapter ->
-                        ChapterRow(chapter)
-                        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                    if (display.isEmpty()) {
+                        item {
+                            Text(
+                                "This source listed no chapters for this series.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 24.dp),
+                            )
+                        }
+                    }
+                    // Sources that report volumes (e.g. MangaDex) get a header per volume; the rest fall
+                    // out as one unlabelled group = the flat list.
+                    display.groupBy { it.volume }.forEach { (volume, chapters) ->
+                        if (volume != null) {
+                            item(key = "volume:$volume") { VolumeHeader(volume) }
+                        }
+                        items(chapters, key = { it.externalId }) { chapter ->
+                            ChapterRow(
+                                chapter = chapter,
+                                progress = data.progress[chapter.externalId],
+                                onClick = { onOpenReader(context, chapter.externalId, chapter.name) },
+                                onLongClick = { onOpenReaderIncognito(context, chapter.externalId, chapter.name) },
+                            )
+                            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                        }
                     }
                 }
             }
@@ -312,22 +365,42 @@ private fun ExpandableSummary(text: String) {
     }
 }
 
+/**
+ * Read-from-source first (the point of Browse: no follow, no download), then the library actions.
+ * The incognito button beside it opens the same chapter without recording progress or history.
+ */
 @Composable
 private fun Actions(
     followed: FollowedSeriesRef?,
+    resume: Resume?,
     busy: Boolean,
     message: String?,
+    onRead: (SourceChapter) -> Unit,
+    onReadIncognito: (SourceChapter) -> Unit,
     onFollow: () -> Unit,
     onDownload: () -> Unit,
     onUnfollow: () -> Unit,
 ) {
+    if (resume != null) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Button(onClick = { onRead(resume.chapter) }, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(resume.label)
+            }
+            OutlinedIconButton(onClick = { onReadIncognito(resume.chapter) }) {
+                Icon(IncognitoIcon, contentDescription = "Read incognito")
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+    }
     if (followed == null) {
-        Button(onClick = onFollow, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(onClick = onFollow, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
             if (busy) BtnSpinner() else Text("Add to library")
         }
     } else {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Button(onClick = onDownload, enabled = !busy, modifier = Modifier.weight(1f)) {
+            OutlinedButton(onClick = onDownload, enabled = !busy, modifier = Modifier.weight(1f)) {
                 if (busy) BtnSpinner() else Text("Download all")
             }
             OutlinedButton(onClick = onUnfollow, enabled = !busy) { Text("Unfollow") }
@@ -419,28 +492,86 @@ private fun SortMenuItem(label: String, selected: Boolean, sortDesc: Boolean, on
     )
 }
 
+/** The source's volume/section label, separating grouped chapters. */
 @Composable
-private fun ChapterRow(chapter: SourceChapter) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Text(chapter.name.ifBlank { chapterNumber(chapter) }, style = MaterialTheme.typography.bodyLarge, maxLines = 2)
-        val meta = listOfNotNull(
-            chapter.number?.let { n -> "#" + (if (n % 1.0 == 0.0) n.toInt().toString() else n.toString()) },
-            chapter.scanlator?.takeIf { it.isNotBlank() },
-            chapter.releaseDate?.takeIf { it.isNotBlank() },
-        ).joinToString(" · ")
-        if (meta.isNotBlank()) {
-            Spacer(Modifier.height(2.dp))
-            Text(meta, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun VolumeHeader(volume: String) {
+    Text(
+        volume,
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    )
+}
+
+/**
+ * A streamable chapter: tap reads it straight from the source, long-press reads it incognito. Read
+ * chapters are dimmed (with the unread dot cleared) and an in-progress one shows where it left off.
+ */
+@Composable
+private fun ChapterRow(
+    chapter: SourceChapter,
+    progress: ReadProgressDto?,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
+    val read = progress?.completed == true
+    Row(
+        Modifier.fillMaxWidth()
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(7.dp).clip(CircleShape)
+                .background(if (read) Color.Transparent else MaterialTheme.colorScheme.primary),
+        )
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f).alpha(if (read) 0.55f else 1f)) {
+            Text(chapter.name.ifBlank { chapterNumber(chapter) }, style = MaterialTheme.typography.bodyLarge, maxLines = 2)
+            val meta = listOfNotNull(
+                chapter.number?.let { n -> "#" + (if (n % 1.0 == 0.0) n.toInt().toString() else n.toString()) },
+                chapter.scanlator?.takeIf { it.isNotBlank() },
+                chapter.releaseDate?.takeIf { it.isNotBlank() },
+            ).joinToString(" · ")
+            if (meta.isNotBlank()) {
+                Spacer(Modifier.height(2.dp))
+                Text(meta, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if (progress != null && !progress.completed) {
+            Spacer(Modifier.width(10.dp))
+            Text("Page ${progress.page}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
         }
     }
 }
 
 @Composable
 private fun BtnSpinner() =
-    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
+
+/** The chapter the header's read button opens, and how to label it. */
+private data class Resume(val chapter: SourceChapter, val label: String)
+
+/**
+ * Which chapter to continue or start with, in the web's order: the lowest-numbered chapter left
+ * in progress, else the lowest never finished, else (everything read) the first one again.
+ */
+private fun resumeChapter(chapters: List<SourceChapter>, progress: Map<String, ReadProgressDto>): Resume? {
+    if (chapters.isEmpty()) return null
+    val byNumber = chapters.sortedWith(compareBy(nullsLast()) { it.number })
+    byNumber.firstOrNull { progress[it.externalId]?.completed == false }?.let { return Resume(it, "Continue") }
+    byNumber.firstOrNull { progress[it.externalId]?.completed != true }?.let { return Resume(it, "Start reading") }
+    return Resume(byNumber.first(), "Read again")
+}
 
 private fun chapterNumber(c: SourceChapter): String =
     c.number?.let { n -> if (n % 1.0 == 0.0) "Chapter ${n.toInt()}" else "Chapter $n" } ?: "Chapter"
 
 private fun prettyStatus(status: String): String =
     status.lowercase().replace('_', ' ').replaceFirstChar { it.uppercase() }
+
+/** [SourceDescriptor.kind] of a novel source — its chapters are text, not page images. */
+private const val KIND_BOOK = "BOOK"

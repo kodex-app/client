@@ -40,6 +40,7 @@ sealed interface DetailRoute {
         val chapterId: String,
         val seriesId: String?,
         val chapterName: String?,
+        val sourceSeries: SourceSeriesContext? = null,
         val incognito: Boolean = false,
     ) : DetailRoute
 
@@ -62,6 +63,24 @@ sealed interface DetailRoute {
 /** Opens a streamed (no-download) chapter reader. */
 typealias OpenSourceReader = (providerId: String, chapterId: String, seriesId: String?, chapterName: String?) -> Unit
 
+/**
+ * A Browse source series' own identity, carried into the streamed reader. It lets the reader build
+ * prev/next navigation from the source's live chapter list, scope its display settings, and cache the
+ * series title/cover on the progress record so History can render the entry — none of which needs the
+ * series to be in a library.
+ */
+data class SourceSeriesContext(
+    val providerId: String,
+    val externalId: String,
+    val title: String,
+    val coverUrl: String? = null,
+    /** BOOK-kind sources stream novel text, which the app can't render yet (see [SourceReaderScreen]). */
+    val isNovel: Boolean = false,
+)
+
+/** Opens a streamed chapter of a source series being browsed (not followed into a library). */
+typealias OpenBrowseReader = (source: SourceSeriesContext, chapterId: String, chapterName: String?) -> Unit
+
 @Composable
 fun DetailHost(
     route: DetailRoute,
@@ -74,8 +93,10 @@ fun DetailHost(
     onOpenReader: (String) -> Unit,
     onOpenReaderAt: (bookId: String, page: Int) -> Unit,
     onOpenSourceReader: OpenSourceReader,
+    onOpenBrowseReader: OpenBrowseReader,
     onOpenReaderIncognito: (String) -> Unit,
     onOpenSourceReaderIncognito: OpenSourceReader,
+    onOpenBrowseReaderIncognito: OpenBrowseReader,
     onOpenMigrate: (seriesId: String, providerId: String, sourceSeriesId: String, title: String) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -87,7 +108,11 @@ fun DetailHost(
             SourceFeedScreen(session, api, route.source, onBack, onOpenSourceSeries = { onOpenSourceSeries(route.source, it) }, initialFeed = route.feed)
 
         is DetailRoute.SourceSeries ->
-            SourceSeriesScreen(session, api, route.source, route.seed, onBack)
+            SourceSeriesScreen(
+                session, api, route.source, route.seed, onBack,
+                onOpenReader = onOpenBrowseReader,
+                onOpenReaderIncognito = onOpenBrowseReaderIncognito,
+            )
 
         is DetailRoute.SeriesDetail ->
             SeriesDetailScreen(
@@ -109,7 +134,10 @@ fun DetailHost(
             ReaderScreen(session, api, route.bookId, onBack, route.startPage, route.incognito)
 
         is DetailRoute.SourceReader ->
-            SourceReaderScreen(session, api, route.providerId, route.chapterId, route.seriesId, route.chapterName, onBack, route.incognito)
+            SourceReaderScreen(
+                session, api, route.providerId, route.chapterId, route.seriesId, route.chapterName,
+                onBack, route.sourceSeries, route.incognito,
+            )
 
         is DetailRoute.Downloads ->
             DownloadsScreen(session, api, onBack)

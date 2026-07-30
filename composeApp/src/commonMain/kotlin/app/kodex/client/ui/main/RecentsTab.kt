@@ -29,6 +29,7 @@ fun RecentsTab(
     api: KodexApi,
     onOpenReader: (String) -> Unit,
     onOpenSourceReader: OpenSourceReader,
+    onOpenBrowseReader: OpenBrowseReader,
     onOpenSeries: (String) -> Unit,
 ) {
     var showHistory by remember { mutableStateOf(false) }
@@ -47,7 +48,7 @@ fun RecentsTab(
             ) { Text("History") }
         }
         if (showHistory) {
-            HistoryList(session, api, onOpenReader, onOpenSourceReader, onOpenSeries)
+            HistoryList(session, api, onOpenReader, onOpenSourceReader, onOpenBrowseReader, onOpenSeries)
         } else {
             UpdatesList(session, api, onOpenReader, onOpenSourceReader, onOpenSeries)
         }

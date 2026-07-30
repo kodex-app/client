@@ -42,8 +42,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
@@ -75,6 +77,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -111,7 +114,32 @@ class ReaderSource(
     val pageUrlFor: (page: Int) -> String, // 1-based page → image URL
     val onPersist: suspend (page: Int, completed: Boolean) -> Unit,
     val incognito: Boolean = false, // drives the persistent incognito badge
+    val nav: ReaderChapterNav? = null, // sibling chapters for cross-chapter navigation
+    val webUrl: String? = null, // "open in web" target (the web UI reader page), or null to disable
 )
+
+/** Which page a newly-opened chapter starts on. */
+enum class ReaderEdge { FIRST, LAST }
+
+/** A sibling chapter the reader can jump to. [open] switches to it starting at [ReaderEdge]. */
+class ReaderChapterRef(
+    val title: String,
+    val open: (ReaderEdge) -> Unit,
+    val preloadPageUrl: ((page: Int) -> String)? = null, // 1-based; for cross-chapter prefetch
+)
+
+/** One entry in the chapter-list menu. */
+class ReaderChapterItem(val title: String, val active: Boolean, val open: () -> Unit)
+
+/** Cross-chapter navigation context for the reader. */
+class ReaderChapterNav(
+    val prev: ReaderChapterRef? = null,
+    val next: ReaderChapterRef? = null,
+    val chapters: List<ReaderChapterItem> = emptyList(),
+)
+
+/** Which boundary the between-chapters transition overlay is showing. */
+private enum class Boundary { START, END }
 
 private fun bgColor(bg: String): Color = when (bg) {
     BG_WHITE -> Color(0xFFFFFFFF)
@@ -130,6 +158,8 @@ fun ImageReaderScreen(session: SessionManager, api: KodexApi, source: ReaderSour
     val server by session.activeServer.collectAsStateSafe()
     val context = LocalPlatformContext.current
     val scope = rememberCoroutineScope()
+    val orientation = app.kodex.client.platform.rememberOrientationController()
+    val openUrl = app.kodex.client.platform.rememberUrlOpener()
 
     var prefs by remember { mutableStateOf<ReaderPrefs?>(null) }
     var defaultPrefs by remember { mutableStateOf(defaultReaderPrefs(source.kind)) }
@@ -137,6 +167,8 @@ fun ImageReaderScreen(session: SessionManager, api: KodexApi, source: ReaderSour
     var preload by remember { mutableStateOf(PRELOAD_DEFAULT) }
     var autoScroll by remember { mutableStateOf(false) }
     var pickerOpen by remember { mutableStateOf(false) }
+    var transition by remember { mutableStateOf<Boundary?>(null) } // between-chapters overlay
+    var chaptersOpen by remember { mutableStateOf(false) }
 
     // Load persisted prefs (series override → user default → built-in) + global preload count.
     LaunchedEffect(source.seriesId, source.kind, server?.id) {
@@ -177,18 +209,28 @@ fun ImageReaderScreen(session: SessionManager, api: KodexApi, source: ReaderSour
     // Auto-scroll only makes sense in continuous mode; cancel it elsewhere.
     LaunchedEffect(effectiveMode) { if (effectiveMode != MODE_CONTINUOUS) autoScroll = false }
 
-    // Prefetch the next [preload] pages into Coil's cache so turns feel instant.
+    // Prefetch the next [preload] pages into Coil's cache so turns feel instant; spill over into the
+    // next chapter's first pages near the end.
     LaunchedEffect(page, preload, effectiveMode, source.pageCount) {
         if (preload <= 0 || source.pageCount <= 0) return@LaunchedEffect
-        val step = if (effectiveMode == MODE_PAGED && p?.isDouble == true) 2 else 1
         val loader = SingletonImageLoader.get(context)
+        fun prefetch(url: String) {
+            loader.enqueue(
+                ImageRequest.Builder(context)
+                    .data(url)
+                    .httpHeaders(NetworkHeaders.Builder().set("X-API-Key", source.apiKey).build())
+                    .build(),
+            )
+        }
+        val step = if (effectiveMode == MODE_PAGED && p?.isDouble == true) 2 else 1
+        var count = 0
         for (n in (page + step) until (page + step + preload)) {
             if (n > source.pageCount) break
-            val req = ImageRequest.Builder(context)
-                .data(source.pageUrlFor(n))
-                .httpHeaders(NetworkHeaders.Builder().set("X-API-Key", source.apiKey).build())
-                .build()
-            loader.enqueue(req)
+            prefetch(source.pageUrlFor(n)); count++
+        }
+        val nextUrl = source.nav?.next?.preloadPageUrl
+        if (nextUrl != null && count < preload) {
+            for (n in 1..(preload - count)) prefetch(nextUrl(n))
         }
     }
 
@@ -196,6 +238,32 @@ fun ImageReaderScreen(session: SessionManager, api: KodexApi, source: ReaderSour
         preload = v.coerceIn(0, PRELOAD_MAX)
         val s = server ?: return
         scope.launch { runCatching { savePreloadCount(api, s.baseUrl, s.apiKey, preload) } }
+    }
+
+    // Central page-turn: in paged mode, turning past either end raises the between-chapters overlay
+    // (when a sibling exists); otherwise it just moves the page. Continuous mode simply scrolls.
+    fun advance(delta: Int) {
+        val pp = p ?: return
+        val step = if (effectiveMode == MODE_PAGED && pp.isDouble) 2 else 1
+        val target = page + delta * step
+        if (effectiveMode == MODE_PAGED) {
+            when {
+                source.pageCount > 0 && target > source.pageCount -> if (source.nav?.next != null) transition = Boundary.END
+                target < 1 -> if (source.nav?.prev != null) transition = Boundary.START
+                else -> { transition = null; page = target.coerceIn(1, source.pageCount) }
+            }
+        } else {
+            page = target.coerceIn(1, source.pageCount)
+        }
+    }
+
+    fun confirmTransition() {
+        when (transition) {
+            Boundary.END -> source.nav?.next?.open(ReaderEdge.FIRST)
+            Boundary.START -> source.nav?.prev?.open(ReaderEdge.LAST)
+            null -> {}
+        }
+        transition = null
     }
 
     var chrome by remember { mutableStateOf(true) }
@@ -223,15 +291,25 @@ fun ImageReaderScreen(session: SessionManager, api: KodexApi, source: ReaderSour
             .focusable()
             .onPreviewKeyEvent { e ->
                 if (p == null || effectiveMode == null || e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                val step = if (effectiveMode == MODE_PAGED && p.isDouble) 2 else 1
-                val rtl = p.isRtl && effectiveMode == MODE_PAGED
-                val fwd = { page = (page + step).coerceAtMost(source.pageCount) }
-                val back = { page = (page - step).coerceAtLeast(1) }
+                // While the transition overlay is up, a forward key confirms it; Escape dismisses.
+                if (transition != null) {
+                    when (e.key) {
+                        Key.DirectionRight, Key.DirectionDown, Key.Spacebar, Key.Enter -> confirmTransition()
+                        Key.Escape -> transition = null
+                        else -> return@onPreviewKeyEvent false
+                    }
+                    return@onPreviewKeyEvent true
+                }
+                if (effectiveMode == MODE_CONTINUOUS) {
+                    if (e.key == Key.Escape) { onBack(); return@onPreviewKeyEvent true }
+                    return@onPreviewKeyEvent false
+                }
+                val rtl = p.isRtl
                 when (e.key) {
-                    Key.DirectionRight -> if (rtl) back() else fwd()
-                    Key.DirectionLeft -> if (rtl) fwd() else back()
-                    Key.DirectionDown, Key.Spacebar -> fwd()
-                    Key.DirectionUp -> back()
+                    Key.DirectionRight -> advance(if (rtl) -1 else 1)
+                    Key.DirectionLeft -> advance(if (rtl) 1 else -1)
+                    Key.DirectionDown, Key.Spacebar -> advance(1)
+                    Key.DirectionUp -> advance(-1)
                     Key.Escape -> onBack()
                     else -> return@onPreviewKeyEvent false
                 }
@@ -244,25 +322,27 @@ fun ImageReaderScreen(session: SessionManager, api: KodexApi, source: ReaderSour
             val step = if (effectiveMode == MODE_PAGED && p.isDouble) 2 else 1
             val rangeEnd = (page + step - 1).coerceAtMost(source.pageCount)
             val indicator = if (step == 2 && rangeEnd > page) "$page–$rangeEnd / ${source.pageCount}" else "$page / ${source.pageCount}"
+            val canPrev = page > 1 || source.nav?.prev != null
+            val canNext = page < source.pageCount || source.nav?.next != null
 
             if (effectiveMode == MODE_CONTINUOUS) {
                 ContinuousReader(source, p, page, autoScroll, onPage = { page = it }, onToggleChrome = { chrome = !chrome }, onAutoScrollEnd = { autoScroll = false })
             } else {
-                PagedReader(source, p, page, onJump = { page = it }, onToggleChrome = { chrome = !chrome })
+                PagedReader(source, p, page, onJump = { page = it }, onToggleChrome = { chrome = !chrome }, onTurnPage = { forward -> advance(if (forward) 1 else -1) })
             }
 
-            // Paged edge page-turn buttons (page order), shown with the chrome.
+            // Paged edge page-turn buttons (reading order), shown with the chrome.
             if (effectiveMode == MODE_PAGED) {
                 AnimatedVisibility(chrome, modifier = Modifier.align(Alignment.CenterStart)) {
-                    EdgeButton(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous page") { page = (page - step).coerceAtLeast(1) }
+                    EdgeButton(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous page") { advance(if (p.isRtl) 1 else -1) }
                 }
                 AnimatedVisibility(chrome, modifier = Modifier.align(Alignment.CenterEnd)) {
-                    EdgeButton(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next page") { page = (page + step).coerceAtMost(source.pageCount) }
+                    EdgeButton(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next page") { advance(if (p.isRtl) -1 else 1) }
                 }
             }
 
             AnimatedVisibility(chrome, modifier = Modifier.align(Alignment.TopCenter)) {
-                TopBar(source.title, onBack) { settingsOpen = true }
+                TopBar(source.title, onBack)
             }
             AnimatedVisibility(chrome, modifier = Modifier.align(Alignment.BottomCenter)) {
                 BottomBar(
@@ -271,9 +351,18 @@ fun ImageReaderScreen(session: SessionManager, api: KodexApi, source: ReaderSour
                     indicator = indicator,
                     continuous = effectiveMode == MODE_CONTINUOUS,
                     autoScroll = autoScroll,
+                    canPrev = canPrev,
+                    canNext = canNext,
+                    hasChapters = (source.nav?.chapters?.size ?: 0) > 1,
+                    webEnabled = source.webUrl != null,
+                    orientation = orientation.orientation,
+                    onOpenChapters = { chaptersOpen = true },
+                    onOpenWeb = { source.webUrl?.let { openUrl(it) } },
+                    onCycleOrientation = { orientation.cycle() },
+                    onOpenSettings = { settingsOpen = true },
                     onToggleAutoScroll = { autoScroll = !autoScroll },
-                    onPrev = { page = (page - step).coerceAtLeast(1) },
-                    onNext = { page = (page + step).coerceAtMost(source.pageCount) },
+                    onPrev = { advance(-1) },
+                    onNext = { advance(1) },
                     onSeek = { target -> page = target.coerceIn(1, source.pageCount) },
                     onOpenPicker = { pickerOpen = true },
                 )
@@ -282,6 +371,25 @@ fun ImageReaderScreen(session: SessionManager, api: KodexApi, source: ReaderSour
             AnimatedVisibility(!chrome, modifier = Modifier.align(Alignment.BottomCenter)) { PagePill(indicator) }
             // Persistent incognito badge (always visible, above the auto-hiding chrome).
             if (source.incognito) IncognitoBadge(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 6.dp))
+
+            // Between-chapters overlay (paged): confirm to open the sibling, dismiss to keep reading.
+            transition?.let { b ->
+                val ref = if (b == Boundary.END) source.nav?.next else source.nav?.prev
+                if (ref != null) {
+                    ChapterTransitionOverlay(
+                        isNext = b == Boundary.END,
+                        title = ref.title,
+                        onConfirm = { confirmTransition() },
+                        onDismiss = { transition = null },
+                    )
+                }
+            }
+        }
+    }
+
+    if (chaptersOpen && p != null && source.nav != null) {
+        ModalBottomSheet(onDismissRequest = { chaptersOpen = false }, sheetState = rememberModalBottomSheetState()) {
+            ChapterListSheet(source.nav.chapters) { chaptersOpen = false }
         }
     }
 
@@ -326,6 +434,7 @@ private fun PagedReader(
     page: Int,
     onJump: (Int) -> Unit,
     onToggleChrome: () -> Unit,
+    onTurnPage: (forward: Boolean) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val double = prefs.isDouble
@@ -377,10 +486,7 @@ private fun PagedReader(
                 rtl = prefs.isRtl,
                 onZoomChange = { zoomedIn = it },
                 onToggleChrome = onToggleChrome,
-                onTurn = { forward ->
-                    val next = pagerState.currentPage + if (forward) 1 else -1
-                    if (next in 0 until slotCount) scope.launch { pagerState.animateScrollToPage(next) }
-                },
+                onTurn = onTurnPage,
             )
         }
     }
@@ -528,6 +634,22 @@ private fun ContinuousReader(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
+        source.nav?.next?.let { next ->
+            item { ContinuousNextTile(next.title) { next.open(ReaderEdge.FIRST) } }
+        }
+    }
+}
+
+/** Footer tile at the bottom of the continuous reader that opens the next chapter. */
+@Composable
+private fun ContinuousNextTile(title: String, onClick: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).background(Color.Black.copy(alpha = 0.4f)).padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text("Next chapter", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelMedium)
+        Text(title, color = Color.White, style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.Center, maxLines = 2)
     }
 }
 
@@ -546,14 +668,13 @@ private fun PageImage(url: String, apiKey: String, contentScale: ContentScale, m
 // ── Chrome ─────────────────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun TopBar(title: String, onBack: () -> Unit, onSettings: () -> Unit) {
+private fun TopBar(title: String, onBack: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.55f)).statusBarsPadding().padding(horizontal = 4.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White) }
         Text(title, color = Color.White, maxLines = 1, modifier = Modifier.weight(1f).padding(horizontal = 4.dp))
-        IconButton(onClick = onSettings) { Icon(Icons.Filled.Settings, "Settings", tint = Color.White) }
     }
 }
 
@@ -564,38 +685,79 @@ private fun BottomBar(
     indicator: String,
     continuous: Boolean,
     autoScroll: Boolean,
+    canPrev: Boolean,
+    canNext: Boolean,
+    hasChapters: Boolean,
+    webEnabled: Boolean,
+    orientation: app.kodex.client.platform.ScreenOrientation,
+    onOpenChapters: () -> Unit,
+    onOpenWeb: () -> Unit,
+    onCycleOrientation: () -> Unit,
+    onOpenSettings: () -> Unit,
     onToggleAutoScroll: () -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
     onSeek: (Int) -> Unit,
     onOpenPicker: () -> Unit,
 ) {
-    Row(
-        Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.55f)).padding(horizontal = 4.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (continuous) {
-            IconButton(onClick = onToggleAutoScroll) {
-                Icon(if (autoScroll) app.kodex.client.ui.icons.PauseIcon else Icons.Filled.PlayArrow, contentDescription = "Auto-scroll", tint = Color.White)
+    Column(Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.55f))) {
+        // Progress row: play/pause (continuous), prev, page slider, indicator (→ picker), next.
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (continuous) {
+                IconButton(onClick = onToggleAutoScroll) {
+                    Icon(if (autoScroll) app.kodex.client.ui.icons.PauseIcon else Icons.Filled.PlayArrow, contentDescription = "Auto-scroll", tint = Color.White)
+                }
+            }
+            IconButton(onClick = onPrev, enabled = canPrev) {
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous page", tint = if (canPrev) Color.White else Color.White.copy(alpha = 0.4f))
+            }
+            if (pageCount > 1) {
+                Slider(
+                    value = (page - 1).toFloat(),
+                    onValueChange = { onSeek(it.toInt() + 1) },
+                    valueRange = 0f..(pageCount - 1).toFloat(),
+                    modifier = Modifier.weight(1f),
+                )
+            } else {
+                Spacer(Modifier.weight(1f))
+            }
+            Text(indicator, color = Color.White, style = MaterialTheme.typography.labelMedium, modifier = Modifier.clickable(onClick = onOpenPicker).padding(horizontal = 6.dp, vertical = 4.dp))
+            IconButton(onClick = onNext, enabled = canNext) {
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next page", tint = if (canNext) Color.White else Color.White.copy(alpha = 0.4f))
             }
         }
-        IconButton(onClick = onPrev, enabled = page > 1) {
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous page", tint = if (page > 1) Color.White else Color.White.copy(alpha = 0.4f))
-        }
-        if (pageCount > 1) {
-            Slider(
-                value = (page - 1).toFloat(),
-                onValueChange = { onSeek(it.toInt() + 1) },
-                valueRange = 0f..(pageCount - 1).toFloat(),
-                modifier = Modifier.weight(1f),
+        // Toolbar row: chapter/book list · open in web · screen orientation · settings.
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ToolbarButton(Icons.AutoMirrored.Filled.List, "Chapters", enabled = hasChapters, onClick = onOpenChapters)
+            ToolbarButton(app.kodex.client.ui.icons.OpenInWebIcon, "Open in web", enabled = webEnabled, onClick = onOpenWeb)
+            ToolbarButton(
+                app.kodex.client.ui.icons.OrientationIcon,
+                "Screen orientation",
+                tint = if (orientation == app.kodex.client.platform.ScreenOrientation.AUTO) Color.White else MaterialTheme.colorScheme.primary,
+                onClick = onCycleOrientation,
             )
-        } else {
-            Spacer(Modifier.weight(1f))
+            ToolbarButton(Icons.Filled.Settings, "Settings", onClick = onOpenSettings)
         }
-        Text(indicator, color = Color.White, style = MaterialTheme.typography.labelMedium, modifier = Modifier.clickable(onClick = onOpenPicker).padding(horizontal = 6.dp, vertical = 4.dp))
-        IconButton(onClick = onNext, enabled = page < pageCount) {
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next page", tint = if (page < pageCount) Color.White else Color.White.copy(alpha = 0.4f))
-        }
+    }
+}
+
+@Composable
+private fun ToolbarButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    desc: String,
+    enabled: Boolean = true,
+    tint: Color = Color.White,
+    onClick: () -> Unit,
+) {
+    IconButton(onClick = onClick, enabled = enabled) {
+        Icon(icon, contentDescription = desc, tint = if (enabled) tint else Color.White.copy(alpha = 0.35f))
     }
 }
 
@@ -634,6 +796,48 @@ private fun IncognitoBadge(modifier: Modifier = Modifier) {
         Icon(app.kodex.client.ui.icons.IncognitoIcon, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
         Spacer(Modifier.width(4.dp))
         Text("Incognito", color = Color.White, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+/** Full-screen between-chapters overlay: confirm to open the sibling, tap elsewhere to keep reading. */
+@Composable
+private fun ChapterTransitionOverlay(isNext: Boolean, title: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    Box(
+        Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.88f)).clickable(onClick = onDismiss),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            Modifier.padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(if (isNext) "Next chapter" else "Previous chapter", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelLarge)
+            Text(title, color = Color.White, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center, maxLines = 3)
+            Button(onClick = onConfirm) { Text(if (isNext) "Continue" else "Go back") }
+            TextButton(onClick = onDismiss) { Text("Keep reading", color = Color.White) }
+        }
+    }
+}
+
+/** Chapter/book list in a bottom sheet; tapping a row jumps to that chapter. */
+@Composable
+private fun ChapterListSheet(chapters: List<ReaderChapterItem>, onClose: () -> Unit) {
+    Column(Modifier.fillMaxWidth().heightIn(max = 480.dp).padding(bottom = 24.dp)) {
+        Text("Chapters", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 8.dp))
+        LazyColumn {
+            items(chapters) { ch ->
+                Text(
+                    ch.title.ifBlank { "—" },
+                    color = if (ch.active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    fontWeight = if (ch.active) FontWeight.SemiBold else FontWeight.Normal,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 2,
+                    modifier = Modifier.fillMaxWidth()
+                        .clickable { if (!ch.active) ch.open(); onClose() }
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                )
+            }
+        }
     }
 }
 

@@ -95,9 +95,15 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
             onOpenSourceReader = { providerId, chapterId, seriesId, chapterName ->
                 backStack.add(DetailRoute.SourceReader(providerId, chapterId, seriesId, chapterName, incognito = incognito))
             },
+            onOpenBrowseReader = { source, chapterId, chapterName ->
+                backStack.add(DetailRoute.SourceReader(source.providerId, chapterId, null, chapterName, source, incognito = incognito))
+            },
             onOpenReaderIncognito = { backStack.add(DetailRoute.Reader(it, incognito = true)) },
             onOpenSourceReaderIncognito = { providerId, chapterId, seriesId, chapterName ->
                 backStack.add(DetailRoute.SourceReader(providerId, chapterId, seriesId, chapterName, incognito = true))
+            },
+            onOpenBrowseReaderIncognito = { source, chapterId, chapterName ->
+                backStack.add(DetailRoute.SourceReader(source.providerId, chapterId, null, chapterName, source, incognito = true))
             },
             onOpenMigrate = { seriesId, providerId, sourceSeriesId, title ->
                 backStack.add(DetailRoute.Migrate(seriesId, providerId, sourceSeriesId, title))
@@ -146,6 +152,9 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
                     onOpenReader = { backStack.add(DetailRoute.Reader(it, incognito = incognito)) },
                     onOpenSourceReader = { providerId, chapterId, seriesId, chapterName ->
                         backStack.add(DetailRoute.SourceReader(providerId, chapterId, seriesId, chapterName, incognito = incognito))
+                    },
+                    onOpenBrowseReader = { source, chapterId, chapterName ->
+                        backStack.add(DetailRoute.SourceReader(source.providerId, chapterId, null, chapterName, source, incognito = incognito))
                     },
                     onOpenSeries = openSeries,
                 )

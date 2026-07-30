@@ -65,6 +65,39 @@ fun main(args: Array<String>) = runBlocking {
         "${page.items.size} items, hasNext=${page.hasNextPage}, first=${page.items.firstOrNull()?.title}"
     }
 
+    // Read-from-source while browsing: drill into a live COMIC source the way the Browse screens do —
+    // feed → series details → chapter list → per-chapter progress + page count (what the reader needs).
+    val comicSource = runCatching {
+        api.contentSources(host, key).firstOrNull { it.kind == "COMIC" }
+    }.getOrNull()
+    if (comicSource != null) {
+        val pid = comicSource.id
+        val item = runCatching { api.sourceFeed(host, key, pid, "popular", 1).items.firstOrNull() }.getOrNull()
+        if (item != null) {
+            val ext = item.externalId
+            check("sourceSeries($pid)") {
+                api.sourceSeries(host, key, pid, ext).let { "${it.title} status=${it.status} genres=${it.genres.size}" }
+            }
+            val chapters = runCatching { api.sourceChapters(host, key, pid, ext) }.getOrNull().orEmpty()
+            check("sourceChapters($pid)") {
+                "${chapters.size} chapters, ${chapters.count { c -> c.volume != null }} with a volume, " +
+                    "first=${chapters.firstOrNull()?.name}"
+            }
+            check("sourceSeriesProgress($pid)") {
+                api.sourceSeriesProgress(host, key, pid, ext).let { "${it.size} chapters with saved progress" }
+            }
+            val first = chapters.firstOrNull()?.externalId
+            if (first != null) {
+                check("sourceChapterPageCount(browse)") {
+                    "${api.sourceChapterPageCount(host, key, pid, first)} pages (0 ⇒ source can't fetch right now)"
+                }
+                check("sourceProgress(browse)") {
+                    api.sourceProgress(host, key, pid, first)?.toString() ?: "null (no saved progress)"
+                }
+            }
+        }
+    }
+
     // Streamed reader endpoints (page count 0 today = the source can't fetch pages, not a client bug).
     val detail = runCatching { api.seriesDetail(host, key, sid) }.getOrNull()
     val prov = detail?.sourceProviderId

@@ -57,7 +57,11 @@ data class SourceChapter(
     val number: Double? = null,
     val scanlator: String? = null,
     val releaseDate: String? = null,
-)
+    /** Free-form provider metadata; `volume` groups chapters under a section header. */
+    val attributes: Map<String, String> = emptyMap(),
+) {
+    val volume: String? get() = attributes["volume"]?.takeIf { it.isNotBlank() }
+}
 
 /** Resolves a source series to its followed local series (present only when followed). */
 @Serializable

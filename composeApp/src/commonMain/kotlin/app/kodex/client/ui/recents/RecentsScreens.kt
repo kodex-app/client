@@ -33,7 +33,9 @@ import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.dayLabel
 import app.kodex.client.ui.daysAgoIsoUtc
 import app.kodex.client.ui.isoDayKey
+import app.kodex.client.ui.main.OpenBrowseReader
 import app.kodex.client.ui.main.OpenSourceReader
+import app.kodex.client.ui.main.SourceSeriesContext
 import app.kodex.client.ui.nowIsoUtc
 import app.kodex.client.ui.relativeTime
 import kotlinx.coroutines.launch
@@ -98,6 +100,7 @@ fun HistoryList(
     api: KodexApi,
     onOpenReader: (String) -> Unit,
     onOpenSourceReader: OpenSourceReader,
+    onOpenBrowseReader: OpenBrowseReader = { _, _, _ -> },
     onOpenSeries: (String) -> Unit = {},
 ) {
     val server by session.activeServer.collectAsStateSafe()
@@ -141,7 +144,7 @@ fun HistoryList(
 
         PagedList(paged, emptyText = "No reading history yet.") { items ->
             groupedByDay(items, dayKeyOf = { isoDayKey(it.readDate) }) { h ->
-                HistoryRow(baseUrl, apiKey, h, onOpenReader, onOpenSourceReader, onOpenSeries)
+                HistoryRow(baseUrl, apiKey, h, onOpenReader, onOpenSourceReader, onOpenBrowseReader, onOpenSeries)
             }
         }
     }
@@ -154,6 +157,7 @@ private fun HistoryRow(
     h: HistoryEntryDto,
     onOpenReader: (String) -> Unit,
     onOpenSourceReader: OpenSourceReader,
+    onOpenBrowseReader: OpenBrowseReader,
     onOpenSeries: (String) -> Unit,
 ) {
     val cover = when {
@@ -162,11 +166,21 @@ private fun HistoryRow(
         else -> sourceCoverUrl(baseUrl, h.providerId ?: "", h.coverUrl)
     }
     val open = {
+        val provider = h.providerId
+        val chapter = h.chapterId
+        val sourceSeries = h.sourceSeriesId
         when {
             h.isBook && h.bookId != null -> onOpenReader(h.bookId!!)
-            h.providerId != null && h.chapterId != null ->
-                onOpenSourceReader(h.providerId!!, h.chapterId!!, h.seriesId, h.title)
-            else -> Unit
+            provider == null || chapter == null -> Unit
+            // Read while browsing (no local series): re-open with the source series' identity so the
+            // reader can rebuild its chapter navigation from the source's live list.
+            h.seriesId == null && sourceSeries != null ->
+                onOpenBrowseReader(
+                    SourceSeriesContext(provider, sourceSeries, h.seriesName.ifBlank { h.title.orEmpty() }, h.coverUrl),
+                    chapter,
+                    h.title,
+                )
+            else -> onOpenSourceReader(provider, chapter, h.seriesId, h.title)
         }
     }
     val progress = if (h.completed) "Finished" else "Page ${h.page}"

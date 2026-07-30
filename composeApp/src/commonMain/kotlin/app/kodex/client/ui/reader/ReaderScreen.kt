@@ -15,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -36,17 +37,39 @@ private sealed interface ReaderState {
     data class Ready(val book: BookDto) : ReaderState
 }
 
-/** Reader for a downloaded local book (comic/DIVINA + PDF). EPUB is gated with a message. */
+/** The book currently open; [edge] is set when arriving from a sibling (start of it / end of it). */
+private data class BookTarget(val id: String, val edge: ReaderEdge? = null)
+
+/**
+ * Reader for a downloaded local book (comic/DIVINA + PDF). EPUB is gated with a message. The series'
+ * other books drive cross-chapter navigation (prev/next + the chapter menu); jumping to a sibling swaps
+ * the book in place so back returns to the series, not a chain of readers (matching the web).
+ */
 @Composable
 fun ReaderScreen(session: SessionManager, api: KodexApi, bookId: String, onBack: () -> Unit, startPage: Int? = null, incognito: Boolean = false) {
     val server by session.activeServer.collectAsStateSafe()
+    var target by remember(bookId) { mutableStateOf(BookTarget(bookId)) }
     var state by remember(bookId) { mutableStateOf<ReaderState>(ReaderState.Loading) }
+    var siblings by remember(bookId) { mutableStateOf<List<BookDto>>(emptyList()) }
 
-    LaunchedEffect(bookId, server?.id) {
+    LaunchedEffect(target.id, server?.id) {
         val s = server ?: return@LaunchedEffect
         state = ReaderState.Loading
-        state = runCatching { api.book(s.baseUrl, s.apiKey, bookId) }
+        state = runCatching { api.book(s.baseUrl, s.apiKey, target.id) }
             .fold({ ReaderState.Ready(it) }, { ReaderState.Error(it.friendlyMessage()) })
+    }
+    // Sibling books for cross-chapter navigation (ordered by number ascending by the API).
+    val loadedSeriesId = (state as? ReaderState.Ready)?.book?.seriesId
+    LaunchedEffect(loadedSeriesId, server?.id) {
+        val s = server ?: return@LaunchedEffect
+        siblings = if (loadedSeriesId != null) runCatching { api.seriesBooks(s.baseUrl, s.apiKey, loadedSeriesId) }.getOrDefault(emptyList()) else emptyList()
+    }
+
+    // Swap the open book. Drop to Loading here (not only in the effect) so the reader never renders the
+    // new book's pages against the old page count.
+    fun openBook(b: BookDto, edge: ReaderEdge) {
+        state = ReaderState.Loading
+        target = BookTarget(b.id, edge)
     }
 
     when (val st = state) {
@@ -60,25 +83,46 @@ fun ReaderScreen(session: SessionManager, api: KodexApi, bookId: String, onBack:
                 isEpub(book) -> ReaderShell(onBack) { ReaderMessage("EPUB reading isn't supported in the app yet.") }
                 book.pageCount <= 0 -> ReaderShell(onBack) { ReaderMessage("This book has no readable pages.") }
                 else -> {
-                    val source = remember(book.id, s.baseUrl, startPage) {
+                    val current = target
+                    val source = remember(current, s.baseUrl, siblings, book.pageCount) {
+                        val idx = siblings.indexOfFirst { it.id == book.id }
+                        val nav = if (siblings.size > 1 && idx >= 0) {
+                            fun ref(b: BookDto?) = b?.let { sib ->
+                                ReaderChapterRef(chapterTitle(sib), { edge -> openBook(sib, edge) }, { pg -> bookPageUrl(s.baseUrl, sib.id, pg) })
+                            }
+                            ReaderChapterNav(
+                                prev = ref(siblings.getOrNull(idx - 1)),
+                                next = ref(siblings.getOrNull(idx + 1)),
+                                chapters = siblings.map { sib -> ReaderChapterItem(chapterTitle(sib), sib.id == book.id, { openBook(sib, ReaderEdge.FIRST) }) },
+                            )
+                        } else null
                         ReaderSource(
                             title = book.title.ifBlank { book.numberDisplay ?: "Reading" },
                             pageCount = book.pageCount,
-                            initialPage = startPage?.coerceIn(1, book.pageCount) ?: book.readProgress?.page ?: 1,
+                            initialPage = when (current.edge) {
+                                ReaderEdge.FIRST -> 1
+                                ReaderEdge.LAST -> book.pageCount
+                                null -> startPage?.coerceIn(1, book.pageCount) ?: book.readProgress?.page ?: 1
+                            },
                             kind = if (book.mediaType?.contains("pdf", ignoreCase = true) == true) "pdf" else "comic",
                             seriesId = book.seriesId,
                             apiKey = s.apiKey,
                             pageUrlFor = { pg -> bookPageUrl(s.baseUrl, book.id, pg) },
                             onPersist = if (incognito) ({ _, _ -> }) else ({ pg, completed -> api.saveReadProgress(s.baseUrl, s.apiKey, book.id, pg, completed) }),
                             incognito = incognito,
+                            nav = nav,
+                            webUrl = "${s.baseUrl}/books/${book.id}/read",
                         )
                     }
-                    ImageReaderScreen(session, api, source, onBack)
+                    // The reader keeps its own page state, so a book swap has to remount it.
+                    key(current.id) { ImageReaderScreen(session, api, source, onBack) }
                 }
             }
         }
     }
 }
+
+private fun chapterTitle(book: BookDto): String = book.title.ifBlank { book.numberDisplay ?: "Chapter" }
 
 /** Black full-screen shell with a persistent back button (for loading/error/gate states). */
 @Composable

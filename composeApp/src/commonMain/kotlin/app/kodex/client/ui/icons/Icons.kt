@@ -126,6 +126,60 @@ val LabelIcon: ImageVector = materialIcon(name = "Filled.Label") {
     }
 }
 
+/** Material "open_in_new" glyph — the reader's "open in web" button. */
+val OpenInWebIcon: ImageVector = materialIcon(name = "Filled.OpenInNew") {
+    materialPath {
+        moveTo(19f, 19f)
+        horizontalLineTo(5f)
+        verticalLineTo(5f)
+        horizontalLineToRelative(7f)
+        verticalLineTo(3f)
+        horizontalLineTo(5f)
+        curveToRelative(-1.11f, 0f, -2f, 0.9f, -2f, 2f)
+        verticalLineToRelative(14f)
+        curveToRelative(0f, 1.1f, 0.89f, 2f, 2f, 2f)
+        horizontalLineToRelative(14f)
+        curveToRelative(1.1f, 0f, 2f, -0.9f, 2f, -2f)
+        verticalLineToRelative(-7f)
+        horizontalLineToRelative(-2f)
+        verticalLineToRelative(7f)
+        close()
+        moveTo(14f, 3f)
+        verticalLineToRelative(2f)
+        horizontalLineToRelative(3.59f)
+        lineToRelative(-9.83f, 9.83f)
+        lineToRelative(1.41f, 1.41f)
+        lineTo(19f, 6.41f)
+        verticalLineTo(10f)
+        horizontalLineToRelative(2f)
+        verticalLineTo(3f)
+        horizontalLineToRelative(-7f)
+        close()
+    }
+}
+
+/** Material "stay_current_portrait" (phone) glyph — the reader's screen-orientation button. */
+val OrientationIcon: ImageVector = materialIcon(name = "Filled.StayCurrentPortrait") {
+    materialPath {
+        moveTo(17f, 1.01f)
+        lineTo(7f, 1f)
+        curveToRelative(-1.1f, 0f, -2f, 0.9f, -2f, 2f)
+        verticalLineToRelative(18f)
+        curveToRelative(0f, 1.1f, 0.9f, 2f, 2f, 2f)
+        horizontalLineToRelative(10f)
+        curveToRelative(1.1f, 0f, 2f, -0.9f, 2f, -2f)
+        verticalLineTo(3f)
+        curveToRelative(0f, -1.1f, -0.9f, -1.99f, -2f, -1.99f)
+        close()
+        moveTo(17f, 19f)
+        horizontalLineTo(7f)
+        verticalLineTo(5f)
+        horizontalLineToRelative(10f)
+        verticalLineToRelative(14f)
+        close()
+    }
+}
+
 /** Material "pause" glyph (two bars) — used for the reader's auto-scroll toggle. */
 val PauseIcon: ImageVector = materialIcon(name = "Filled.Pause") {
     materialPath {

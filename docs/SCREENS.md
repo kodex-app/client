@@ -18,7 +18,7 @@ Legend: `[x]` done · `[~]` partial (built, gaps listed) · `[ ]` not started
 - [x] Readers — image (paged/continuous/auto, zoom, RTL, settings, per-series prefs) + source streaming
 - [x] Series detail (header, books/chapters, read button)
 - [x] Book detail (cover, metadata, read + mark read/unread)
-- [x] Source-series (header, chapters, follow/download/unfollow)
+- [x] Source-series (header, chapters, **read-from-source**, follow/download/unfollow)
 - [x] GitHub Actions APK build + publish + Telegram
 
 ---
@@ -54,6 +54,7 @@ Legend: `[x]` done · `[~]` partial (built, gaps listed) · `[ ]` not started
 - [x] Book detail: re-analyze · delete · edit-metadata sheet · bookmarks (page-jump) · **identifiers + external links** (tap to open)
 - [~] Browse: **kind filter** chips · language grouping — **done**; favorites + recents quick-access still pending
 - [~] Source catalogue (WebBrowse): Search · source `FilterList` filters (polymorphic) — **done** (live data blocked — no source plugins); multi-select add-to-library still pending
+- [x] **Read straight from a source while browsing** (no follow, no download): tap a chapter (long-press = incognito) · **Continue/Start reading** button off `/series-progress` · read dots + "Page N" markers · volume group headers · prev/next chapter + chapter menu inside the reader (swaps in place, back exits to the series) · progress recorded with the source series' name/cover so History resumes it with navigation intact · BOOK-kind sources gated (no EPUB reader yet)
 - [x] Search: library search + **facet-filter sheet** (genre/status/readingStatus/language/tag/label via `/series` + `/series/{genres,tags,languages}` + `/labels`) — facets can browse with empty query
 
 ## Phase 3 — content management
