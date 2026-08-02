@@ -538,6 +538,12 @@ class KodexApi(private val client: HttpClient) {
             if (e.response.status == HttpStatusCode.NotFound) null else throw e
         }
 
+    /** External ids from a source already followed into one of the user's libraries — the "in library" marks in Browse. */
+    suspend fun followedExternalIds(baseUrl: String, apiKey: String, providerId: String): List<String> =
+        client.get("$baseUrl/api/v1/content-sources/$providerId/followed") {
+            header(HEADER_API_KEY, apiKey)
+        }.body()
+
     /** The user's WEB library (auto-created server-side), used as the follow target. */
     suspend fun webLibrary(baseUrl: String, apiKey: String): LibraryDto =
         client.get("$baseUrl/api/v1/libraries/web") {

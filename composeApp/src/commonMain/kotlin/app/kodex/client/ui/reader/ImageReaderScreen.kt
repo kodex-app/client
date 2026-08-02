@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilterChip
@@ -85,6 +86,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.window.Dialog
@@ -375,8 +377,12 @@ fun ImageReaderScreen(session: SessionManager, api: KodexApi, source: ReaderSour
                     canPrev = canPrev,
                     canNext = canNext,
                     hasChapters = (source.nav?.chapters?.size ?: 0) > 1,
+                    canPrevChapter = source.nav?.prev != null,
+                    canNextChapter = source.nav?.next != null,
                     webEnabled = source.webUrl != null,
                     orientation = orientation.orientation,
+                    onPrevChapter = { source.nav?.prev?.open(ReaderEdge.FIRST) },
+                    onNextChapter = { source.nav?.next?.open(ReaderEdge.FIRST) },
                     onOpenChapters = { chaptersOpen = true },
                     onOpenWeb = { source.webUrl?.let { openUrl(it) } },
                     onCycleOrientation = { orientation.cycle() },
@@ -716,14 +722,30 @@ private val rightEdgeExit = slideOutHorizontally(chromeOutOffset) { it } + fadeO
 private val pagePillEnter = slideInVertically(chromeInOffset) { it / 2 } + fadeIn(chromeInSpec)
 private val pagePillExit = slideOutVertically(chromeOutOffset) { it / 2 } + fadeOut(chromeOutSpec)
 
+/**
+ * Toolbar fill: the app's own elevated surface tone rather than flat black, so the reader chrome
+ * matches the rest of the app (and follows the selected palette, Monet, and the AMOLED override).
+ * Kept translucent so the page still shows through — light schemes need a touch more opacity than
+ * dark ones to stay legible over a bright page.
+ */
+private val ColorScheme.readerBarColor: Color
+    get() = surfaceContainerHigh.copy(alpha = if (surface.luminance() < 0.5f) 0.90f else 0.95f)
+
+/** Icons/text on the toolbars, paired with [readerBarColor] so they contrast in either scheme. */
+private val ColorScheme.readerBarContentColor: Color get() = onSurface
+
+/** M3 disabled-content alpha, for page-turn arrows at the first/last page. */
+private fun Color.disabled() = copy(alpha = 0.38f)
+
 @Composable
 private fun TopBar(title: String, onBack: () -> Unit) {
+    val content = MaterialTheme.colorScheme.readerBarContentColor
     Row(
-        Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.55f)).statusBarsPadding().padding(horizontal = 4.dp, vertical = 4.dp),
+        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.readerBarColor).statusBarsPadding().padding(horizontal = 4.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White) }
-        Text(title, color = Color.White, maxLines = 1, modifier = Modifier.weight(1f).padding(horizontal = 4.dp))
+        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = content) }
+        Text(title, color = content, maxLines = 1, modifier = Modifier.weight(1f).padding(horizontal = 4.dp))
     }
 }
 
@@ -737,8 +759,12 @@ private fun BottomBar(
     canPrev: Boolean,
     canNext: Boolean,
     hasChapters: Boolean,
+    canPrevChapter: Boolean,
+    canNextChapter: Boolean,
     webEnabled: Boolean,
     orientation: app.kodex.client.platform.ScreenOrientation,
+    onPrevChapter: () -> Unit,
+    onNextChapter: () -> Unit,
     onOpenChapters: () -> Unit,
     onOpenWeb: () -> Unit,
     onCycleOrientation: () -> Unit,
@@ -749,7 +775,8 @@ private fun BottomBar(
     onSeek: (Int) -> Unit,
     onOpenPicker: () -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.55f))) {
+    val content = MaterialTheme.colorScheme.readerBarContentColor
+    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.readerBarColor)) {
         // Progress row: play/pause (continuous), prev, page slider, indicator (→ picker), next.
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
@@ -757,11 +784,11 @@ private fun BottomBar(
         ) {
             if (continuous) {
                 IconButton(onClick = onToggleAutoScroll) {
-                    Icon(if (autoScroll) app.kodex.client.ui.icons.PauseIcon else Icons.Filled.PlayArrow, contentDescription = "Auto-scroll", tint = Color.White)
+                    Icon(if (autoScroll) app.kodex.client.ui.icons.PauseIcon else Icons.Filled.PlayArrow, contentDescription = "Auto-scroll", tint = content)
                 }
             }
             IconButton(onClick = onPrev, enabled = canPrev) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous page", tint = if (canPrev) Color.White else Color.White.copy(alpha = 0.4f))
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous page", tint = if (canPrev) content else content.disabled())
             }
             if (pageCount > 1) {
                 Slider(
@@ -773,26 +800,29 @@ private fun BottomBar(
             } else {
                 Spacer(Modifier.weight(1f))
             }
-            Text(indicator, color = Color.White, style = MaterialTheme.typography.labelMedium, modifier = Modifier.clickable(onClick = onOpenPicker).padding(horizontal = 6.dp, vertical = 4.dp))
+            Text(indicator, color = content, style = MaterialTheme.typography.labelMedium, modifier = Modifier.clickable(onClick = onOpenPicker).padding(horizontal = 6.dp, vertical = 4.dp))
             IconButton(onClick = onNext, enabled = canNext) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next page", tint = if (canNext) Color.White else Color.White.copy(alpha = 0.4f))
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next page", tint = if (canNext) content else content.disabled())
             }
         }
-        // Toolbar row: chapter/book list · open in web · screen orientation · settings.
+        // Toolbar row: chapter nav bounds the row (Mihon's convention — outer ends switch chapters,
+        // the slider above moves pages) around the list · open in web · screen orientation · settings.
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            ToolbarButton(app.kodex.client.ui.icons.SkipPreviousIcon, "Previous chapter", enabled = canPrevChapter, onClick = onPrevChapter)
             ToolbarButton(Icons.AutoMirrored.Filled.List, "Chapters", enabled = hasChapters, onClick = onOpenChapters)
             ToolbarButton(app.kodex.client.ui.icons.OpenInWebIcon, "Open in web", enabled = webEnabled, onClick = onOpenWeb)
             ToolbarButton(
                 app.kodex.client.ui.icons.OrientationIcon,
                 "Screen orientation",
-                tint = if (orientation == app.kodex.client.platform.ScreenOrientation.AUTO) Color.White else MaterialTheme.colorScheme.primary,
+                tint = if (orientation == app.kodex.client.platform.ScreenOrientation.AUTO) content else MaterialTheme.colorScheme.primary,
                 onClick = onCycleOrientation,
             )
             ToolbarButton(Icons.Filled.Settings, "Settings", onClick = onOpenSettings)
+            ToolbarButton(app.kodex.client.ui.icons.SkipNextIcon, "Next chapter", enabled = canNextChapter, onClick = onNextChapter)
         }
     }
 }
@@ -802,11 +832,11 @@ private fun ToolbarButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     desc: String,
     enabled: Boolean = true,
-    tint: Color = Color.White,
+    tint: Color = MaterialTheme.colorScheme.readerBarContentColor,
     onClick: () -> Unit,
 ) {
     IconButton(onClick = onClick, enabled = enabled) {
-        Icon(icon, contentDescription = desc, tint = if (enabled) tint else Color.White.copy(alpha = 0.35f))
+        Icon(icon, contentDescription = desc, tint = if (enabled) tint else MaterialTheme.colorScheme.readerBarContentColor.disabled())
     }
 }
 

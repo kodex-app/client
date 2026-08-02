@@ -255,17 +255,18 @@ fun SearchScreen(
                         ),
                     )
                 },
-                actions = {
-                    if (online) {
-                        TextButton(onClick = { sourceSheetOpen = true }) {
-                            Text(if (selectedSources.isNotEmpty()) "Sources (${selectedSources.size})" else "Sources")
-                        }
-                    } else {
-                        TextButton(onClick = { sheetOpen = true }) {
-                            Text(if (facets.count > 0) "Filters (${facets.count})" else "Filters")
-                        }
-                    }
-                },
+            )
+        },
+        floatingActionButton = {
+            val label = if (online) {
+                if (selectedSources.isNotEmpty()) "Sources (${selectedSources.size})" else "Sources"
+            } else {
+                if (facets.count > 0) "Filters (${facets.count})" else "Filters"
+            }
+            androidx.compose.material3.ExtendedFloatingActionButton(
+                onClick = { if (online) sourceSheetOpen = true else sheetOpen = true },
+                icon = { Icon(app.kodex.client.ui.icons.FilterIcon, contentDescription = null) },
+                text = { Text(label) },
             )
         },
     ) { padding ->

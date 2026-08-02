@@ -11,7 +11,6 @@ import app.kodex.client.auth.SessionManager
 import app.kodex.client.data.model.ServerConnection
 import app.kodex.client.network.KodexApi
 import app.kodex.client.network.ReadProgressDto
-import app.kodex.client.network.SourceChapter
 import app.kodex.client.ui.catalog.sourcePageUrl
 import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.friendlyMessage
@@ -38,6 +37,13 @@ private fun sourceReadUrl(baseUrl: String, providerId: String, chapterId: String
 private data class ChapterTarget(val id: String, val name: String?, val edge: ReaderEdge? = null)
 
 /**
+ * A sibling chapter for reader navigation, normalised so both paths into this screen feed one nav
+ * builder: a Browse read supplies the source's live chapter list, a followed series its stored
+ * (tracked-catalogue) one.
+ */
+private data class NavChapter(val id: String, val name: String, val number: Double?)
+
+/**
  * Streams a content-source chapter's pages directly — no download (the Mihon-style path). Feeds the
  * shared ImageReader once the page count + resume position are known.
  *
@@ -61,14 +67,24 @@ fun SourceReaderScreen(
     var target by remember(chapterId) { mutableStateOf(ChapterTarget(chapterId, chapterName)) }
     var state by remember(chapterId) { mutableStateOf<SourceReaderState>(SourceReaderState.Loading) }
 
-    // Sibling chapters for cross-chapter navigation (Browse reads only — a followed series is read
-    // through the series detail screen, which owns its tracked catalogue).
-    var siblings by remember(sourceSeries?.externalId) { mutableStateOf<List<SourceChapter>>(emptyList()) }
-    LaunchedEffect(sourceSeries?.externalId, server?.id) {
+    // Sibling chapters for cross-chapter navigation. Both entry points have a chapter list available:
+    // a Browse read carries the source series' identity and queries the source live, while a followed
+    // series is opened by local id and reads the tracked catalogue the series screen itself lists.
+    // (Missing the second case left the chapter menu and prev/next permanently disabled there.)
+    var siblings by remember(sourceSeries?.externalId, seriesId) { mutableStateOf<List<NavChapter>>(emptyList()) }
+    LaunchedEffect(sourceSeries?.externalId, seriesId, server?.id) {
         val s = server ?: return@LaunchedEffect
-        val ctx = sourceSeries ?: return@LaunchedEffect
-        siblings = runCatching { api.sourceChapters(s.baseUrl, s.apiKey, ctx.providerId, ctx.externalId) }
-            .getOrDefault(emptyList())
+        siblings = runCatching {
+            when {
+                sourceSeries != null ->
+                    api.sourceChapters(s.baseUrl, s.apiKey, sourceSeries.providerId, sourceSeries.externalId)
+                        .map { NavChapter(it.externalId, it.name, it.number) }
+                seriesId != null ->
+                    api.seriesChapters(s.baseUrl, s.apiKey, seriesId)
+                        .map { NavChapter(it.chapterId, it.name.orEmpty(), it.number) }
+                else -> emptyList()
+            }
+        }.getOrDefault(emptyList())
     }
 
     LaunchedEffect(target.id, server?.id) {
@@ -84,12 +100,12 @@ fun SourceReaderScreen(
 
     // Swap the open chapter. State drops back to Loading here (not just in the effect above) so the
     // reader never renders the new chapter's pages against the old one's page count.
-    fun openChapter(chapter: SourceChapter, edge: ReaderEdge) {
+    fun openChapter(chapter: NavChapter, edge: ReaderEdge) {
         state = SourceReaderState.Loading
-        target = ChapterTarget(chapter.externalId, chapter.name.takeIf { it.isNotBlank() }, edge)
+        target = ChapterTarget(chapter.id, chapter.name.takeIf { it.isNotBlank() }, edge)
     }
 
-    val nav = server?.let { s -> rememberChapterNav(s, sourceSeries, siblings, target.id, ::openChapter) }
+    val nav = server?.let { s -> rememberChapterNav(s, providerId, siblings, target.id, ::openChapter) }
 
     when (val st = state) {
         is SourceReaderState.Error -> ReaderShell(onBack) { ReaderMessage(st.message) }
@@ -152,38 +168,38 @@ fun SourceReaderScreen(
 }
 
 /**
- * Prev/next + the chapter menu for a Browse read, built from the source's live chapter list. Sorted
+ * Prev/next + the chapter menu, built from whichever chapter list [siblings] came from. Sorted
  * newest-first to match the tracked-catalogue convention, so reading order runs *up* the list.
  */
 @Composable
 private fun rememberChapterNav(
     server: ServerConnection,
-    sourceSeries: SourceSeriesContext?,
-    siblings: List<SourceChapter>,
+    providerId: String,
+    siblings: List<NavChapter>,
     currentId: String,
-    open: (SourceChapter, ReaderEdge) -> Unit,
-): ReaderChapterNav? = remember(server.baseUrl, sourceSeries, siblings, currentId) {
-    if (sourceSeries == null || siblings.size < 2) return@remember null
+    open: (NavChapter, ReaderEdge) -> Unit,
+): ReaderChapterNav? = remember(server.baseUrl, providerId, siblings, currentId) {
+    if (siblings.size < 2) return@remember null
     val sorted = siblings.sortedByDescending { it.number ?: Double.NEGATIVE_INFINITY }
-    val index = sorted.indexOfFirst { it.externalId == currentId }
+    val index = sorted.indexOfFirst { it.id == currentId }
     if (index < 0) return@remember null
 
-    fun label(c: SourceChapter): String = c.name.ifBlank { chapterLabel(c) }
-    fun ref(c: SourceChapter?): ReaderChapterRef? = c?.let {
+    fun label(c: NavChapter): String = c.name.ifBlank { chapterLabel(c) }
+    fun ref(c: NavChapter?): ReaderChapterRef? = c?.let {
         ReaderChapterRef(
             title = label(it),
             open = { edge -> open(it, edge) },
-            preloadPageUrl = { pg -> sourcePageUrl(server.baseUrl, sourceSeries.providerId, it.externalId, pg - 1) },
+            preloadPageUrl = { pg -> sourcePageUrl(server.baseUrl, providerId, it.id, pg - 1) },
         )
     }
     ReaderChapterNav(
         prev = ref(sorted.getOrNull(index + 1)),
         next = ref(sorted.getOrNull(index - 1)),
         chapters = sorted.map { c ->
-            ReaderChapterItem(label(c), active = c.externalId == currentId) { open(c, ReaderEdge.FIRST) }
+            ReaderChapterItem(label(c), active = c.id == currentId) { open(c, ReaderEdge.FIRST) }
         },
     )
 }
 
-private fun chapterLabel(c: SourceChapter): String =
+private fun chapterLabel(c: NavChapter): String =
     c.number?.let { n -> if (n % 1.0 == 0.0) "Chapter ${n.toInt()}" else "Chapter $n" } ?: "Chapter"

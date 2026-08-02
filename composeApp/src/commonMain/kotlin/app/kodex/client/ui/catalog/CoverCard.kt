@@ -75,6 +75,7 @@ fun CoverCard(
     width: Dp? = CardWidth,
     onLongClick: (() -> Unit)? = null,
     selected: Boolean = false,
+    inLibrary: Boolean = false,
 ) {
     val sizing = if (width != null) Modifier.width(width) else Modifier.fillMaxWidth()
     val clickModifier = if (onLongClick != null) {
@@ -102,6 +103,15 @@ fun CoverCard(
                     tint = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.align(Alignment.TopStart).padding(6.dp),
                 )
+            } else if (inLibrary) {
+                // "In library" mark for Browse — a filled check badge in the corner.
+                Box(
+                    Modifier.align(Alignment.TopStart).padding(6.dp).size(20.dp)
+                        .clip(CircleShape).background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Filled.Check, contentDescription = "In library", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(14.dp))
+                }
             }
         }
         Spacer(Modifier.height(8.dp))

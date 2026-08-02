@@ -196,6 +196,39 @@ val PauseIcon: ImageVector = materialIcon(name = "Filled.Pause") {
     }
 }
 
+/**
+ * Material "skip_previous" glyph — the reader's previous-chapter button. Auto-mirrored so it points
+ * the right way in RTL layouts (the reader's own RTL *page* order is a separate, per-series setting).
+ */
+val SkipPreviousIcon: ImageVector = materialIcon(name = "Filled.SkipPrevious", autoMirror = true) {
+    materialPath {
+        moveTo(6f, 6f)
+        horizontalLineToRelative(2f)
+        verticalLineToRelative(12f)
+        horizontalLineTo(6f)
+        close()
+        moveTo(9.5f, 12f)
+        lineTo(18f, 18f)
+        verticalLineTo(6f)
+        close()
+    }
+}
+
+/** Material "skip_next" glyph — the reader's next-chapter button. See [SkipPreviousIcon]. */
+val SkipNextIcon: ImageVector = materialIcon(name = "Filled.SkipNext", autoMirror = true) {
+    materialPath {
+        moveTo(6f, 18f)
+        lineTo(14.5f, 12f)
+        lineTo(6f, 6f)
+        close()
+        moveTo(16f, 6f)
+        verticalLineToRelative(12f)
+        horizontalLineToRelative(2f)
+        verticalLineTo(6f)
+        close()
+    }
+}
+
 /** Material "language" (globe) glyph — used for the Browse language filter button. */
 val LanguageIcon: ImageVector = materialIcon(name = "Filled.Language") {
     materialPath {

@@ -134,6 +134,14 @@ fun SourceFeedScreen(
     var libraryPicker by remember(source.id) { mutableStateOf<List<LibraryDto>?>(null) }
     var addingBusy by remember(source.id) { mutableStateOf(false) }
 
+    // External ids already followed into one of the user's libraries → "in library" marks on the grid.
+    var followedIds by remember(source.id) { mutableStateOf<Set<String>>(emptySet()) }
+    var followedReload by remember(source.id) { mutableIntStateOf(0) }
+    LaunchedEffect(source.id, server?.id, followedReload) {
+        val s = server ?: return@LaunchedEffect
+        followedIds = runCatching { api.followedExternalIds(s.baseUrl, s.apiKey, source.id).toSet() }.getOrDefault(emptySet())
+    }
+
     // System back exits selection mode first (before leaving the screen).
     app.kodex.client.platform.AppBackHandler(enabled = selection.active) { selection.clear() }
 
@@ -151,6 +159,7 @@ fun SourceFeedScreen(
                     .onSuccess { ok++ }
             }
             addingBusy = false
+            followedReload++ // refresh the "in library" marks
             snackbar?.show(if (ok == chosen.size) "Added $ok to library" else "Added $ok of ${chosen.size} (some already exist)")
             selection.clear()
         }
@@ -327,6 +336,7 @@ fun SourceFeedScreen(
                         gridState = gridState,
                         loadingMore = loading,
                         selection = selection,
+                        followedIds = followedIds,
                         onOpen = onOpenSourceSeries,
                     )
                 }
@@ -594,6 +604,7 @@ private fun FeedGrid(
     gridState: androidx.compose.foundation.lazy.grid.LazyGridState,
     loadingMore: Boolean,
     selection: SelectionState<String>,
+    followedIds: Set<String>,
     onOpen: (SourceSearchResult) -> Unit,
 ) {
     LazyVerticalGrid(
@@ -614,6 +625,7 @@ private fun FeedGrid(
                 onClick = { if (selection.active) selection.toggle(item.externalId) else onOpen(item) },
                 onLongClick = { selection.toggle(item.externalId) },
                 selected = selection.isSelected(item.externalId),
+                inLibrary = item.externalId in followedIds,
                 width = null,
             )
         }
