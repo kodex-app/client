@@ -136,6 +136,17 @@ class ReaderSource(
     val incognito: Boolean = false, // drives the persistent incognito badge
     val nav: ReaderChapterNav? = null, // sibling chapters for cross-chapter navigation
     val webUrl: String? = null, // "open in web" target (the web UI reader page), or null to disable
+    val bookmarks: ReaderBookmarks? = null, // page bookmarks, or null to hide the top-bar action
+)
+
+/**
+ * Page bookmarks for the reader's top bar. Kodex bookmarks a *page* of a book, so the action marks
+ * wherever you are rather than the whole chapter. Null on sources that can't hold one — a streamed
+ * source chapter isn't a library book, and the bookmark API is book-scoped.
+ */
+class ReaderBookmarks(
+    val pages: Set<Int>, // 1-based pages currently bookmarked
+    val toggle: (page: Int) -> Unit,
 )
 
 /** Which page a newly-opened chapter starts on. */
@@ -299,8 +310,9 @@ fun ImageReaderScreen(session: SessionManager, api: KodexApi, source: ReaderSour
 
     var chrome by remember { mutableStateOf(true) }
     var settingsOpen by remember { mutableStateOf(false) }
-    // Auto-hide chrome after 3s of no interaction.
-    LaunchedEffect(chrome, page, settingsOpen) {
+    // Auto-hide chrome after 3s of no interaction. Bookmarking counts as interaction, so the bar
+    // doesn't slide away in the instant between tapping the action and seeing it take.
+    LaunchedEffect(chrome, page, settingsOpen, source.bookmarks?.pages) {
         if (chrome && !settingsOpen) {
             kotlinx.coroutines.delay(3000)
             chrome = false
@@ -374,7 +386,13 @@ fun ImageReaderScreen(session: SessionManager, api: KodexApi, source: ReaderSour
             }
 
             AnimatedVisibility(chrome, modifier = Modifier.align(Alignment.TopCenter), enter = topBarEnter, exit = topBarExit) {
-                TopBar(source.title, source.subtitle, onBack)
+                TopBar(
+                    title = source.title,
+                    subtitle = source.subtitle,
+                    bookmarked = source.bookmarks?.pages?.contains(page),
+                    onToggleBookmark = { source.bookmarks?.toggle(page) },
+                    onBack = onBack,
+                )
             }
             AnimatedVisibility(chrome, modifier = Modifier.align(Alignment.BottomCenter), enter = bottomBarEnter, exit = bottomBarExit) {
                 BottomBar(
@@ -751,7 +769,13 @@ private val ColorScheme.readerBarContentColor: Color get() = onSurface
 private fun Color.disabled() = copy(alpha = 0.38f)
 
 @Composable
-private fun TopBar(title: String, subtitle: String?, onBack: () -> Unit) {
+private fun TopBar(
+    title: String,
+    subtitle: String?,
+    bookmarked: Boolean?, // null → this source has no bookmarks, so the action is hidden
+    onToggleBookmark: () -> Unit,
+    onBack: () -> Unit,
+) {
     val content = MaterialTheme.colorScheme.readerBarContentColor
     Row(
         Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.readerBarColor).statusBarsPadding().padding(horizontal = 4.dp, vertical = 6.dp),
@@ -769,6 +793,15 @@ private fun TopBar(title: String, subtitle: String?, onBack: () -> Unit) {
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+        if (bookmarked != null) {
+            IconButton(onClick = onToggleBookmark) {
+                Icon(
+                    if (bookmarked) app.kodex.client.ui.icons.BookmarkIcon else app.kodex.client.ui.icons.BookmarkBorderIcon,
+                    contentDescription = if (bookmarked) "Remove bookmark" else "Bookmark this page",
+                    tint = if (bookmarked) MaterialTheme.colorScheme.primary else content,
                 )
             }
         }

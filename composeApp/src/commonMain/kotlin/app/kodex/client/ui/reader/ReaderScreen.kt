@@ -18,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -25,11 +26,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
+import app.kodex.client.data.model.ServerConnection
 import app.kodex.client.network.BookDto
+import app.kodex.client.network.BookmarkDto
 import app.kodex.client.network.KodexApi
 import app.kodex.client.ui.catalog.bookPageUrl
 import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.friendlyMessage
+import kotlinx.coroutines.launch
 
 private sealed interface ReaderState {
     data object Loading : ReaderState
@@ -53,6 +57,18 @@ fun ReaderScreen(session: SessionManager, api: KodexApi, bookId: String, onBack:
     var siblings by remember(bookId) { mutableStateOf<List<BookDto>>(emptyList()) }
     // Series name for the top bar's first line; BookDto carries only the book's own title.
     var seriesTitle by remember(bookId) { mutableStateOf<String?>(null) }
+    // Page bookmarks for the open book, keyed by target so a chapter swap reloads them.
+    var bookmarks by remember(bookId) { mutableStateOf<List<BookmarkDto>>(emptyList()) }
+    val scope = rememberCoroutineScope()
+
+    suspend fun reloadBookmarks(s: ServerConnection, id: String) {
+        bookmarks = runCatching { api.bookBookmarks(s.baseUrl, s.apiKey, id) }.getOrDefault(emptyList())
+    }
+    LaunchedEffect(target.id, server?.id) {
+        val s = server ?: return@LaunchedEffect
+        bookmarks = emptyList()
+        reloadBookmarks(s, target.id)
+    }
 
     LaunchedEffect(target.id, server?.id) {
         val s = server ?: return@LaunchedEffect
@@ -92,7 +108,23 @@ fun ReaderScreen(session: SessionManager, api: KodexApi, bookId: String, onBack:
                 book.pageCount <= 0 -> ReaderShell(onBack) { ReaderMessage("This book has no readable pages.") }
                 else -> {
                     val current = target
-                    val source = remember(current, s.baseUrl, siblings, seriesTitle, book.pageCount) {
+                    // Toggle the bookmark on a page: drop the existing one, or add one if there isn't
+                    // any. Reloads afterwards so the top bar reflects what the server actually stored.
+                    val bookmarkPages = remember(bookmarks) { bookmarks.mapNotNull { it.page }.toSet() }
+                    val toggleBookmark: (Int) -> Unit = { pg ->
+                        val existing = bookmarks.firstOrNull { it.page == pg }
+                        scope.launch {
+                            runCatching {
+                                if (existing != null) {
+                                    api.deleteBookmark(s.baseUrl, s.apiKey, book.id, existing.id)
+                                } else {
+                                    api.addBookmark(s.baseUrl, s.apiKey, book.id, pg, label = null)
+                                }
+                            }
+                            reloadBookmarks(s, book.id)
+                        }
+                    }
+                    val source = remember(current, s.baseUrl, siblings, seriesTitle, bookmarkPages, book.pageCount) {
                         val idx = siblings.indexOfFirst { it.id == book.id }
                         val nav = if (siblings.size > 1 && idx >= 0) {
                             fun ref(b: BookDto?) = b?.let { sib ->
@@ -124,6 +156,7 @@ fun ReaderScreen(session: SessionManager, api: KodexApi, bookId: String, onBack:
                             incognito = incognito,
                             nav = nav,
                             webUrl = "${s.baseUrl}/books/${book.id}/read",
+                            bookmarks = ReaderBookmarks(bookmarkPages, toggleBookmark),
                         )
                     }
                     // The reader keeps its own page state, so a book swap has to remount it.
