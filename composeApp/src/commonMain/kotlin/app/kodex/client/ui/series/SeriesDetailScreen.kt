@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.BottomAppBar
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -53,6 +54,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.TopAppBar
@@ -99,6 +101,7 @@ private data class SeriesContent(
     val subseries: List<app.kodex.client.network.SeriesDto> = emptyList(),
     val libraryName: String? = null,
     val sourceName: String? = null,
+    val libraries: List<app.kodex.client.network.LibraryDto> = emptyList(),
 )
 
 private data class Resume(val label: String, val open: () -> Unit, val openIncognito: () -> Unit)
@@ -135,6 +138,7 @@ fun SeriesDetailScreen(
     var menuOpen by remember { mutableStateOf(false) }
     var bookmarksOpen by remember { mutableStateOf(false) }
     var editOpen by remember { mutableStateOf(false) }
+    var moveOpen by remember { mutableStateOf(false) }
 
     fun reload() { selection.clear(); reloadTick++ }
 
@@ -155,10 +159,11 @@ fun SeriesDetailScreen(
         phase = runCatching {
             val detail = api.seriesDetail(s0.baseUrl, s0.apiKey, seriesId)
             val subs = runCatching { api.subSeries(s0.baseUrl, s0.apiKey, seriesId) }.getOrDefault(emptyList())
-            val libName = detail.libraryId?.let { lid -> runCatching { api.libraries(s0.baseUrl, s0.apiKey).firstOrNull { it.id == lid }?.name }.getOrNull() }
+            val libs = runCatching { api.libraries(s0.baseUrl, s0.apiKey) }.getOrDefault(emptyList())
+            val libName = detail.libraryId?.let { lid -> libs.firstOrNull { it.id == lid }?.name }
             val srcName = detail.sourceProviderId?.let { pid -> runCatching { api.contentSources(s0.baseUrl, s0.apiKey).firstOrNull { it.id == pid }?.displayName }.getOrNull() }
-            if (detail.isWeb) SeriesContent(detail, emptyList(), api.seriesChapters(s0.baseUrl, s0.apiKey, seriesId), subs, libName, srcName)
-            else SeriesContent(detail, api.seriesBooks(s0.baseUrl, s0.apiKey, seriesId), emptyList(), subs, libName, srcName)
+            if (detail.isWeb) SeriesContent(detail, emptyList(), api.seriesChapters(s0.baseUrl, s0.apiKey, seriesId), subs, libName, srcName, libs)
+            else SeriesContent(detail, api.seriesBooks(s0.baseUrl, s0.apiKey, seriesId), emptyList(), subs, libName, srcName, libs)
         }.fold({ SeriesPhase.Ready(it) }, { SeriesPhase.Error(it.friendlyMessage()) })
     }
 
@@ -167,6 +172,11 @@ fun SeriesDetailScreen(
     val s = server
     val detail = content?.detail
     val isWeb = detail?.isWeb == true
+
+    // Libraries the series could move to: same kind as its current one, excluding where it already is.
+    // (Matches the web — offered only for WEB series, whose location is just a DB link.)
+    val eligibleLibraries = content?.libraries.orEmpty().filter { it.isWeb == isWeb && it.id != detail?.libraryId }
+    val canMove = isWeb && eligibleLibraries.isNotEmpty()
 
     // Chapters visible after the translator filter — drives the list and "select all"/"inverse".
     val visibleChapters = content?.chapters
@@ -251,6 +261,9 @@ fun SeriesDetailScreen(
                                             })
                                         }
                                     }
+                                    if (canMove) {
+                                        DropdownMenuItem(text = { Text("Move to another library") }, onClick = { menuOpen = false; moveOpen = true })
+                                    }
                                     DropdownMenuItem(text = { Text("Refresh metadata") }, onClick = {
                                         menuOpen = false; runAction("Refreshing metadata…") { api.refreshSeriesMetadata(s!!.baseUrl, s.apiKey, seriesId) }
                                     })
@@ -327,6 +340,17 @@ fun SeriesDetailScreen(
             }
         }
 
+    if (moveOpen && s != null) {
+        MoveLibraryDialog(
+            libraries = eligibleLibraries,
+            onDismiss = { moveOpen = false },
+            onPick = { target ->
+                moveOpen = false
+                runAction("Moved to ${target.name}") { api.moveSeries(s.baseUrl, s.apiKey, listOf(seriesId), target.id) }
+            },
+        )
+    }
+
     if (editOpen && content != null && s != null) {
         SeriesMetadataSheet(
             detail = content.detail,
@@ -360,6 +384,32 @@ private sealed interface SeriesPhase {
     data object Loading : SeriesPhase
     data class Error(val message: String) : SeriesPhase
     data class Ready(val content: SeriesContent) : SeriesPhase
+}
+
+/** Picker to move the series into another (same-kind) library. */
+@Composable
+private fun MoveLibraryDialog(
+    libraries: List<app.kodex.client.network.LibraryDto>,
+    onDismiss: () -> Unit,
+    onPick: (app.kodex.client.network.LibraryDto) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Move to library") },
+        text = {
+            Column {
+                libraries.forEach { lib ->
+                    Text(
+                        lib.name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.fillMaxWidth().clickable { onPick(lib) }.padding(vertical = 12.dp),
+                    )
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable
@@ -870,12 +920,17 @@ private fun SeriesHeader(
                     Text(detail.publisher, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 val provenance = listOfNotNull(
-                    sourceName?.takeIf { it.isNotBlank() } ?: libraryName?.takeIf { it.isNotBlank() },
+                    sourceName?.takeIf { it.isNotBlank() },
                     detail.language.takeIf { it.isNotBlank() }?.uppercase(),
                 ).joinToString(" · ")
                 if (provenance.isNotBlank()) {
                     Spacer(Modifier.height(4.dp))
                     Text(provenance, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                // The library this series belongs to — shown so it's clear which shelf it came from.
+                if (!libraryName.isNullOrBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text("Library · $libraryName", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary)
                 }
             }
         }

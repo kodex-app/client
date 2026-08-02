@@ -56,6 +56,10 @@ kotlin {
 
             implementation(libs.coil.compose)
             implementation(libs.coil.network.ktor3)
+
+            implementation(libs.compose.webview)
+            implementation(libs.ktor.server.core)
+            implementation(libs.ktor.server.cio)
         }
 
         androidMain.dependencies {
@@ -72,6 +76,7 @@ kotlin {
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutines.swing)
             implementation(libs.ktor.client.cio)
+            implementation(libs.kcef)
         }
     }
 }
@@ -137,12 +142,7 @@ android {
 
 // Temporary: run the real client against a live server (see VerifyApi.kt). Reads host/key from
 // kodex/.env.test so no secret lands in source or build config.
-tasks.register<JavaExec>("verifyApi") {
-    group = "verification"
-    val comp = kotlin.targets.getByName("desktop").compilations.getByName("main")
-    dependsOn(comp.compileTaskProvider)
-    classpath = files(comp.output.allOutputs, comp.runtimeDependencyFiles)
-    mainClass.set("app.kodex.client.VerifyApiKt")
+fun JavaExec.liveServerArgs() {
     val env = rootProject.file("../kodex/.env.test")
     if (env.exists()) {
         val props = env.readLines().mapNotNull {
@@ -151,6 +151,39 @@ tasks.register<JavaExec>("verifyApi") {
         }.toMap()
         args(props["HOST"] ?: "http://localhost:26000", props["API_KEY"] ?: "")
     }
+}
+
+tasks.register<JavaExec>("verifyApi") {
+    group = "verification"
+    val comp = kotlin.targets.getByName("desktop").compilations.getByName("main")
+    dependsOn(comp.compileTaskProvider)
+    classpath = files(comp.output.allOutputs, comp.runtimeDependencyFiles)
+    mainClass.set("app.kodex.client.VerifyApiKt")
+    liveServerArgs()
+}
+
+// Exercises the ebook reader's loopback host for real (assets, traversal guards, and — with a live
+// server holding an EPUB — the proxied manifest/resource/file routes). See VerifyEbookHost.kt.
+tasks.register<JavaExec>("verifyEbookHost") {
+    group = "verification"
+    val comp = kotlin.targets.getByName("desktop").compilations.getByName("main")
+    dependsOn(comp.compileTaskProvider)
+    classpath = files(comp.output.allOutputs, comp.runtimeDependencyFiles)
+    mainClass.set("app.kodex.client.VerifyEbookHostKt")
+    liveServerArgs()
+}
+
+// Drives a real WebView against the host and waits for foliate to report a rendered book. Downloads
+// Chromium on first run. See VerifyEbookRender.kt.
+tasks.register<JavaExec>("verifyEbookRender") {
+    group = "verification"
+    val comp = kotlin.targets.getByName("desktop").compilations.getByName("main")
+    dependsOn(comp.compileTaskProvider)
+    classpath = files(comp.output.allOutputs, comp.runtimeDependencyFiles)
+    mainClass.set("app.kodex.client.VerifyEbookRenderKt")
+    // KCEF drives Chromium through JCEF, which needs these JVM internals opened up.
+    jvmArgs("--add-opens", "java.desktop/sun.awt=ALL-UNNAMED", "--add-opens", "java.desktop/java.awt.peer=ALL-UNNAMED")
+    liveServerArgs()
 }
 
 compose.desktop {

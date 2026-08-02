@@ -8,6 +8,12 @@ build/
 local.properties
 *.hprof
 
+# Embedded Chromium for the desktop ebook reader. It installs under ~/.kodex/kcef now, but older
+# checkouts (and any run with a relative installDir) drop ~250 MB of native binaries here — well over
+# GitHub's 100 MB per-file limit.
+kcef-bundle/
+kcef-cache/
+
 # Release signing key — CI decodes it here from the KEYSTORE_BASE64 secret; never commit it.
 keystore/release.jks
 

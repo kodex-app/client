@@ -33,6 +33,16 @@
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
+		<!--
+		  Web content has its own ATS key: when it is absent WKWebView inherits the flag above, but
+		  stating it keeps the ebook reader working if that ever tightens. The reader loads foliate-js
+		  from an in-app http://127.0.0.1 origin (see EbookHost), and NSAllowsLocalNetworking covers
+		  that loopback specifically.
+		-->
+		<key>NSAllowsArbitraryLoadsInWebContent</key>
+		<true/>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
 	</dict>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>

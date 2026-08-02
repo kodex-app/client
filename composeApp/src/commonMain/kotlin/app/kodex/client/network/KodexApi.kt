@@ -252,6 +252,21 @@ class KodexApi(private val client: HttpClient) {
             setBody(CreateBookmarkRequest(page = page, label = label))
         }.body()
 
+    /** Bookmark a spot in a reflowable ebook — a foliate CFI plus the fraction it sits at. */
+    suspend fun addEbookBookmark(
+        baseUrl: String,
+        apiKey: String,
+        bookId: String,
+        locator: String?,
+        fraction: Double?,
+        label: String?,
+    ): BookmarkDto =
+        client.post("$baseUrl/api/v1/books/$bookId/bookmarks") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(CreateBookmarkRequest(locator = locator, fraction = fraction, label = label))
+        }.body()
+
     suspend fun deleteBookmark(baseUrl: String, apiKey: String, bookId: String, bookmarkId: String) {
         client.delete("$baseUrl/api/v1/books/$bookId/bookmarks/$bookmarkId") { header(HEADER_API_KEY, apiKey) }
     }
@@ -463,13 +478,33 @@ class KodexApi(private val client: HttpClient) {
         }
     }
 
-    /** Persist reader position: [page] is 1-based; [completed] is set at the last page. */
-    suspend fun saveReadProgress(baseUrl: String, apiKey: String, bookId: String, page: Int, completed: Boolean) {
+    /**
+     * Persist reader position: [page] is 1-based; [completed] is set at the last page. Reflowable
+     * ebooks also pass [locator] (foliate CFI) and [fraction] so a resume lands on the exact spot
+     * rather than a page number that means nothing once the text reflows.
+     */
+    suspend fun saveReadProgress(
+        baseUrl: String,
+        apiKey: String,
+        bookId: String,
+        page: Int,
+        completed: Boolean,
+        locator: String? = null,
+        fraction: Double? = null,
+    ) {
         client.patch("$baseUrl/api/v1/books/$bookId/read-progress") {
             header(HEADER_API_KEY, apiKey)
             contentType(ContentType.Application.Json)
-            setBody(ReadProgressDto(page = page, completed = completed))
+            setBody(ReadProgressDto(page = page, locator = locator, fraction = fraction, completed = completed))
         }
+    }
+
+    /** Saved position for a book, or null when the user has never opened it. */
+    suspend fun readProgress(baseUrl: String, apiKey: String, bookId: String): ReadProgressDto? {
+        val text = client.get("$baseUrl/api/v1/books/$bookId/read-progress") {
+            header(HEADER_API_KEY, apiKey)
+        }.bodyAsText()
+        return if (text.isBlank()) null else runCatching { json.decodeFromString<ReadProgressDto>(text) }.getOrNull()
     }
 
     // ── Browse (content sources) ──────────────────────────────────────────────────────────────────
@@ -537,6 +572,15 @@ class KodexApi(private val client: HttpClient) {
         } catch (e: ClientRequestException) {
             if (e.response.status == HttpStatusCode.NotFound) null else throw e
         }
+
+    /** Move series to another library of the same kind (WEB↔WEB / LOCAL↔LOCAL). */
+    suspend fun moveSeries(baseUrl: String, apiKey: String, seriesIds: List<String>, targetLibraryId: String) {
+        client.post("$baseUrl/api/v1/series/move") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(MoveSeriesRequest(seriesIds, targetLibraryId))
+        }
+    }
 
     /** External ids from a source already followed into one of the user's libraries — the "in library" marks in Browse. */
     suspend fun followedExternalIds(baseUrl: String, apiKey: String, providerId: String): List<String> =
@@ -695,6 +739,27 @@ class KodexApi(private val client: HttpClient) {
 
     suspend fun retryFailedDownloads(baseUrl: String, apiKey: String): Int =
         client.post("$baseUrl/api/v1/downloads/retry-failed") { header(HEADER_API_KEY, apiKey) }.body<RetriedDto>().retried
+
+    // ── Ebook reading (EPUB streamed by entry; MOBI/KF8/FB2 parsed from the whole file) ──────────
+
+    /**
+     * EPUB manifest: the spine (reading order) plus every zip entry with its size. foliate resolves
+     * hrefs against the OPF and asks for entries by exact name, which `/resource` serves — so the
+     * whole file never has to be downloaded.
+     */
+    suspend fun bookManifest(baseUrl: String, apiKey: String, bookId: String): EbookManifestDto =
+        client.get("$baseUrl/api/v1/books/$bookId/manifest") { header(HEADER_API_KEY, apiKey) }.body()
+
+    /** The same manifest for a BOOK-kind source chapter, which the core exposes as an ephemeral EPUB. */
+    suspend fun sourceChapterManifest(baseUrl: String, apiKey: String, providerId: String, chapterId: String): EbookManifestDto =
+        client.get("$baseUrl/api/v1/content-sources/$providerId/chapter-manifest") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("chapterId", chapterId)
+        }.body()
+
+    /** Fonts the user uploaded, offered alongside the built-in stacks in the ebook font picker. */
+    suspend fun customFonts(baseUrl: String, apiKey: String): List<CustomFontDto> =
+        client.get("$baseUrl/api/v1/fonts") { header(HEADER_API_KEY, apiKey) }.body()
 
     // ── Per-user settings (reader prefs live here) ───────────────────────────────────────────────
 

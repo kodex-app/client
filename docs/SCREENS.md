@@ -15,7 +15,7 @@ Legend: `[x]` done · `[~]` partial (built, gaps listed) · `[ ]` not started
 - [x] Toolbar + global search entry
 - [x] Back-stack navigation (`DetailHost` / `DetailRoute`)
 - [x] Home (4 cover rails)
-- [x] Readers — image (paged/continuous/auto, zoom, RTL, settings, per-series prefs) + source streaming
+- [x] Readers — image (paged/continuous/auto, zoom, RTL, settings, per-series prefs) + source streaming; **ebook** (EPUB streamed by entry, MOBI/KF8/FB2 whole-file) on foliate-js in a WebView over an in-app loopback host — native chrome, TOC, CFI progress, bookmarks, per-series display prefs
 - [x] Series detail (header, books/chapters, read button)
 - [x] Book detail (cover, metadata, read + mark read/unread)
 - [x] Source-series (header, chapters, **read-from-source**, follow/download/unfollow)
@@ -39,7 +39,7 @@ Legend: `[x]` done · `[~]` partial (built, gaps listed) · `[ ]` not started
 - [x] Browse — source list grouped by language; **kind + language filter** chips; per-source **favicon logo** (Google favicon service from `website`, coloured-initial fallback); tap → Popular, **Latest** button → latest feed
 - [x] **Downloads** (`GET /v1/downloads`; per-job pause/resume/retry/cancel; global cancel-all/clear/retry-failed; 2s poll — SSE later) — verified live
 - [x] **More** hub (Account card, Downloads · Settings · About rows, switch/sign-out)
-- [x] **User settings** — `series.autoUpdateOnOpen` · `series.chapterSort` · **reader defaults** (comic/pdf: mode/direction/zoom → `reader.comic`/`reader.pdf`) · **`sync.libraries`** multi-select (empty = all)
+- [x] **User settings** — `series.autoUpdateOnOpen` · `series.chapterSort` · **reader defaults** (comic/pdf: mode/direction/zoom → `reader.comic`/`reader.pdf`; ebook → `reader.epub`) · **`sync.libraries`** multi-select (empty = all)
 - [x] **Appearance / theming (Mihon-style)** — palettes ported verbatim from `refs/mihon` (build-verified desktop+Android):
   - [x] Theme mode: System / Light / Dark (segmented control)
   - [x] AMOLED (pure-black) dark toggle (+ dark-surface-container override, per `BaseColorScheme`)
@@ -54,7 +54,7 @@ Legend: `[x]` done · `[~]` partial (built, gaps listed) · `[ ]` not started
 - [x] Book detail: re-analyze · delete · edit-metadata sheet · bookmarks (page-jump) · **identifiers + external links** (tap to open)
 - [~] Browse: **kind filter** chips · language grouping — **done**; favorites + recents quick-access still pending
 - [~] Source catalogue (WebBrowse): Search · source `FilterList` filters (polymorphic) — **done** (live data blocked — no source plugins); multi-select add-to-library still pending
-- [x] **Read straight from a source while browsing** (no follow, no download): tap a chapter (long-press = incognito) · **Continue/Start reading** button off `/series-progress` · read dots + "Page N" markers · volume group headers · prev/next chapter + chapter menu inside the reader (swaps in place, back exits to the series) · progress recorded with the source series' name/cover so History resumes it with navigation intact · BOOK-kind sources gated (no EPUB reader yet)
+- [x] **Read straight from a source while browsing** (no follow, no download): tap a chapter (long-press = incognito) · **Continue/Start reading** button off `/series-progress` · read dots + "Page N" markers · volume group headers · prev/next chapter + chapter menu inside the reader (swaps in place, back exits to the series) · progress recorded with the source series' name/cover so History resumes it with navigation intact · BOOK-kind (novel) sources open in the ebook reader via the core's ephemeral single-chapter EPUB
 - [x] Search: library search + **facet-filter sheet** (genre/status/readingStatus/language/tag/label via `/series` + `/series/{genres,tags,languages}` + `/labels`) — facets can browse with empty query
 
 ## Phase 3 — content management

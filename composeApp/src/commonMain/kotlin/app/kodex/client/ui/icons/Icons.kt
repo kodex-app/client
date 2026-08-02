@@ -196,6 +196,18 @@ val PauseIcon: ImageVector = materialIcon(name = "Filled.Pause") {
     }
 }
 
+/** Material "remove" glyph — the minus half of the ebook reader's steppers (not in icons-core). */
+val MinusIcon: ImageVector = materialIcon(name = "Filled.Remove") {
+    materialPath {
+        moveTo(19f, 13f)
+        horizontalLineTo(5f)
+        verticalLineToRelative(-2f)
+        horizontalLineToRelative(14f)
+        verticalLineToRelative(2f)
+        close()
+    }
+}
+
 /** Material "bookmark" glyph (filled) — the reader's top bar, when the page is bookmarked. */
 val BookmarkIcon: ImageVector = materialIcon(name = "Filled.Bookmark") {
     materialPath {

@@ -74,7 +74,7 @@ data class SourceSeriesContext(
     val externalId: String,
     val title: String,
     val coverUrl: String? = null,
-    /** BOOK-kind sources stream novel text, which the app can't render yet (see [SourceReaderScreen]). */
+    /** BOOK-kind sources stream novel text, so their chapters open in the ebook reader, not the image one. */
     val isNovel: Boolean = false,
 )
 

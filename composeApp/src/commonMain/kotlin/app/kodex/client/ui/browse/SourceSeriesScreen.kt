@@ -224,9 +224,7 @@ fun SourceSeriesScreen(
                     coverUrl = data.info.coverUrl ?: seed.coverUrl,
                     isNovel = source.kind == KIND_BOOK,
                 )
-                // No prominent read button for novel sources — the app has no EPUB reader yet, so tapping a
-                // chapter (which still explains that) is as far as it goes.
-                val resume = if (context.isNovel) null else resumeChapter(data.chapters, data.progress)
+                val resume = resumeChapter(data.chapters, data.progress)
 
                 val fab = remember(resume, context) {
                     resume?.let { r ->

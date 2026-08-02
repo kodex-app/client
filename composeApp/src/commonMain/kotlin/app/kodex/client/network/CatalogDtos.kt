@@ -20,9 +20,16 @@ data class PageResponse<T>(
     val last: Boolean = true,
 )
 
+/**
+ * Reader position. Image/PDF reads use [page] alone; reflowable ebooks additionally carry a foliate
+ * CFI in [locator] (the exact spot) and [fraction] (0–1 through the book) — [page] stays a coarse
+ * proxy so progress bars and "continue reading" work the same for every media type.
+ */
 @Serializable
 data class ReadProgressDto(
     val page: Int = 0,
+    val locator: String? = null,
+    val fraction: Double? = null,
     val completed: Boolean = false,
 )
 

@@ -27,6 +27,13 @@ data class AssignCategoriesRequest(
     val removeCategoryIds: List<String> = emptyList(),
 )
 
+/** Body of `POST /api/v1/series/move` — move one or more series to another library (same kind). */
+@Serializable
+data class MoveSeriesRequest(
+    val seriesIds: List<String>,
+    val targetLibraryId: String,
+)
+
 /** One group's live series count (`GET /api/v1/series/groups`); [key] is a status/providerId/categoryId. */
 @Serializable
 data class SeriesGroupCount(
@@ -52,6 +59,29 @@ data class CreateBookmarkRequest(
     val locator: String? = null,
     val fraction: Double? = null,
     val label: String? = null,
+)
+
+/** One zip entry of an EPUB — foliate needs the name/size table up front to resolve hrefs. */
+@Serializable
+data class EbookEntryDto(val name: String = "", val size: Long = 0)
+
+/** `GET /books/{id}/manifest` (and the source-chapter equivalent). */
+@Serializable
+data class EbookManifestDto(
+    val mediaType: String = "",
+    val pageCount: Int = 0,
+    val entries: List<EbookEntryDto> = emptyList(),
+)
+
+/** A font the user uploaded on the server, offered by the ebook reader's font picker. */
+@Serializable
+data class CustomFontDto(
+    val id: String,
+    val family: String = "",
+    /** File extension the server stored it under — woff2 / woff / ttf / otf. */
+    val format: String = "woff2",
+    val fileSize: Long = 0,
+    val createdDate: String? = null,
 )
 
 /** A series-level bookmark (aggregated across the series' books). */

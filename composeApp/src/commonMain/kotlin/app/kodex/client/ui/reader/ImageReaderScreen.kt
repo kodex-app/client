@@ -752,7 +752,7 @@ private val pagePillExit = slideOutVertically(chromeOutOffset) { it / 2 } + fade
  * Kept translucent so the page still shows through — light schemes need a touch more opacity than
  * dark ones to stay legible over a bright page.
  */
-private val ColorScheme.readerBarColor: Color
+internal val ColorScheme.readerBarColor: Color
     get() = surfaceContainerHigh.copy(alpha = if (surface.luminance() < 0.5f) 0.90f else 0.95f)
 
 /**
@@ -760,13 +760,13 @@ private val ColorScheme.readerBarColor: Color
  * buttons. One step brighter than [readerBarColor] so they read as raised, and fully opaque so the
  * page never shows through a control the way it does through the bar itself.
  */
-private val ColorScheme.readerBarRaisedColor: Color get() = surfaceContainerHighest
+internal val ColorScheme.readerBarRaisedColor: Color get() = surfaceContainerHighest
 
 /** Icons/text on the toolbars, paired with [readerBarColor] so they contrast in either scheme. */
-private val ColorScheme.readerBarContentColor: Color get() = onSurface
+internal val ColorScheme.readerBarContentColor: Color get() = onSurface
 
 /** M3 disabled-content alpha, for page-turn arrows at the first/last page. */
-private fun Color.disabled() = copy(alpha = 0.38f)
+internal fun Color.disabled() = copy(alpha = 0.38f)
 
 @Composable
 private fun TopBar(
@@ -960,7 +960,7 @@ private const val SLIDER_TICK_LIMIT = 40
 private fun sliderSteps(pageCount: Int): Int = if (pageCount in 2..SLIDER_TICK_LIMIT) pageCount - 2 else 0
 
 @Composable
-private fun ToolbarButton(
+internal fun ToolbarButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     desc: String,
     enabled: Boolean = true,
@@ -999,7 +999,7 @@ private fun PagePill(text: String) {
 
 /** Indigo "Incognito" pill pinned to the top, above the auto-hiding chrome. */
 @Composable
-private fun IncognitoBadge(modifier: Modifier = Modifier) {
+internal fun IncognitoBadge(modifier: Modifier = Modifier) {
     Row(
         modifier.padding(top = 6.dp).background(Color(0xFF4A3F8F).copy(alpha = 0.92f), RoundedCornerShape(999.dp)).padding(horizontal = 10.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1012,7 +1012,7 @@ private fun IncognitoBadge(modifier: Modifier = Modifier) {
 
 /** Full-screen between-chapters overlay: confirm to open the sibling, tap elsewhere to keep reading. */
 @Composable
-private fun ChapterTransitionOverlay(isNext: Boolean, title: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+internal fun ChapterTransitionOverlay(isNext: Boolean, title: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     Box(
         Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.88f)).clickable(onClick = onDismiss),
         contentAlignment = Alignment.Center,
@@ -1032,7 +1032,7 @@ private fun ChapterTransitionOverlay(isNext: Boolean, title: String, onConfirm: 
 
 /** Chapter/book list in a bottom sheet; tapping a row jumps to that chapter. */
 @Composable
-private fun ChapterListSheet(chapters: List<ReaderChapterItem>, onClose: () -> Unit) {
+internal fun ChapterListSheet(chapters: List<ReaderChapterItem>, onClose: () -> Unit) {
     Column(Modifier.fillMaxWidth().heightIn(max = 480.dp).padding(bottom = 24.dp)) {
         Text("Chapters", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 8.dp))
         LazyColumn {
@@ -1163,7 +1163,7 @@ private fun SettingsSheet(
 }
 
 @Composable
-private fun SegRow(label: String, value: String, options: List<Pair<String, String>>, onSelect: (String) -> Unit) {
+internal fun SegRow(label: String, value: String, options: List<Pair<String, String>>, onSelect: (String) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

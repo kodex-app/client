@@ -15,7 +15,14 @@ import app.kodex.client.ui.catalog.sourcePageUrl
 import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.friendlyMessage
 import app.kodex.client.ui.main.SourceSeriesContext
+import app.kodex.client.ui.reader.ebook.EbookOrigin
+import app.kodex.client.ui.reader.ebook.EbookReaderScreen
+import app.kodex.client.ui.reader.ebook.EbookSource
 import io.ktor.http.encodeURLQueryComponent
+import kotlin.math.roundToInt
+
+/** [app.kodex.client.network.SourceDescriptor.kind] of a novel source — its chapters are text, not page images. */
+private const val KIND_BOOK = "BOOK"
 
 private sealed interface SourceReaderState {
     data object Loading : SourceReaderState
@@ -93,15 +100,39 @@ fun SourceReaderScreen(
         }
     }
 
-    LaunchedEffect(target.id, server?.id) {
+    // Which reader this chapter needs. `sourceSeries` already knows for a Browse read; a followed
+    // series arrives by local id with no such hint, so ask the server what kind the provider is —
+    // the same lookup the web does. Null means "not resolved yet".
+    var isNovel by remember(providerId) { mutableStateOf(sourceSeries?.isNovel?.takeIf { it }) }
+    LaunchedEffect(providerId, server?.id) {
+        if (isNovel != null) return@LaunchedEffect
         val s = server ?: return@LaunchedEffect
-        if (sourceSeries?.isNovel == true) return@LaunchedEffect
-        state = SourceReaderState.Loading
-        state = runCatching {
-            val pageCount = api.sourceChapterPageCount(s.baseUrl, s.apiKey, providerId, target.id)
-            val progress = api.sourceProgress(s.baseUrl, s.apiKey, providerId, target.id)
-            SourceReaderState.Ready(pageCount, progress)
-        }.getOrElse { SourceReaderState.Error(it.friendlyMessage()) }
+        isNovel = runCatching {
+            api.contentSources(s.baseUrl, s.apiKey).firstOrNull { it.id == providerId }?.kind == KIND_BOOK
+        }.getOrDefault(false)
+    }
+
+    LaunchedEffect(target.id, server?.id, isNovel) {
+        val s = server ?: return@LaunchedEffect
+        // A novel chapter has no page images to count; the ebook reader resolves it from its manifest.
+        when (isNovel) {
+            null -> return@LaunchedEffect
+            true -> {
+                state = SourceReaderState.Loading
+                state = runCatching {
+                    SourceReaderState.Ready(0, api.sourceProgress(s.baseUrl, s.apiKey, providerId, target.id))
+                }.getOrElse { SourceReaderState.Error(it.friendlyMessage()) }
+            }
+
+            false -> {
+                state = SourceReaderState.Loading
+                state = runCatching {
+                    val pageCount = api.sourceChapterPageCount(s.baseUrl, s.apiKey, providerId, target.id)
+                    val progress = api.sourceProgress(s.baseUrl, s.apiKey, providerId, target.id)
+                    SourceReaderState.Ready(pageCount, progress)
+                }.getOrElse { SourceReaderState.Error(it.friendlyMessage()) }
+            }
+        }
     }
 
     // Swap the open chapter. State drops back to Loading here (not just in the effect above) so the
@@ -115,17 +146,58 @@ fun SourceReaderScreen(
 
     when (val st = state) {
         is SourceReaderState.Error -> ReaderShell(onBack) { ReaderMessage(st.message) }
-        is SourceReaderState.Loading ->
-            if (sourceSeries?.isNovel == true) {
-                ReaderShell(onBack) { ReaderMessage("Novel chapters aren't supported in the app yet.") }
-            } else {
-                ReaderShell(onBack) { Spinner() }
-            }
+        is SourceReaderState.Loading -> ReaderShell(onBack) { Spinner() }
 
         is SourceReaderState.Ready -> {
             val s = server
             when {
                 s == null -> ReaderShell(onBack) { ReaderMessage("Not signed in.") }
+                isNovel == true -> {
+                    val current = target
+                    val chapterLabel = current.name?.takeIf { it.isNotBlank() }
+                    val series = sourceSeries?.title?.takeIf { it.isNotBlank() } ?: followedTitle
+                    val ebook = remember(current, s.baseUrl, st, nav, followedTitle, incognito) {
+                        EbookSource(
+                            title = series ?: chapterLabel ?: "Reading",
+                            subtitle = chapterLabel.takeIf { series != null },
+                            // The core builds an ephemeral single-chapter EPUB for BOOK sources, so
+                            // this reads through exactly the same path as a downloaded EPUB.
+                            format = "epub",
+                            origin = EbookOrigin.SourceChapter(providerId, current.id),
+                            seriesId = seriesId ?: sourceSeries?.let { "src:${it.providerId}:${it.externalId}" },
+                            initialLocator = null,
+                            // Source progress has no CFI column — it stores a 0–100 page proxy, which
+                            // maps back to a fraction (the same convention the web uses).
+                            initialFraction = when (current.edge) {
+                                ReaderEdge.FIRST -> 0.0
+                                ReaderEdge.LAST -> 1.0
+                                null -> st.progress?.takeIf { !it.completed }?.let { (it.page / 100.0).coerceIn(0.0, 1.0) } ?: 0.0
+                            },
+                            onPersist = if (incognito) {
+                                { _, _, _, _ -> }
+                            } else {
+                                { fraction, _, _, completed ->
+                                    api.saveSourceProgress(
+                                        s.baseUrl, s.apiKey, providerId, current.id,
+                                        page = (fraction * 100).roundToInt().coerceAtLeast(1),
+                                        completed = completed,
+                                        seriesId = seriesId, chapterName = current.name,
+                                        sourceSeriesId = sourceSeries?.externalId.takeIf { seriesId == null },
+                                        sourceSeriesName = sourceSeries?.title.takeIf { seriesId == null },
+                                        sourceCoverUrl = sourceSeries?.coverUrl.takeIf { seriesId == null },
+                                    )
+                                }
+                            },
+                            incognito = incognito,
+                            nav = nav,
+                            webUrl = sourceReadUrl(s.baseUrl, providerId, current.id, current.name, seriesId),
+                            // Bookmarks are book-scoped server-side; a streamed chapter isn't a book.
+                            bookmarks = null,
+                        )
+                    }
+                    key(current.id) { EbookReaderScreen(session, api, ebook, onBack) }
+                }
+
                 st.pageCount <= 0 -> ReaderShell(onBack) {
                     ReaderMessage("This chapter can't be streamed right now —\nthe source returned no pages.")
                 }

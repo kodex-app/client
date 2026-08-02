@@ -30,15 +30,27 @@ import app.kodex.client.data.model.ServerConnection
 import app.kodex.client.network.BookDto
 import app.kodex.client.network.BookmarkDto
 import app.kodex.client.network.KodexApi
+import app.kodex.client.network.ReadProgressDto
 import app.kodex.client.ui.catalog.bookPageUrl
 import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.friendlyMessage
+import app.kodex.client.ui.reader.ebook.EbookBookmarks
+import app.kodex.client.ui.reader.ebook.EbookOrigin
+import app.kodex.client.ui.reader.ebook.EbookReaderScreen
+import app.kodex.client.ui.reader.ebook.EbookSource
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 private sealed interface ReaderState {
     data object Loading : ReaderState
     data class Error(val message: String) : ReaderState
-    data class Ready(val book: BookDto) : ReaderState
+
+    /**
+     * [progress] is fetched separately from the book: `BookDto.readProgress` carries only page and
+     * completed, and a reflowable book resumes from the CFI that only `/read-progress` returns.
+     */
+    data class Ready(val book: BookDto, val progress: ReadProgressDto?) : ReaderState
 }
 
 /** The book currently open; [edge] is set when arriving from a sibling (start of it / end of it). */
@@ -73,8 +85,11 @@ fun ReaderScreen(session: SessionManager, api: KodexApi, bookId: String, onBack:
     LaunchedEffect(target.id, server?.id) {
         val s = server ?: return@LaunchedEffect
         state = ReaderState.Loading
-        state = runCatching { api.book(s.baseUrl, s.apiKey, target.id) }
-            .fold({ ReaderState.Ready(it) }, { ReaderState.Error(it.friendlyMessage()) })
+        state = runCatching {
+            val book = api.book(s.baseUrl, s.apiKey, target.id)
+            val progress = runCatching { api.readProgress(s.baseUrl, s.apiKey, target.id) }.getOrNull()
+            ReaderState.Ready(book, progress)
+        }.getOrElse { ReaderState.Error(it.friendlyMessage()) }
     }
     // Sibling books for cross-chapter navigation (ordered by number ascending by the API).
     val loadedSeriesId = (state as? ReaderState.Ready)?.book?.seriesId
@@ -102,9 +117,30 @@ fun ReaderScreen(session: SessionManager, api: KodexApi, bookId: String, onBack:
         is ReaderState.Ready -> {
             val s = server
             val book = st.book
+            val ebookFormat = foliateFormat(book.mediaType)
             when {
                 s == null -> ReaderShell(onBack) { ReaderMessage("Not signed in.") }
-                isEpub(book) -> ReaderShell(onBack) { ReaderMessage("EPUB reading isn't supported in the app yet.") }
+                ebookFormat != null -> {
+                    val current = target
+                    val source = rememberEbookSource(
+                        api = api,
+                        server = s,
+                        book = book,
+                        format = ebookFormat,
+                        edge = current.edge,
+                        progress = st.progress,
+                        seriesTitle = seriesTitle,
+                        siblings = siblings,
+                        bookmarks = bookmarks,
+                        incognito = incognito,
+                        scope = scope,
+                        onOpenSibling = ::openBook,
+                        onBookmarksChanged = { reloadBookmarks(s, book.id) },
+                    )
+                    // The reader keeps its own position state, so a book swap has to remount it.
+                    key(current.id) { EbookReaderScreen(session, api, source, onBack) }
+                }
+
                 book.pageCount <= 0 -> ReaderShell(onBack) { ReaderMessage("This book has no readable pages.") }
                 else -> {
                     val current = target
@@ -191,5 +227,96 @@ internal fun ReaderMessage(text: String) {
     }
 }
 
-private fun isEpub(book: BookDto): Boolean =
-    book.mediaType?.contains("epub", ignoreCase = true) == true
+/**
+ * The foliate engine that reads this media type, or null for image-based books (comics and PDFs,
+ * whose pages the server rasterizes). Mirrors the web reader's dispatch table.
+ */
+private fun foliateFormat(mediaType: String?): String? = when (mediaType) {
+    "application/epub+zip" -> "epub"
+    "application/x-mobipocket-ebook", "application/x-mobi8-ebook" -> "mobi"
+    "application/x-fictionbook+xml" -> "fb2"
+    else -> null
+}
+
+/**
+ * Builds the [EbookSource] for a library book: where its bytes come from, where it resumes, and the
+ * sibling books that drive cross-chapter navigation.
+ */
+@Composable
+private fun rememberEbookSource(
+    api: KodexApi,
+    server: ServerConnection,
+    book: BookDto,
+    format: String,
+    edge: ReaderEdge?,
+    progress: ReadProgressDto?,
+    seriesTitle: String?,
+    siblings: List<BookDto>,
+    bookmarks: List<BookmarkDto>,
+    incognito: Boolean,
+    scope: CoroutineScope,
+    onOpenSibling: (BookDto, ReaderEdge) -> Unit,
+    onBookmarksChanged: suspend () -> Unit,
+): EbookSource = remember(book.id, server.baseUrl, siblings, seriesTitle, bookmarks, progress, edge, incognito) {
+    val idx = siblings.indexOfFirst { it.id == book.id }
+    val nav = if (siblings.size > 1 && idx >= 0) {
+        fun ref(b: BookDto?) = b?.let { sib ->
+            ReaderChapterRef(chapterTitle(sib), { e -> onOpenSibling(sib, e) })
+        }
+        ReaderChapterNav(
+            prev = ref(siblings.getOrNull(idx - 1)),
+            next = ref(siblings.getOrNull(idx + 1)),
+            chapters = siblings.map { sib ->
+                ReaderChapterItem(chapterTitle(sib), sib.id == book.id) { onOpenSibling(sib, ReaderEdge.FIRST) }
+            },
+        )
+    } else {
+        null
+    }
+    val bookLabel = book.title.ifBlank { book.numberDisplay ?: "Reading" }
+    EbookSource(
+        title = seriesTitle ?: bookLabel,
+        subtitle = bookLabel.takeIf { seriesTitle != null },
+        format = format,
+        origin = EbookOrigin.Book(book.id),
+        seriesId = book.seriesId,
+        // Arriving from a sibling pins the very start/end; otherwise resume where the CFI left off.
+        initialLocator = if (edge == null) progress?.locator else null,
+        initialFraction = when (edge) {
+            ReaderEdge.FIRST -> 0.0
+            ReaderEdge.LAST -> 1.0
+            null -> progress?.fraction ?: 0.0
+        },
+        onPersist = if (incognito) {
+            { _, _, _, _ -> }
+        } else {
+            { fraction, locator, sectionTotal, completed ->
+                // A reflowable book has no real pages, but progress is stored per page everywhere
+                // else; keep a spine-based proxy so lists and "continue reading" still work.
+                val page = (fraction * sectionTotal.coerceAtLeast(1)).roundToInt().coerceAtLeast(1)
+                api.saveReadProgress(
+                    server.baseUrl, server.apiKey, book.id,
+                    page = page, completed = completed, locator = locator, fraction = fraction,
+                )
+            }
+        },
+        incognito = incognito,
+        nav = nav,
+        webUrl = "${server.baseUrl}/books/${book.id}/read",
+        bookmarks = EbookBookmarks(
+            items = bookmarks,
+            add = { locator, fraction, label ->
+                scope.launch {
+                    runCatching { api.addEbookBookmark(server.baseUrl, server.apiKey, book.id, locator, fraction, label) }
+                    onBookmarksChanged()
+                }
+            },
+            delete = { id ->
+                scope.launch {
+                    runCatching { api.deleteBookmark(server.baseUrl, server.apiKey, book.id, id) }
+                    onBookmarksChanged()
+                }
+            },
+        ),
+    )
+}
