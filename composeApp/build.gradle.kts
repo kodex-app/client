@@ -93,6 +93,12 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // The real release key never lands in the repo: CI decodes the KEYSTORE_BASE64 secret to
+    // keystore/release.jks (gitignored) and passes the rest as environment variables. Without that
+    // file the release config is simply absent, so local `assembleRelease` produces an unsigned APK
+    // rather than silently signing with the throwaway nightly key below.
+    val releaseStore = rootProject.file("keystore/release.jks").takeIf { it.exists() }
+
     // Stable signing key for the debug/nightly APK so a new nightly installs over a previous one
     // (Android rejects an update whose signature differs from the installed app). The default debug
     // keystore is regenerated per CI run, which is exactly what caused the "signatures don't match"
@@ -104,6 +110,14 @@ android {
             keyAlias = "nightly"
             keyPassword = "kodexnightly"
         }
+        if (releaseStore != null) {
+            create("release") {
+                storeFile = releaseStore
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
@@ -112,6 +126,7 @@ android {
         }
         getByName("release") {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 

@@ -35,6 +35,15 @@ class SessionManager(
     private val _currentUser = MutableStateFlow<UserDto?>(null)
     val currentUser: StateFlow<UserDto?> = _currentUser.asStateFlow()
 
+    /**
+     * Run a fire-and-forget background task on the session's own scope. Used for reading-progress saves,
+     * which must complete even when the screen that triggered them (the reader) is being disposed — a
+     * `LaunchedEffect`/`rememberCoroutineScope` coroutine would be cancelled on dispose and drop the write.
+     */
+    fun persistDetached(block: suspend () -> Unit) {
+        scope.launch { runCatching { block() } }
+    }
+
     /** On launch, open straight into the most recently used server (optimistically, offline-friendly). */
     fun bootstrap() {
         val last = store.lastUsedServer() ?: return

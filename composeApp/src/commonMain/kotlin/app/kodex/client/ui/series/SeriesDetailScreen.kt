@@ -50,10 +50,14 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -387,13 +391,32 @@ private fun SelectionBar(
         ),
         title = { Text("$count selected", fontWeight = FontWeight.SemiBold) },
         navigationIcon = {
-            IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "Cancel selection") }
+            Tip("Cancel selection") {
+                IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "Cancel selection") }
+            }
         },
         actions = {
-            IconButton(onClick = onSelectAll) { Icon(app.kodex.client.ui.icons.SelectAllIcon, contentDescription = "Select all") }
-            IconButton(onClick = onSelectInverse) { Icon(app.kodex.client.ui.icons.InvertSelectionIcon, contentDescription = "Select inverse") }
+            Tip("Select all") {
+                IconButton(onClick = onSelectAll) { Icon(app.kodex.client.ui.icons.SelectAllIcon, contentDescription = "Select all") }
+            }
+            Tip("Select inverse") {
+                IconButton(onClick = onSelectInverse) { Icon(app.kodex.client.ui.icons.InvertSelectionIcon, contentDescription = "Select inverse") }
+            }
         },
     )
+}
+
+/** Wraps an action with a plain tooltip shown on long-press / hover. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun Tip(text: String, content: @Composable () -> Unit) {
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = { PlainTooltip { Text(text) } },
+        state = rememberTooltipState(),
+    ) {
+        content()
+    }
 }
 
 /** Contextual bottom action bar for multi-select — the bulk functions as icon buttons. */
@@ -410,9 +433,15 @@ private fun SelectionBottomBar(
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onMarkRead) { Icon(Icons.Filled.Check, contentDescription = "Mark as read") }
-            IconButton(onClick = onMarkUnread) { Icon(app.kodex.client.ui.icons.MarkUnreadIcon, contentDescription = "Mark as unread") }
-            if (isWeb) IconButton(onClick = onDownload) { Icon(app.kodex.client.ui.icons.DownloadIcon, contentDescription = "Download") }
+            Tip("Mark as read") {
+                IconButton(onClick = onMarkRead) { Icon(Icons.Filled.Check, contentDescription = "Mark as read") }
+            }
+            Tip("Mark as unread") {
+                IconButton(onClick = onMarkUnread) { Icon(app.kodex.client.ui.icons.MarkUnreadIcon, contentDescription = "Mark as unread") }
+            }
+            if (isWeb) Tip("Download") {
+                IconButton(onClick = onDownload) { Icon(app.kodex.client.ui.icons.DownloadIcon, contentDescription = "Download") }
+            }
         }
     }
 }

@@ -1,6 +1,15 @@
 package app.kodex.client.ui.reader
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -89,6 +98,7 @@ import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
 import app.kodex.client.network.KodexApi
@@ -202,8 +212,19 @@ fun ImageReaderScreen(session: SessionManager, api: KodexApi, source: ReaderSour
     }
 
     var page by remember { mutableStateOf(source.initialPage.coerceIn(1, source.pageCount.coerceAtLeast(1))) }
+    // Save reading progress on the session scope (not this composition) so it survives page turns AND the
+    // reader closing — a plain LaunchedEffect is cancelled on dispose, which dropped the final save.
     LaunchedEffect(page) {
-        if (source.pageCount > 0) runCatching { source.onPersist(page, page >= source.pageCount) }
+        if (source.pageCount <= 0) return@LaunchedEffect
+        kotlinx.coroutines.delay(400) // coalesce rapid turns / continuous scrolling
+        session.persistDetached { source.onPersist(page, page >= source.pageCount) }
+    }
+    // Guaranteed final save when leaving the reader (covers exiting right after the last page).
+    val latestPage by androidx.compose.runtime.rememberUpdatedState(page)
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            if (source.pageCount > 0) session.persistDetached { source.onPersist(latestPage, latestPage >= source.pageCount) }
+        }
     }
 
     // Auto-scroll only makes sense in continuous mode; cancel it elsewhere.
@@ -333,18 +354,18 @@ fun ImageReaderScreen(session: SessionManager, api: KodexApi, source: ReaderSour
 
             // Paged edge page-turn buttons (reading order), shown with the chrome.
             if (effectiveMode == MODE_PAGED) {
-                AnimatedVisibility(chrome, modifier = Modifier.align(Alignment.CenterStart)) {
+                AnimatedVisibility(chrome, modifier = Modifier.align(Alignment.CenterStart), enter = leftEdgeEnter, exit = leftEdgeExit) {
                     EdgeButton(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous page") { advance(if (p.isRtl) 1 else -1) }
                 }
-                AnimatedVisibility(chrome, modifier = Modifier.align(Alignment.CenterEnd)) {
+                AnimatedVisibility(chrome, modifier = Modifier.align(Alignment.CenterEnd), enter = rightEdgeEnter, exit = rightEdgeExit) {
                     EdgeButton(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next page") { advance(if (p.isRtl) -1 else 1) }
                 }
             }
 
-            AnimatedVisibility(chrome, modifier = Modifier.align(Alignment.TopCenter)) {
+            AnimatedVisibility(chrome, modifier = Modifier.align(Alignment.TopCenter), enter = topBarEnter, exit = topBarExit) {
                 TopBar(source.title, onBack)
             }
-            AnimatedVisibility(chrome, modifier = Modifier.align(Alignment.BottomCenter)) {
+            AnimatedVisibility(chrome, modifier = Modifier.align(Alignment.BottomCenter), enter = bottomBarEnter, exit = bottomBarExit) {
                 BottomBar(
                     page = page,
                     pageCount = source.pageCount,
@@ -368,7 +389,7 @@ fun ImageReaderScreen(session: SessionManager, api: KodexApi, source: ReaderSour
                 )
             }
             // Page pill while the chrome is hidden.
-            AnimatedVisibility(!chrome, modifier = Modifier.align(Alignment.BottomCenter)) { PagePill(indicator) }
+            AnimatedVisibility(!chrome, modifier = Modifier.align(Alignment.BottomCenter), enter = pagePillEnter, exit = pagePillExit) { PagePill(indicator) }
             // Persistent incognito badge (always visible, above the auto-hiding chrome).
             if (source.incognito) IncognitoBadge(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 6.dp))
 
@@ -666,6 +687,34 @@ private fun PageImage(url: String, apiKey: String, contentScale: ContentScale, m
 }
 
 // ── Chrome ─────────────────────────────────────────────────────────────────────────────────────────
+
+// The chrome slides rather than expands: sliding keeps each bar at its full measured size for the
+// whole animation, so the toolbar contents never reflow while appearing/disappearing. Entering is
+// slightly slower than leaving (decelerate in, accelerate out) so the bars feel like they settle.
+private const val CHROME_IN_MS = 260
+private const val CHROME_OUT_MS = 200
+private val chromeInSpec = tween<Float>(CHROME_IN_MS, easing = LinearOutSlowInEasing)
+private val chromeOutSpec = tween<Float>(CHROME_OUT_MS, easing = FastOutSlowInEasing)
+private val chromeInOffset = tween<IntOffset>(CHROME_IN_MS, easing = LinearOutSlowInEasing)
+private val chromeOutOffset = tween<IntOffset>(CHROME_OUT_MS, easing = FastOutSlowInEasing)
+
+/** Top bar: slides down from above the status bar. */
+private val topBarEnter = slideInVertically(chromeInOffset) { -it } + fadeIn(chromeInSpec)
+private val topBarExit = slideOutVertically(chromeOutOffset) { -it } + fadeOut(chromeOutSpec)
+
+/** Bottom bar: slides up from below the navigation bar. */
+private val bottomBarEnter = slideInVertically(chromeInOffset) { it } + fadeIn(chromeInSpec)
+private val bottomBarExit = slideOutVertically(chromeOutOffset) { it } + fadeOut(chromeOutSpec)
+
+/** Edge page-turn buttons: slide in from their own screen edge. */
+private val leftEdgeEnter = slideInHorizontally(chromeInOffset) { -it } + fadeIn(chromeInSpec)
+private val leftEdgeExit = slideOutHorizontally(chromeOutOffset) { -it } + fadeOut(chromeOutSpec)
+private val rightEdgeEnter = slideInHorizontally(chromeInOffset) { it } + fadeIn(chromeInSpec)
+private val rightEdgeExit = slideOutHorizontally(chromeOutOffset) { it } + fadeOut(chromeOutSpec)
+
+/** Page pill: swaps with the bottom bar, so it slides along the same axis but only a short way. */
+private val pagePillEnter = slideInVertically(chromeInOffset) { it / 2 } + fadeIn(chromeInSpec)
+private val pagePillExit = slideOutVertically(chromeOutOffset) { it / 2 } + fadeOut(chromeOutSpec)
 
 @Composable
 private fun TopBar(title: String, onBack: () -> Unit) {

@@ -39,22 +39,24 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -126,6 +128,9 @@ fun SourceSeriesScreen(
     var sortDesc by remember { mutableStateOf(true) }
     var sortByDate by remember { mutableStateOf(false) }
     var translator by remember { mutableStateOf<String?>(null) }
+    // The read actions live in the Scaffold's FAB slot, but only the loaded chapter list knows which
+    // chapter to resume — so the content publishes it up here (and clears it while reloading).
+    var readFab by remember { mutableStateOf<ReadFab?>(null) }
 
     fun act(block: suspend (ServerConnection) -> String) {
         val s = server ?: return
@@ -168,6 +173,20 @@ fun SourceSeriesScreen(
                 },
             )
         },
+        floatingActionButton = {
+            readFab?.let { fab ->
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SmallFloatingActionButton(onClick = fab.openIncognito) {
+                        Icon(IncognitoIcon, contentDescription = "Read incognito")
+                    }
+                    ExtendedFloatingActionButton(
+                        onClick = fab.open,
+                        icon = { Icon(Icons.Filled.PlayArrow, contentDescription = null) },
+                        text = { Text(fab.label) },
+                    )
+                }
+            }
+        },
     ) { padding ->
         val topInset = padding.calculateTopPadding()
         val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
@@ -209,10 +228,22 @@ fun SourceSeriesScreen(
                 // chapter (which still explains that) is as far as it goes.
                 val resume = if (context.isNovel) null else resumeChapter(data.chapters, data.progress)
 
+                val fab = remember(resume, context) {
+                    resume?.let { r ->
+                        ReadFab(
+                            label = r.label,
+                            open = { onOpenReader(context, r.chapter.externalId, r.chapter.name) },
+                            openIncognito = { onOpenReaderIncognito(context, r.chapter.externalId, r.chapter.name) },
+                        )
+                    }
+                }
+                LaunchedEffect(fab) { readFab = fab }
+                DisposableEffect(Unit) { onDispose { readFab = null } }
+
                 LazyColumn(
                     Modifier.fillMaxSize(),
                     state = listState,
-                    contentPadding = PaddingValues(top = topInset + 8.dp, bottom = 24.dp + bottomInset),
+                    contentPadding = PaddingValues(top = topInset + 8.dp, bottom = 96.dp + bottomInset),
                 ) {
                     item {
                         Column(Modifier.padding(horizontal = 16.dp)) {
@@ -220,11 +251,8 @@ fun SourceSeriesScreen(
                             Spacer(Modifier.height(16.dp))
                             Actions(
                                 followed = followed,
-                                resume = resume,
                                 busy = busy,
                                 message = message,
-                                onRead = { chapter -> onOpenReader(context, chapter.externalId, chapter.name) },
-                                onReadIncognito = { chapter -> onOpenReaderIncognito(context, chapter.externalId, chapter.name) },
                                 onFollow = {
                                     act { srv ->
                                         val lib = api.webLibrary(srv.baseUrl, srv.apiKey)
@@ -366,34 +394,17 @@ private fun ExpandableSummary(text: String) {
 }
 
 /**
- * Read-from-source first (the point of Browse: no follow, no download), then the library actions.
- * The incognito button beside it opens the same chapter without recording progress or history.
+ * The library actions (follow / download / unfollow). Reading is handled by the FABs — see [ReadFab].
  */
 @Composable
 private fun Actions(
     followed: FollowedSeriesRef?,
-    resume: Resume?,
     busy: Boolean,
     message: String?,
-    onRead: (SourceChapter) -> Unit,
-    onReadIncognito: (SourceChapter) -> Unit,
     onFollow: () -> Unit,
     onDownload: () -> Unit,
     onUnfollow: () -> Unit,
 ) {
-    if (resume != null) {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Button(onClick = { onRead(resume.chapter) }, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(resume.label)
-            }
-            OutlinedIconButton(onClick = { onReadIncognito(resume.chapter) }) {
-                Icon(IncognitoIcon, contentDescription = "Read incognito")
-            }
-        }
-        Spacer(Modifier.height(10.dp))
-    }
     if (followed == null) {
         OutlinedButton(onClick = onFollow, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
             if (busy) BtnSpinner() else Text("Add to library")
@@ -552,8 +563,11 @@ private fun ChapterRow(
 private fun BtnSpinner() =
     CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
 
-/** The chapter the header's read button opens, and how to label it. */
+/** The chapter the read FAB opens, and how to label it. */
 private data class Resume(val chapter: SourceChapter, val label: String)
+
+/** [Resume] bound to its callbacks, lifted out of the loaded content so the Scaffold can host it. */
+private data class ReadFab(val label: String, val open: () -> Unit, val openIncognito: () -> Unit)
 
 /**
  * Which chapter to continue or start with, in the web's order: the lowest-numbered chapter left

@@ -16,12 +16,23 @@ import app.kodex.client.ui.catalog.sourcePageUrl
 import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.friendlyMessage
 import app.kodex.client.ui.main.SourceSeriesContext
+import io.ktor.http.encodeURLQueryComponent
 
 private sealed interface SourceReaderState {
     data object Loading : SourceReaderState
     data class Error(val message: String) : SourceReaderState
     data class Ready(val pageCount: Int, val progress: ReadProgressDto?) : SourceReaderState
 }
+
+/** Kodex web UI source-reader deep link for this chapter (mirrors the web's `/source-read` route). */
+private fun sourceReadUrl(baseUrl: String, providerId: String, chapterId: String, chapterName: String?, seriesId: String?): String =
+    buildString {
+        append(baseUrl.trimEnd('/'))
+        append("/source-read?provider=").append(providerId.encodeURLQueryComponent())
+        append("&chapter=").append(chapterId.encodeURLQueryComponent())
+        chapterName?.takeIf { it.isNotBlank() }?.let { append("&title=").append(it.encodeURLQueryComponent()) }
+        seriesId?.let { append("&series=").append(it.encodeURLQueryComponent()) }
+    }
 
 /** The chapter currently open; [edge] is set when arriving from a sibling (start of it / end of it). */
 private data class ChapterTarget(val id: String, val name: String?, val edge: ReaderEdge? = null)
@@ -128,6 +139,8 @@ fun SourceReaderScreen(
                             }),
                             incognito = incognito,
                             nav = nav,
+                            // "Open in web" → this chapter in the Kodex web UI's source reader (on the server).
+                            webUrl = sourceReadUrl(s.baseUrl, providerId, current.id, current.name, seriesId),
                         )
                     }
                     // The reader keeps its own page state, so a chapter swap has to remount it.

@@ -23,6 +23,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Checkbox
@@ -38,11 +39,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Button
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.runtime.Composable
@@ -63,6 +69,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
 import app.kodex.client.network.CheckBoxFilter
+import app.kodex.client.network.LibraryDto
 import app.kodex.client.network.FilterListDto
 import app.kodex.client.network.GroupFilter
 import app.kodex.client.network.HeaderFilter
@@ -78,10 +85,12 @@ import app.kodex.client.network.TextFilterDto
 import app.kodex.client.network.TriStateFilter
 import app.kodex.client.network.SeriesPage
 import app.kodex.client.ui.EmptyMessage
+import app.kodex.client.ui.SelectionState
 import app.kodex.client.ui.catalog.CoverCard
 import app.kodex.client.ui.catalog.sourceCoverUrl
 import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.friendlyMessage
+import app.kodex.client.ui.rememberSelection
 import app.kodex.client.ui.rememberSnackbar
 import kotlinx.coroutines.launch
 
@@ -119,6 +128,47 @@ fun SourceFeedScreen(
     var error by remember(source.id) { mutableStateOf<String?>(null) }
     var reloadKey by remember(source.id) { mutableIntStateOf(0) }
     val gridState = rememberLazyGridState()
+
+    // Multi-select (long-press) + "Add to libraries". Selection is keyed by the item's external id.
+    val selection = rememberSelection<String>()
+    var libraryPicker by remember(source.id) { mutableStateOf<List<LibraryDto>?>(null) }
+    var addingBusy by remember(source.id) { mutableStateOf(false) }
+
+    // System back exits selection mode first (before leaving the screen).
+    app.kodex.client.platform.AppBackHandler(enabled = selection.active) { selection.clear() }
+
+    // Follow every selected source series into [libraryId] (add to that WEB library).
+    fun addSelectedTo(libraryId: String) {
+        val s = server ?: return
+        val chosen = items.filter { it.externalId in selection.selected }
+        if (chosen.isEmpty()) return
+        libraryPicker = null
+        addingBusy = true
+        scope.launch {
+            var ok = 0
+            chosen.forEach { it2 ->
+                runCatching { api.followWebSeries(s.baseUrl, s.apiKey, libraryId, it2.providerId ?: source.id, it2.externalId) }
+                    .onSuccess { ok++ }
+            }
+            addingBusy = false
+            snackbar?.show(if (ok == chosen.size) "Added $ok to library" else "Added $ok of ${chosen.size} (some already exist)")
+            selection.clear()
+        }
+    }
+
+    // Resolve which WEB library to add to: pick directly when there's one, else show a picker.
+    fun onAddToLibraries() {
+        val s = server ?: return
+        scope.launch {
+            val webLibs = runCatching { api.libraries(s.baseUrl, s.apiKey) }.getOrDefault(emptyList()).filter { it.isWeb }
+            when {
+                webLibs.size == 1 -> addSelectedTo(webLibs.first().id)
+                webLibs.isEmpty() -> runCatching { api.webLibrary(s.baseUrl, s.apiKey) }
+                    .fold({ addSelectedTo(it.id) }, { snackbar?.show("No web library to add to.") })
+                else -> libraryPicker = webLibs
+            }
+        }
+    }
 
     suspend fun fetch(next: Int): SeriesPage {
         val s = server!!
@@ -172,6 +222,33 @@ fun SourceFeedScreen(
 
     Scaffold(
         topBar = {
+            if (selection.active) {
+                TopAppBar(
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ),
+                    title = { Text("${selection.count} selected", fontWeight = FontWeight.SemiBold) },
+                    navigationIcon = {
+                        IconButton(onClick = { selection.clear() }) { Icon(Icons.Filled.Close, contentDescription = "Cancel selection") }
+                    },
+                    actions = {
+                        Tip("Select all") {
+                            IconButton(onClick = { selection.selectAll(items.map { it.externalId }) }) {
+                                Icon(app.kodex.client.ui.icons.SelectAllIcon, contentDescription = "Select all")
+                            }
+                        }
+                        Tip("Add the selected series to a library") {
+                            TextButton(onClick = { onAddToLibraries() }, enabled = !addingBusy) {
+                                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Text("Add to library", modifier = Modifier.padding(start = 4.dp))
+                            }
+                        }
+                    },
+                )
+            } else {
             TopAppBar(
                 title = {
                     if (searchOpen) {
@@ -195,14 +272,19 @@ fun SourceFeedScreen(
                 },
                 actions = {
                     if (searchOpen) {
-                        IconButton(onClick = { if (query.isBlank()) clearSearch() else { query = ""; } }) {
-                            Icon(Icons.Filled.Close, contentDescription = "Clear")
+                        Tip("Clear") {
+                            IconButton(onClick = { if (query.isBlank()) clearSearch() else { query = ""; } }) {
+                                Icon(Icons.Filled.Close, contentDescription = "Clear")
+                            }
                         }
                     } else {
-                        IconButton(onClick = { searchOpen = true }) { Icon(Icons.Filled.Search, contentDescription = "Search") }
+                        Tip("Search") {
+                            IconButton(onClick = { searchOpen = true }) { Icon(Icons.Filled.Search, contentDescription = "Search") }
+                        }
                     }
                 },
             )
+            }
         },
         floatingActionButton = {
             val filterCount = appliedFilters.filters.count { it.isActive() }
@@ -244,7 +326,29 @@ fun SourceFeedScreen(
                         items = items,
                         gridState = gridState,
                         loadingMore = loading,
+                        selection = selection,
                         onOpen = onOpenSourceSeries,
+                    )
+                }
+            }
+        }
+    }
+
+    // Library picker for "Add to libraries" when the user has more than one WEB library.
+    libraryPicker?.let { libs ->
+        ModalBottomSheet(onDismissRequest = { libraryPicker = null }, sheetState = rememberModalBottomSheetState()) {
+            Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
+                Text(
+                    "Add ${selection.count} to library",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 8.dp),
+                )
+                libs.forEach { lib ->
+                    Text(
+                        lib.name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.fillMaxWidth().clickable { addSelectedTo(lib.id) }.padding(horizontal = 20.dp, vertical = 12.dp),
                     )
                 }
             }
@@ -424,6 +528,19 @@ private fun DropdownRow(label: String, current: String, options: List<String>, o
 private fun Modifier.clickableRow(onClick: () -> Unit): Modifier =
     this.then(Modifier.clickable(onClick = onClick))
 
+/** Wraps an action with a plain tooltip shown on long-press / hover. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun Tip(text: String, content: @Composable () -> Unit) {
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = { PlainTooltip { Text(text) } },
+        state = rememberTooltipState(),
+    ) {
+        content()
+    }
+}
+
 private fun triGlyph(state: Int): String = when (state) {
     TriStateFilter.INCLUDE -> "✓"
     TriStateFilter.EXCLUDE -> "✕"
@@ -476,6 +593,7 @@ private fun FeedGrid(
     items: List<SourceSearchResult>,
     gridState: androidx.compose.foundation.lazy.grid.LazyGridState,
     loadingMore: Boolean,
+    selection: SelectionState<String>,
     onOpen: (SourceSearchResult) -> Unit,
 ) {
     LazyVerticalGrid(
@@ -493,7 +611,9 @@ private fun FeedGrid(
                 title = item.title,
                 subtitle = item.author,
                 unread = null,
-                onClick = { onOpen(item) },
+                onClick = { if (selection.active) selection.toggle(item.externalId) else onOpen(item) },
+                onLongClick = { selection.toggle(item.externalId) },
+                selected = selection.isSelected(item.externalId),
                 width = null,
             )
         }

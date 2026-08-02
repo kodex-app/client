@@ -8,6 +8,9 @@ build/
 local.properties
 *.hprof
 
+# Release signing key — CI decodes it here from the KEYSTORE_BASE64 secret; never commit it.
+keystore/release.jks
+
 # IDE
 .idea/
 *.iml
