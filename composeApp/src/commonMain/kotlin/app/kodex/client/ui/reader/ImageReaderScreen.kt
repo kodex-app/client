@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -75,6 +76,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -87,7 +89,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.input.key.Key
@@ -100,8 +104,11 @@ import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import app.kodex.client.auth.SessionManager
 import app.kodex.client.network.KodexApi
 import app.kodex.client.platform.StatusBarIcons
@@ -117,7 +124,8 @@ import kotlinx.coroutines.launch
 
 /** Everything the reader needs, independent of whether pages come from a book or a streamed source. */
 class ReaderSource(
-    val title: String,
+    val title: String, // top-bar line 1 — the series, when it's known
+    val subtitle: String? = null, // top-bar line 2 — this chapter/book within the series
     val pageCount: Int,
     val initialPage: Int, // 1-based
     val kind: String, // "comic" | "pdf" — chooses the settings bucket + defaults
@@ -344,9 +352,10 @@ fun ImageReaderScreen(session: SessionManager, api: KodexApi, source: ReaderSour
         } else {
             val step = if (effectiveMode == MODE_PAGED && p.isDouble) 2 else 1
             val rangeEnd = (page + step - 1).coerceAtMost(source.pageCount)
-            val indicator = if (step == 2 && rangeEnd > page) "$page–$rangeEnd / ${source.pageCount}" else "$page / ${source.pageCount}"
-            val canPrev = page > 1 || source.nav?.prev != null
-            val canNext = page < source.pageCount || source.nav?.next != null
+            // Short label for the navigator capsule (the total sits at its other end); the pill shown
+            // while the chrome is hidden has no such frame, so it spells the whole thing out.
+            val pageLabel = if (step == 2 && rangeEnd > page) "$page–$rangeEnd" else "$page"
+            val indicator = "$pageLabel / ${source.pageCount}"
 
             if (effectiveMode == MODE_CONTINUOUS) {
                 ContinuousReader(source, p, page, autoScroll, onPage = { page = it }, onToggleChrome = { chrome = !chrome }, onAutoScrollEnd = { autoScroll = false })
@@ -365,17 +374,16 @@ fun ImageReaderScreen(session: SessionManager, api: KodexApi, source: ReaderSour
             }
 
             AnimatedVisibility(chrome, modifier = Modifier.align(Alignment.TopCenter), enter = topBarEnter, exit = topBarExit) {
-                TopBar(source.title, onBack)
+                TopBar(source.title, source.subtitle, onBack)
             }
             AnimatedVisibility(chrome, modifier = Modifier.align(Alignment.BottomCenter), enter = bottomBarEnter, exit = bottomBarExit) {
                 BottomBar(
                     page = page,
                     pageCount = source.pageCount,
-                    indicator = indicator,
+                    pageLabel = pageLabel,
+                    rtl = p.isRtl,
                     continuous = effectiveMode == MODE_CONTINUOUS,
                     autoScroll = autoScroll,
-                    canPrev = canPrev,
-                    canNext = canNext,
                     hasChapters = (source.nav?.chapters?.size ?: 0) > 1,
                     canPrevChapter = source.nav?.prev != null,
                     canNextChapter = source.nav?.next != null,
@@ -388,8 +396,6 @@ fun ImageReaderScreen(session: SessionManager, api: KodexApi, source: ReaderSour
                     onCycleOrientation = { orientation.cycle() },
                     onOpenSettings = { settingsOpen = true },
                     onToggleAutoScroll = { autoScroll = !autoScroll },
-                    onPrev = { advance(-1) },
-                    onNext = { advance(1) },
                     onSeek = { target -> page = target.coerceIn(1, source.pageCount) },
                     onOpenPicker = { pickerOpen = true },
                 )
@@ -731,6 +737,13 @@ private val pagePillExit = slideOutVertically(chromeOutOffset) { it / 2 } + fade
 private val ColorScheme.readerBarColor: Color
     get() = surfaceContainerHigh.copy(alpha = if (surface.luminance() < 0.5f) 0.90f else 0.95f)
 
+/**
+ * Fill for controls that sit *on* a toolbar — the chapter navigator's slider capsule and its skip
+ * buttons. One step brighter than [readerBarColor] so they read as raised, and fully opaque so the
+ * page never shows through a control the way it does through the bar itself.
+ */
+private val ColorScheme.readerBarRaisedColor: Color get() = surfaceContainerHighest
+
 /** Icons/text on the toolbars, paired with [readerBarColor] so they contrast in either scheme. */
 private val ColorScheme.readerBarContentColor: Color get() = onSurface
 
@@ -738,14 +751,27 @@ private val ColorScheme.readerBarContentColor: Color get() = onSurface
 private fun Color.disabled() = copy(alpha = 0.38f)
 
 @Composable
-private fun TopBar(title: String, onBack: () -> Unit) {
+private fun TopBar(title: String, subtitle: String?, onBack: () -> Unit) {
     val content = MaterialTheme.colorScheme.readerBarContentColor
     Row(
-        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.readerBarColor).statusBarsPadding().padding(horizontal = 4.dp, vertical = 4.dp),
+        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.readerBarColor).statusBarsPadding().padding(horizontal = 4.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = content) }
-        Text(title, color = content, maxLines = 1, modifier = Modifier.weight(1f).padding(horizontal = 4.dp))
+        // Series on top, this chapter beneath it — the chapter is the line that changes as you read,
+        // so it gets the quieter treatment and the title keeps the top-bar weight.
+        Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
+            Text(title, color = content, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    subtitle,
+                    color = content.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
     }
 }
 
@@ -753,11 +779,10 @@ private fun TopBar(title: String, onBack: () -> Unit) {
 private fun BottomBar(
     page: Int,
     pageCount: Int,
-    indicator: String,
+    pageLabel: String,
+    rtl: Boolean,
     continuous: Boolean,
     autoScroll: Boolean,
-    canPrev: Boolean,
-    canNext: Boolean,
     hasChapters: Boolean,
     canPrevChapter: Boolean,
     canNextChapter: Boolean,
@@ -770,49 +795,37 @@ private fun BottomBar(
     onCycleOrientation: () -> Unit,
     onOpenSettings: () -> Unit,
     onToggleAutoScroll: () -> Unit,
-    onPrev: () -> Unit,
-    onNext: () -> Unit,
     onSeek: (Int) -> Unit,
     onOpenPicker: () -> Unit,
 ) {
     val content = MaterialTheme.colorScheme.readerBarContentColor
-    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.readerBarColor)) {
-        // Progress row: play/pause (continuous), prev, page slider, indicator (→ picker), next.
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (continuous) {
-                IconButton(onClick = onToggleAutoScroll) {
-                    Icon(if (autoScroll) app.kodex.client.ui.icons.PauseIcon else Icons.Filled.PlayArrow, contentDescription = "Auto-scroll", tint = content)
-                }
-            }
-            IconButton(onClick = onPrev, enabled = canPrev) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous page", tint = if (canPrev) content else content.disabled())
-            }
-            if (pageCount > 1) {
-                Slider(
-                    value = (page - 1).toFloat(),
-                    onValueChange = { onSeek(it.toInt() + 1) },
-                    valueRange = 0f..(pageCount - 1).toFloat(),
-                    modifier = Modifier.weight(1f),
-                )
-            } else {
-                Spacer(Modifier.weight(1f))
-            }
-            Text(indicator, color = content, style = MaterialTheme.typography.labelMedium, modifier = Modifier.clickable(onClick = onOpenPicker).padding(horizontal = 6.dp, vertical = 4.dp))
-            IconButton(onClick = onNext, enabled = canNext) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next page", tint = if (canNext) content else content.disabled())
-            }
-        }
-        // Toolbar row: chapter nav bounds the row (Mihon's convention — outer ends switch chapters,
-        // the slider above moves pages) around the list · open in web · screen orientation · settings.
+    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.readerBarColor).navigationBarsPadding()) {
+        ChapterNavigator(
+            page = page,
+            pageCount = pageCount,
+            pageLabel = pageLabel,
+            rtl = rtl,
+            canPrevChapter = canPrevChapter,
+            canNextChapter = canNextChapter,
+            onPrevChapter = onPrevChapter,
+            onNextChapter = onNextChapter,
+            onSeek = onSeek,
+            onOpenPicker = onOpenPicker,
+        )
+        // Toolbar row: auto-scroll (continuous only) · chapter list · open in web · orientation · settings.
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ToolbarButton(app.kodex.client.ui.icons.SkipPreviousIcon, "Previous chapter", enabled = canPrevChapter, onClick = onPrevChapter)
+            if (continuous) {
+                ToolbarButton(
+                    if (autoScroll) app.kodex.client.ui.icons.PauseIcon else Icons.Filled.PlayArrow,
+                    "Auto-scroll",
+                    tint = if (autoScroll) MaterialTheme.colorScheme.primary else content,
+                    onClick = onToggleAutoScroll,
+                )
+            }
             ToolbarButton(Icons.AutoMirrored.Filled.List, "Chapters", enabled = hasChapters, onClick = onOpenChapters)
             ToolbarButton(app.kodex.client.ui.icons.OpenInWebIcon, "Open in web", enabled = webEnabled, onClick = onOpenWeb)
             ToolbarButton(
@@ -822,10 +835,96 @@ private fun BottomBar(
                 onClick = onCycleOrientation,
             )
             ToolbarButton(Icons.Filled.Settings, "Settings", onClick = onOpenSettings)
-            ToolbarButton(app.kodex.client.ui.icons.SkipNextIcon, "Next chapter", enabled = canNextChapter, onClick = onNextChapter)
         }
     }
 }
+
+/**
+ * Mihon's chapter navigator: skip-chapter buttons flanking a capsule that reads
+ * `current ——slider—— total`. The outer row is pinned LTR whatever the locale and only the capsule
+ * follows the series' reading direction, so for an RTL manga the slider fills right-to-left while
+ * "skip previous" stays under the reader's left thumb — the two buttons swap which chapter they open.
+ */
+@Composable
+private fun ChapterNavigator(
+    page: Int,
+    pageCount: Int,
+    pageLabel: String,
+    rtl: Boolean,
+    canPrevChapter: Boolean,
+    canNextChapter: Boolean,
+    onPrevChapter: () -> Unit,
+    onNextChapter: () -> Unit,
+    onSeek: (Int) -> Unit,
+    onOpenPicker: () -> Unit,
+) {
+    val content = MaterialTheme.colorScheme.readerBarContentColor
+    val raised = MaterialTheme.colorScheme.readerBarRaisedColor
+    val buttonColors = IconButtonDefaults.filledIconButtonColors(
+        containerColor = raised,
+        contentColor = content,
+        disabledContainerColor = raised,
+        disabledContentColor = content.disabled(),
+    )
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FilledIconButton(
+                onClick = if (rtl) onNextChapter else onPrevChapter,
+                enabled = if (rtl) canNextChapter else canPrevChapter,
+                colors = buttonColors,
+            ) {
+                Icon(app.kodex.client.ui.icons.SkipPreviousIcon, if (rtl) "Next chapter" else "Previous chapter")
+            }
+
+            if (pageCount > 1) {
+                CompositionLocalProvider(LocalLayoutDirection provides if (rtl) LayoutDirection.Rtl else LayoutDirection.Ltr) {
+                    Row(
+                        Modifier.weight(1f).padding(horizontal = 8.dp)
+                            .clip(RoundedCornerShape(24.dp)).background(raised)
+                            .padding(horizontal = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        // Tapping the current page opens the thumbnail picker.
+                        Text(
+                            pageLabel,
+                            color = content,
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.clickable(onClick = onOpenPicker).padding(vertical = 8.dp),
+                        )
+                        Slider(
+                            value = (page - 1).toFloat(),
+                            onValueChange = { onSeek(it.roundToInt() + 1) },
+                            valueRange = 0f..(pageCount - 1).toFloat(),
+                            steps = sliderSteps(pageCount),
+                            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                        )
+                        Text(pageCount.toString(), color = content, style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+            } else {
+                Spacer(Modifier.weight(1f))
+            }
+
+            FilledIconButton(
+                onClick = if (rtl) onPrevChapter else onNextChapter,
+                enabled = if (rtl) canPrevChapter else canNextChapter,
+                colors = buttonColors,
+            ) {
+                Icon(app.kodex.client.ui.icons.SkipNextIcon, if (rtl) "Previous chapter" else "Next chapter")
+            }
+        }
+    }
+}
+
+/**
+ * Tick marks on the page slider, which make a short chapter's pages individually tappable. Dropped
+ * past [SLIDER_TICK_LIMIT] pages, where the ticks merge into a smear and cost more than they give.
+ */
+private const val SLIDER_TICK_LIMIT = 40
+private fun sliderSteps(pageCount: Int): Int = if (pageCount in 2..SLIDER_TICK_LIMIT) pageCount - 2 else 0
 
 @Composable
 private fun ToolbarButton(

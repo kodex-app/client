@@ -72,6 +72,8 @@ fun SourceReaderScreen(
     // series is opened by local id and reads the tracked catalogue the series screen itself lists.
     // (Missing the second case left the chapter menu and prev/next permanently disabled there.)
     var siblings by remember(sourceSeries?.externalId, seriesId) { mutableStateOf<List<NavChapter>>(emptyList()) }
+    // Series name for the top bar's first line — carried in for a Browse read, fetched for a followed one.
+    var followedTitle by remember(seriesId) { mutableStateOf<String?>(null) }
     LaunchedEffect(sourceSeries?.externalId, seriesId, server?.id) {
         val s = server ?: return@LaunchedEffect
         siblings = runCatching {
@@ -85,6 +87,10 @@ fun SourceReaderScreen(
                 else -> emptyList()
             }
         }.getOrDefault(emptyList())
+        if (sourceSeries == null && seriesId != null) {
+            followedTitle = runCatching { api.seriesDetail(s.baseUrl, s.apiKey, seriesId) }.getOrNull()
+                ?.let { it.title.ifBlank { it.name } }?.takeIf { it.isNotBlank() }
+        }
     }
 
     LaunchedEffect(target.id, server?.id) {
@@ -125,9 +131,14 @@ fun SourceReaderScreen(
                 }
                 else -> {
                     val current = target
-                    val source = remember(current, s.baseUrl, st, nav) {
+                    val source = remember(current, s.baseUrl, st, nav, followedTitle) {
+                        val chapterLabel = current.name?.takeIf { it.isNotBlank() }
+                        val series = sourceSeries?.title?.takeIf { it.isNotBlank() } ?: followedTitle
                         ReaderSource(
-                            title = current.name?.takeIf { it.isNotBlank() } ?: sourceSeries?.title ?: "Reading",
+                            // Series on the top line, this chapter beneath; with no series name known
+                            // the chapter takes the top line rather than leaving it blank.
+                            title = series ?: chapterLabel ?: "Reading",
+                            subtitle = chapterLabel.takeIf { series != null },
                             pageCount = st.pageCount,
                             initialPage = when (current.edge) {
                                 ReaderEdge.FIRST -> 1

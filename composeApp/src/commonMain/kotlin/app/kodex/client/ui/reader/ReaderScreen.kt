@@ -51,6 +51,8 @@ fun ReaderScreen(session: SessionManager, api: KodexApi, bookId: String, onBack:
     var target by remember(bookId) { mutableStateOf(BookTarget(bookId)) }
     var state by remember(bookId) { mutableStateOf<ReaderState>(ReaderState.Loading) }
     var siblings by remember(bookId) { mutableStateOf<List<BookDto>>(emptyList()) }
+    // Series name for the top bar's first line; BookDto carries only the book's own title.
+    var seriesTitle by remember(bookId) { mutableStateOf<String?>(null) }
 
     LaunchedEffect(target.id, server?.id) {
         val s = server ?: return@LaunchedEffect
@@ -63,6 +65,12 @@ fun ReaderScreen(session: SessionManager, api: KodexApi, bookId: String, onBack:
     LaunchedEffect(loadedSeriesId, server?.id) {
         val s = server ?: return@LaunchedEffect
         siblings = if (loadedSeriesId != null) runCatching { api.seriesBooks(s.baseUrl, s.apiKey, loadedSeriesId) }.getOrDefault(emptyList()) else emptyList()
+        seriesTitle = if (loadedSeriesId != null) {
+            runCatching { api.seriesDetail(s.baseUrl, s.apiKey, loadedSeriesId) }.getOrNull()
+                ?.let { it.title.ifBlank { it.name } }?.takeIf { it.isNotBlank() }
+        } else {
+            null
+        }
     }
 
     // Swap the open book. Drop to Loading here (not only in the effect) so the reader never renders the
@@ -84,7 +92,7 @@ fun ReaderScreen(session: SessionManager, api: KodexApi, bookId: String, onBack:
                 book.pageCount <= 0 -> ReaderShell(onBack) { ReaderMessage("This book has no readable pages.") }
                 else -> {
                     val current = target
-                    val source = remember(current, s.baseUrl, siblings, book.pageCount) {
+                    val source = remember(current, s.baseUrl, siblings, seriesTitle, book.pageCount) {
                         val idx = siblings.indexOfFirst { it.id == book.id }
                         val nav = if (siblings.size > 1 && idx >= 0) {
                             fun ref(b: BookDto?) = b?.let { sib ->
@@ -96,8 +104,12 @@ fun ReaderScreen(session: SessionManager, api: KodexApi, bookId: String, onBack:
                                 chapters = siblings.map { sib -> ReaderChapterItem(chapterTitle(sib), sib.id == book.id, { openBook(sib, ReaderEdge.FIRST) }) },
                             )
                         } else null
+                        val bookLabel = book.title.ifBlank { book.numberDisplay ?: "Reading" }
                         ReaderSource(
-                            title = book.title.ifBlank { book.numberDisplay ?: "Reading" },
+                            // With the series known it takes the top line and the book becomes the
+                            // subtitle; standalone books keep their own title on the top line.
+                            title = seriesTitle ?: bookLabel,
+                            subtitle = bookLabel.takeIf { seriesTitle != null },
                             pageCount = book.pageCount,
                             initialPage = when (current.edge) {
                                 ReaderEdge.FIRST -> 1
