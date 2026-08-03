@@ -201,6 +201,10 @@ fun SourceFeedScreen(
     // Reload from scratch when the mode changes (feed / search submit / filter apply / retry).
     LaunchedEffect(source.id, feed, searching, searchToken, reloadKey) {
         items.clear(); page = 0; hasNext = true; error = null
+        // Reset the scroll as well. Emptying the list doesn't move the grid back: LazyGrid keeps its
+        // remembered first-visible index, and once the replacement page fills in far enough for that
+        // index to exist again it restores to it — dropping you partway down a feed you haven't seen.
+        gridState.scrollToItem(0)
         loadNext()
     }
 
