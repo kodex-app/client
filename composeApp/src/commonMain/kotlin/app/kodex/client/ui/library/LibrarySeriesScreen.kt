@@ -326,20 +326,20 @@ fun LibrarySeriesScreen(
 
     if (sheetOpen) {
         val sheetState = rememberModalBottomSheetState()
-        var sheetTab by remember { mutableStateOf(0) }
         ModalBottomSheet(onDismissRequest = { sheetOpen = false }, sheetState = sheetState) {
             val tabs = listOf("Sort", "Filter", "Group", "Display")
+            val sheetPager = androidx.compose.foundation.pager.rememberPagerState(0) { tabs.size }
             // Transparent container so the tab strip blends with the sheet (no mismatched white band/seam).
             TabRow(
-                selectedTabIndex = sheetTab,
+                selectedTabIndex = sheetPager.currentPage,
                 containerColor = androidx.compose.ui.graphics.Color.Transparent,
                 contentColor = MaterialTheme.colorScheme.primary,
                 divider = {},
             ) {
                 tabs.forEachIndexed { i, t ->
                     Tab(
-                        selected = sheetTab == i,
-                        onClick = { sheetTab = i },
+                        selected = sheetPager.currentPage == i,
+                        onClick = { scope.launch { sheetPager.animateScrollToPage(i) } },
                         text = { Text(t, style = MaterialTheme.typography.titleSmall) },
                         selectedContentColor = MaterialTheme.colorScheme.primary,
                         unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -347,10 +347,15 @@ fun LibrarySeriesScreen(
                 }
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
-            Column(
-                Modifier.fillMaxWidth().heightIn(min = 240.dp, max = 440.dp)
-                    .verticalScroll(rememberScrollState()).padding(top = 8.dp, bottom = 24.dp),
-            ) {
+            // Each page scrolls independently. The height band is on the pager rather than the content
+            // so the sheet keeps a steady height while swiping instead of resizing under the gesture.
+            androidx.compose.foundation.pager.HorizontalPager(
+                state = sheetPager,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 240.dp, max = 440.dp),
+            ) { sheetTab ->
+              Column(
+                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(top = 8.dp, bottom = 24.dp),
+              ) {
                 when (sheetTab) {
                     0 -> SortKey.entries.forEach { key ->
                         val selected = key == sortKey
@@ -423,6 +428,7 @@ fun LibrarySeriesScreen(
                         CheckRow("Folder name", displayBy == "name") { appSettings.setLibraryDisplayBy("name") }
                     }
                 }
+              }
             }
         }
     }

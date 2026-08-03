@@ -55,7 +55,9 @@ fun PluginsScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) {
     val snackbar = rememberSnackbar()
     val scope = rememberCoroutineScope()
 
-    var tab by remember { mutableStateOf(0) }
+    // Tab selection lives in the pager so the strip and the content can't disagree — swiping
+    // and tapping drive the same state.
+    val pagerState = androidx.compose.foundation.pager.rememberPagerState(0) { 2 }
     var installed by remember { mutableStateOf<List<InstalledPluginDto>?>(null) }
     var available by remember { mutableStateOf<List<AvailablePluginDto>?>(null) }
     var reload by remember { mutableIntStateOf(0) }
@@ -101,12 +103,17 @@ fun PluginsScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) {
         },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            TabRow(selectedTabIndex = tab) {
-                Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Installed") })
-                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Browse") })
+            TabRow(selectedTabIndex = pagerState.currentPage) {
+                listOf("Installed", "Browse").forEachIndexed { i, label ->
+                    Tab(
+                        selected = pagerState.currentPage == i,
+                        onClick = { scope.launch { pagerState.animateScrollToPage(i) } },
+                        text = { Text(label) },
+                    )
+                }
             }
-            Box(Modifier.fillMaxSize()) {
-                if (tab == 0) InstalledList(installed, onEnable = { id -> act("Enabled") { val s = server!!; api.pluginAction(s.baseUrl, s.apiKey, id, "enable") } },
+            androidx.compose.foundation.pager.HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+                if (page == 0) InstalledList(installed, onEnable = { id -> act("Enabled") { val s = server!!; api.pluginAction(s.baseUrl, s.apiKey, id, "enable") } },
                     onDisable = { id -> act("Disabled") { val s = server!!; api.pluginAction(s.baseUrl, s.apiKey, id, "disable") } },
                     onUpdate = { id -> act("Updating…") { val s = server!!; api.pluginAction(s.baseUrl, s.apiKey, id, "update") } },
                     onUninstall = { id -> act("Uninstalled") { val s = server!!; api.uninstallPlugin(s.baseUrl, s.apiKey, id) } })

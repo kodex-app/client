@@ -60,6 +60,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
+import kotlinx.coroutines.launch
 import app.kodex.client.network.BookDto
 import app.kodex.client.network.KodexApi
 import app.kodex.client.network.LabelDto
@@ -135,7 +136,11 @@ fun SearchScreen(
 ) {
     val server by session.activeServer.collectAsStateSafe()
     var query by remember { mutableStateOf("") }
-    var online by remember { mutableStateOf(false) } // false = library (local), true = sources (online)
+    // Library/Online is a two-page pager so the modes can be swiped between as well as tapped;
+    // `online` stays derived from it, keeping one source of truth for the search effect below.
+    val modePager = androidx.compose.foundation.pager.rememberPagerState(0) { 2 }
+    val modeScope = androidx.compose.runtime.rememberCoroutineScope()
+    val online = modePager.currentPage == 1 // false = library (local), true = sources (online)
     var facets by remember { mutableStateOf(Facets()) }
     var state by remember { mutableStateOf<SearchUiState>(SearchUiState.Idle) }
     var sheetOpen by remember { mutableStateOf(false) }
@@ -273,11 +278,11 @@ fun SearchScreen(
         Column(Modifier.fillMaxSize().padding(padding)) {
             // Local (library) vs Online (installed sources) mode.
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-                SegmentedButton(selected = !online, onClick = { online = false }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("Library") }
-                SegmentedButton(selected = online, onClick = { online = true }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("Online") }
+                SegmentedButton(selected = !online, onClick = { modeScope.launch { modePager.animateScrollToPage(0) } }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("Library") }
+                SegmentedButton(selected = online, onClick = { modeScope.launch { modePager.animateScrollToPage(1) } }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("Online") }
             }
-            Box(Modifier.fillMaxSize()) {
-                if (online) {
+            androidx.compose.foundation.pager.HorizontalPager(state = modePager, modifier = Modifier.fillMaxSize()) { page ->
+                if (page == 1) {
                     when (val os = onlineState) {
                         is OnlineState.Idle ->
                             if (sources.isEmpty()) Hint("No content sources installed. Install one from Browse → Extensions.")
