@@ -192,6 +192,17 @@ class KodexApi(private val client: HttpClient) {
             if (downloaded != null) parameter("downloaded", downloaded)
         }.body<PageResponse<SeriesDto>>().content
 
+    /**
+     * How many series a library holds. Asks for a single row and reads the page total, so it stays a
+     * cheap count rather than pulling the whole library down to size it.
+     */
+    suspend fun seriesCountInLibrary(baseUrl: String, apiKey: String, libraryId: String): Long =
+        client.get("$baseUrl/api/v1/series") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("libraryId", libraryId)
+            parameter("size", 1)
+        }.body<PageResponse<SeriesDto>>().totalElements
+
     /** Live per-group counts for the Library grouping tabs. [groupBy] is status | source | category. */
     suspend fun seriesGroups(baseUrl: String, apiKey: String, groupBy: String, libraryId: String? = null): List<SeriesGroupCount> =
         client.get("$baseUrl/api/v1/series/groups") {

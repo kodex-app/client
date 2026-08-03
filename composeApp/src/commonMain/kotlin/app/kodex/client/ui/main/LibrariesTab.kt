@@ -24,6 +24,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
+import app.kodex.client.data.loadLibraryNavPrefs
+import app.kodex.client.data.orderedBy
 import app.kodex.client.network.KodexApi
 import app.kodex.client.network.LibraryDto
 import app.kodex.client.ui.EmptyMessage
@@ -35,9 +37,15 @@ import app.kodex.client.ui.collectAsStateSafe
 fun LibrariesTab(session: SessionManager, api: KodexApi, onOpenLibrary: (LibraryDto) -> Unit) {
     val server by session.activeServer.collectAsStateSafe()
 
+    // Loaded together so the list is ordered and filtered from its first frame — fetching the prefs
+    // separately would show the server order for a beat and then reshuffle.
     LoadedContent(
         key = server?.id,
-        load = { val s = server!!; api.libraries(s.baseUrl, s.apiKey) },
+        load = {
+            val s = server!!
+            val prefs = loadLibraryNavPrefs(api, s.baseUrl, s.apiKey)
+            api.libraries(s.baseUrl, s.apiKey).orderedBy(prefs).filterNot { prefs.isHidden(it.id) }
+        },
     ) { libraries ->
         if (libraries.isEmpty()) {
             EmptyMessage("No libraries yet.\nCreate one on your server to see it here.")

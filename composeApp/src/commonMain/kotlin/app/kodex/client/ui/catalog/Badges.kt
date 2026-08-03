@@ -19,6 +19,7 @@ private val BlueBg = Color(0xFF1D4ED8)
 private val GreenBg = Color(0xFF15803D)
 private val PinkBg = Color(0xFFBE185D)
 private val AmberBg = Color(0xFFB45309)
+private val SlateBg = Color(0xFF475569)
 
 /** Container/content colours for a known badge label (kind / library type / adult), else a neutral pill. */
 @Composable
@@ -29,6 +30,9 @@ fun badgeStyle(label: String): Pair<Color, Color> = when (label.uppercase()) {
     "LOCAL" -> GreenBg to Color.White
     "18+", "ADULT", "NSFW" -> PinkBg to Color.White
     "NEW" -> AmberBg to Color.White
+    // Library visibility state — muted slate rather than a colour that competes with type/kind.
+    "HIDDEN", "NOT ON HOME" -> SlateBg to Color.White
+    "MIXED", "UNKNOWN" -> AmberBg to Color.White
     else -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
 }
 

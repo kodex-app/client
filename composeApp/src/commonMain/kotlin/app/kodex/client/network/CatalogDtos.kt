@@ -44,6 +44,8 @@ data class AuthorDto(
 data class BookDto(
     val id: String,
     val seriesId: String? = null,
+    /** Which library it belongs to — lets Home honour the user's "hide from home" preference. */
+    val libraryId: String? = null,
     val title: String = "",
     val summary: String = "",
     val number: Double = 0.0,
@@ -71,6 +73,8 @@ data class WebLinkDto(val label: String = "", val url: String = "")
 @Serializable
 data class SeriesDto(
     val id: String,
+    /** Which library it belongs to — lets Home honour the user's "hide from home" preference. */
+    val libraryId: String? = null,
     val name: String = "",
     val title: String = "",
     val bookCount: Int = 0,

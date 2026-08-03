@@ -84,6 +84,7 @@ fun HomeTab(
     androidx.compose.runtime.LaunchedEffect(server?.id, reloadKey) {
         val current = server ?: run { refreshing = false; return@LaunchedEffect }
         if (!refreshing) state = HomeUiState.Loading
+        val navPrefs = app.kodex.client.data.loadLibraryNavPrefs(api, current.baseUrl, current.apiKey)
         val (keepReading, recentSeries, updatedSeries, recentBooks) = coroutineScope {
             val kr = async { runCatching { api.keepReading(current.baseUrl, current.apiKey) } }
             val rs = async { runCatching { api.recentSeries(current.baseUrl, current.apiKey) } }
@@ -92,15 +93,21 @@ fun HomeTab(
             HomeResults(kr.await(), rs.await(), us.await(), rb.await())
         }
         val all = listOf(keepReading, recentSeries, updatedSeries, recentBooks)
+        // Drop anything from a library the user hid from Home. An item with no library id is kept:
+        // better to show something unattributed than to silently swallow it.
+        val hiddenHere = navPrefs.hiddenFromHome.toSet()
+        fun <T> List<T>.visible(libraryIdOf: (T) -> String?) =
+            if (hiddenHere.isEmpty()) this else filterNot { libraryIdOf(it) in hiddenHere }
+
         state = if (all.all { it.isFailure }) {
             HomeUiState.Error("Couldn't reach ${current.label}. Tap retry.")
         } else {
             HomeUiState.Ready(
                 HomeData(
-                    continueReading = keepReading.getOrDefault(emptyList()),
-                    recentSeries = recentSeries.getOrDefault(emptyList()),
-                    updatedSeries = updatedSeries.getOrDefault(emptyList()),
-                    recentBooks = recentBooks.getOrDefault(emptyList()),
+                    continueReading = keepReading.getOrDefault(emptyList()).visible { it.libraryId },
+                    recentSeries = recentSeries.getOrDefault(emptyList()).visible { it.libraryId },
+                    updatedSeries = updatedSeries.getOrDefault(emptyList()).visible { it.libraryId },
+                    recentBooks = recentBooks.getOrDefault(emptyList()).visible { it.libraryId },
                 ),
             )
         }
