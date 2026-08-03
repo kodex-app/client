@@ -252,7 +252,11 @@ fun EbookReaderScreen(session: SessionManager, api: KodexApi, source: EbookSourc
     }
 
     DisposableEffect(handle) {
-        onDispose { handle?.dispose() }
+        // Bind the value, not the state: `onDispose { handle?.dispose() }` would re-read the state at
+        // teardown, so the null→real transition would tear down the effect and dispose the handle it
+        // had just been given — releasing the token before the WebView ever requested reader.html.
+        val current = handle
+        onDispose { current?.dispose() }
     }
 
     // ── Events from the page ─────────────────────────────────────────────────────────────────────

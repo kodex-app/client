@@ -19,6 +19,7 @@ import app.kodex.client.platform.createHttpClient
 import app.kodex.client.platform.disposeWebEngine
 import app.kodex.client.platform.ensureWebEngine
 import app.kodex.client.ui.reader.ebook.EbookHost
+import app.kodex.client.ui.reader.ebook.EbookHostHandle
 import app.kodex.client.ui.reader.ebook.EbookHostSession
 import app.kodex.client.ui.reader.ebook.EbookOrigin
 import com.multiplatform.webview.web.WebView
@@ -113,22 +114,12 @@ fun main(args: Array<String>) {
     }
     println("Rendering EPUB $bookId")
 
-    val handle = runBlocking {
-        EbookHost.open(
-            EbookHostSession(
-                baseUrl = host,
-                apiKey = key,
-                origin = EbookOrigin.Book(bookId),
-                bootConfigJson = """
-                    {"format":"epub","initialLocator":null,"initialFraction":0,
-                     "prefs":{"flow":"paginated","theme":"light","fontFamily":"publisher","columns":"auto",
-                              "fontSize":100,"lineHeight":100,"margin":24,"textAlign":"auto","indent":null},
-                     "fonts":[]}
-                """.trimIndent().replace("\n", ""),
-                onEvent = { events.put(it) },
-            ),
-        )
-    }
+    val bootConfig = """
+        {"format":"epub","initialLocator":null,"initialFraction":0,
+         "prefs":{"flow":"paginated","theme":"light","fontFamily":"publisher","columns":"auto",
+                  "fontSize":100,"lineHeight":100,"margin":24,"textAlign":"auto","indent":null},
+         "fonts":[]}
+    """.trimIndent().replace("\n", "")
 
     var verdict: String? = null
     application {
@@ -139,6 +130,28 @@ fun main(args: Array<String>) {
         ) {
             var ready by remember { mutableStateOf(false) }
             var status by remember { mutableStateOf("starting engine…") }
+            // Opened into state from inside the composition, exactly as EbookReaderScreen does. That
+            // null -> real transition is what once disposed the host session the instant it was
+            // created (it re-keyed the DisposableEffect below, whose onDispose then read the *new*
+            // handle), leaving the WebView to 404 on reader.html. So the harness has to reproduce the
+            // lifecycle, not just the transport.
+            var handle by remember { mutableStateOf<EbookHostHandle?>(null) }
+
+            LaunchedEffect(Unit) {
+                handle = EbookHost.open(
+                    EbookHostSession(
+                        baseUrl = host,
+                        apiKey = key,
+                        origin = EbookOrigin.Book(bookId),
+                        bootConfigJson = bootConfig,
+                        onEvent = { events.put(it) },
+                    ),
+                )
+            }
+            DisposableEffect(handle) {
+                val current = handle
+                onDispose { current?.dispose() }
+            }
 
             LaunchedEffect(Unit) {
                 ensureWebEngine { st ->
@@ -152,8 +165,9 @@ fun main(args: Array<String>) {
                 }
             }
 
-            if (ready) {
-                val state = rememberWebViewState(handle.readerUrl)
+            val openHandle = handle
+            if (ready && openHandle != null) {
+                val state = rememberWebViewState(openHandle.readerUrl)
                 val navigator = rememberWebViewNavigator()
                 DisposableEffect(state) {
                     state.webSettings.isJavaScriptEnabled = true
@@ -180,14 +194,13 @@ fun main(args: Array<String>) {
                     // With the book up, exercise the other half of the bridge — the commands Kotlin
                     // sends down. A rendered-but-undrivable reader would otherwise look like a pass.
                     if (verdict?.startsWith("PASS") == true) {
-                        verdict = checkCommands(handle)
+                        verdict = checkCommands(openHandle)
                     }
 
                     // Report and decide the exit code HERE: JCEF's shutdown terminates the JVM itself,
                     // so nothing after `application {}` is guaranteed to run (and its 0 would mask a
                     // failure).
                     println(verdict)
-                    handle.dispose()
                     if (verdict?.startsWith("PASS") != true) kotlin.system.exitProcess(1)
                     disposeWebEngine()
                     exitApplication()
@@ -199,8 +212,7 @@ fun main(args: Array<String>) {
     }
 
     // Only reached if the window was closed before the reader reported in — the success path exits
-    // from inside the composition above.
-    handle.dispose()
+    // from inside the composition above. The host session is released by the DisposableEffect.
     if (verdict == null) {
         println("FAIL  window closed before the reader reported in")
         kotlin.system.exitProcess(1)

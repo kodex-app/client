@@ -87,6 +87,46 @@ fun main(args: Array<String>) = runBlocking {
     handle.dispose()
     check("released token 404s", "$base/reader.html") { it.isEmpty() }
 
+    // ── The other origin: a BOOK-kind source chapter, served as an ephemeral single-chapter EPUB ──
+    // Only runs when a novel source plugin is installed and has a reachable chapter.
+    val novel = runCatching { api.contentSources(host, key).firstOrNull { it.kind == "BOOK" } }.getOrNull()
+    if (novel == null) {
+        println("SKIP  source chapter — no BOOK-kind content source installed")
+    } else {
+        val chapterId = runCatching {
+            val series = api.sourceFeed(host, key, novel.id, feed = "popular", page = 1).items.firstOrNull()
+                ?: return@runCatching null
+            api.sourceChapters(host, key, novel.id, series.externalId).firstOrNull()?.externalId
+        }.getOrNull()
+
+        if (chapterId == null) {
+            println("SKIP  source chapter — ${novel.id} returned no browsable chapter")
+        } else {
+            val sourceHandle = EbookHost.open(
+                EbookHostSession(
+                    baseUrl = host,
+                    apiKey = key,
+                    origin = EbookOrigin.SourceChapter(novel.id, chapterId),
+                    bootConfigJson = """{"format":"epub"}""",
+                    onEvent = { },
+                ),
+            )
+            val sourceBase = sourceHandle.readerUrl.removeSuffix("/reader.html")
+            println("Using ${novel.id} chapter $chapterId")
+            check("source reader.html", "$sourceBase/reader.html") { "KDX_CONFIG" in it }
+            check("source manifest proxied", "$sourceBase/manifest") { "entries" in it }
+            val sourceManifest = runCatching { api.sourceChapterManifest(host, key, novel.id, chapterId) }.getOrNull()
+            val sourceEntry = sourceManifest?.entries?.firstOrNull { it.name.endsWith(".opf") || it.name.endsWith(".xhtml") }
+            if (sourceEntry != null) {
+                check("source resource proxied (${sourceEntry.name})", "$sourceBase/resource?href=${sourceEntry.name}") { it.isNotEmpty() }
+            } else {
+                println("FAIL  source manifest carried no readable entry")
+                fail++
+            }
+            sourceHandle.dispose()
+        }
+    }
+
     println("\n$pass passed, $fail failed")
     client.close()
     if (fail > 0) kotlin.system.exitProcess(1)
