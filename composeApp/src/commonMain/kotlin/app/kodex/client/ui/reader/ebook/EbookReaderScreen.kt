@@ -80,7 +80,6 @@ import app.kodex.client.ui.reader.disabled
 import app.kodex.client.ui.reader.readerBarColor
 import app.kodex.client.ui.reader.readerBarContentColor
 import app.kodex.client.ui.reader.readerBarRaisedColor
-import com.multiplatform.webview.web.LoadingState
 import com.multiplatform.webview.web.WebView
 import com.multiplatform.webview.web.rememberWebViewNavigator
 import com.multiplatform.webview.web.rememberWebViewState
@@ -379,8 +378,18 @@ fun EbookReaderScreen(session: SessionManager, api: KodexApi, source: EbookSourc
                 captureBackPresses = false,
                 navigator = navigator,
             )
-            if (webState.loadingState is LoadingState.Loading && !engineReady) {
-                CircularProgressIndicator(Modifier.align(Alignment.Center), color = MaterialTheme.colorScheme.primary)
+            // Keep this up until the page reports `ready`, not merely until the WebView finishes
+            // loading the document: the HTML lands in milliseconds, but foliate then fetches the
+            // manifest, pulls the spine and paginates. Tying it to loadingState left the reader
+            // showing a blank page for that whole stretch. Opaque, so the empty view never shows
+            // through.
+            if (!engineReady && failure == null) {
+                Box(
+                    Modifier.fillMaxSize().background(pageBg),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                }
             }
         } else if (failure == null) {
             // Desktop's first ebook pulls down Chromium; say so rather than spin indefinitely.

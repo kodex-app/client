@@ -91,6 +91,10 @@ function contentStyles(p) {
       --theme-bg-color: ${c.bg};
       --override-color: true;
     }
+    /* Hand the gesture to foliate when paginated. Without this Android's WebView claims the pan
+       itself and stops dispatching touchmove, so foliate's preventDefault() never gets a say and
+       swipe-to-turn silently does nothing. Scrolled flow keeps native vertical panning. */
+    html, body { touch-action: ${p.flow === 'paginated' ? 'none' : 'pan-y'}; }
     html, body { color: ${c.fg} !important; background: ${c.bg} !important; }
     body { font-size: ${p.fontSize}% !important; }
     body, p, li, blockquote, div { line-height: ${lh} !important; }
@@ -174,6 +178,9 @@ function applyPrefs(next) {
   // each observed-attribute set triggers a paginator re-render which re-samples the page background
   // with the new colours. Applying styles last would repaint against the previous theme.
   view.renderer.setStyles?.(contentStyles(next))
+  // Same reason as the CSS above, for the host-side element the paginator's own touch listeners are
+  // bound to (the iframe only covers the chapter's own document).
+  view.style.touchAction = next.flow === 'paginated' ? 'none' : 'pan-y'
   view.renderer.setAttribute('flow', next.flow)
   view.renderer.setAttribute('max-inline-size', '720px')
   view.renderer.setAttribute('gap', '6%')
@@ -224,14 +231,64 @@ function onRelocate(e) {
   })
 }
 
+// A tap toggles the native bars; a swipe belongs to foliate and must not. Distinguished by distance
+// and duration, because the two gestures start identically — reporting on touchstart (as this once
+// did) made every page swipe pop the toolbar open.
+const TAP_SLOP_PX = 12
+const TAP_MAX_MS = 400
+
 /**
  * Each chapter renders in its own same-origin iframe, so events inside it never reach this document.
- * Forward the ones the native chrome needs: a tap toggles the bars (as in the image reader) and the
- * arrow keys drive page turns for anyone on a keyboard.
+ * Bind the handlers the native chrome needs to every document: tap-to-toggle-bars, and the arrow
+ * keys for anyone on a keyboard.
  */
 function bindDocument(doc) {
   if (!doc || !doc.addEventListener) return
-  doc.addEventListener('pointerdown', () => post({ type: 'tap' }))
+
+  let sx = 0
+  let sy = 0
+  let st = 0
+  let touching = false
+
+  doc.addEventListener(
+    'touchstart',
+    (ev) => {
+      const t = ev.changedTouches && ev.changedTouches[0]
+      if (!t) return
+      touching = true
+      sx = t.screenX
+      sy = t.screenY
+      st = ev.timeStamp
+    },
+    { passive: true },
+  )
+  doc.addEventListener(
+    'touchend',
+    (ev) => {
+      const t = ev.changedTouches && ev.changedTouches[0]
+      if (!t) return
+      const moved = Math.hypot(t.screenX - sx, t.screenY - sy)
+      if (moved <= TAP_SLOP_PX && ev.timeStamp - st <= TAP_MAX_MS) post({ type: 'tap' })
+      // Leave `touching` set briefly so the synthetic click below doesn't double-fire.
+      setTimeout(() => {
+        touching = false
+      }, 500)
+    },
+    { passive: true },
+  )
+  doc.addEventListener(
+    'touchcancel',
+    () => {
+      touching = false
+    },
+    { passive: true },
+  )
+  // Mouse/desktop: a click is already a completed tap, and a drag doesn't produce one. Touch also
+  // synthesizes a click after touchend, which `touching` swallows so a tap doesn't toggle twice.
+  doc.addEventListener('click', () => {
+    if (!touching) post({ type: 'tap' })
+  })
+
   doc.addEventListener('keydown', (ev) => {
     if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight' || ev.key === ' ' || ev.key === 'Escape') {
       ev.preventDefault()
@@ -338,13 +395,9 @@ async function pumpCommands() {
   }
 }
 
-document.addEventListener('pointerdown', () => post({ type: 'tap' }))
-document.addEventListener('keydown', (ev) => {
-  if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight' || ev.key === ' ' || ev.key === 'Escape') {
-    ev.preventDefault()
-    post({ type: 'key', key: ev.key })
-  }
-})
+// The host document gets the same treatment — taps landing in the margins around the text column
+// arrive here rather than in the chapter's iframe.
+bindDocument(document)
 
 boot()
 pumpCommands()
