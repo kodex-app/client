@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 private val TealBg = Color(0xFF0F766E)
 private val IndigoBg = Color(0xFF4338CA)
 private val BlueBg = Color(0xFF1D4ED8)
+private val PurpleBg = Color(0xFF7E22CE)
 private val GreenBg = Color(0xFF15803D)
 private val PinkBg = Color(0xFFBE185D)
 private val AmberBg = Color(0xFFB45309)
@@ -26,8 +27,9 @@ private val SlateBg = Color(0xFF475569)
 fun badgeStyle(label: String): Pair<Color, Color> = when (label.uppercase()) {
     "COMIC" -> TealBg to Color.White
     "BOOK", "NOVEL", "EPUB", "PDF" -> IndigoBg to Color.White
-    "WEB" -> BlueBg to Color.White
-    "LOCAL" -> GreenBg to Color.White
+    // Library type, matching the web UI's Libraries page (WEB purple, LOCAL blue).
+    "WEB" -> PurpleBg to Color.White
+    "LOCAL" -> BlueBg to Color.White
     "18+", "ADULT", "NSFW" -> PinkBg to Color.White
     "NEW" -> AmberBg to Color.White
     // Library visibility state — muted slate rather than a colour that competes with type/kind.

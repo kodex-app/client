@@ -2,6 +2,7 @@ package app.kodex.client.ui.main
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,6 +17,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,6 +37,7 @@ import app.kodex.client.network.LibraryDto
 import app.kodex.client.ui.EmptyMessage
 import app.kodex.client.ui.LoadedContent
 import app.kodex.client.ui.collectAsStateSafe
+import app.kodex.client.ui.catalog.ColorBadge
 
 /** Lists the server's libraries; tapping one drills into its series grid. */
 @Composable
@@ -47,6 +54,16 @@ fun LibrariesTab(session: SessionManager, api: KodexApi, onOpenLibrary: (Library
             api.libraries(s.baseUrl, s.apiKey).orderedBy(prefs).filterNot { prefs.isHidden(it.id) }
         },
     ) { libraries ->
+        // Counts fill in after the list so the rows appear immediately; a failure just leaves that
+        // row without a subtitle rather than holding up the screen.
+        var counts by remember(libraries) { mutableStateOf<Map<String, Long>>(emptyMap()) }
+        LaunchedEffect(libraries, server?.id) {
+            val s = server ?: return@LaunchedEffect
+            counts = libraries.associate { lib ->
+                lib.id to runCatching { api.seriesCountInLibrary(s.baseUrl, s.apiKey, lib.id) }.getOrDefault(-1L)
+            }
+        }
+
         if (libraries.isEmpty()) {
             EmptyMessage("No libraries yet.\nCreate one on your server to see it here.")
         } else {
@@ -55,7 +72,7 @@ fun LibrariesTab(session: SessionManager, api: KodexApi, onOpenLibrary: (Library
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(libraries, key = { it.id }) { library ->
-                    LibraryRow(library, onClick = { onOpenLibrary(library) })
+                    LibraryRow(library, counts[library.id], onClick = { onOpenLibrary(library) })
                 }
             }
         }
@@ -63,7 +80,7 @@ fun LibrariesTab(session: SessionManager, api: KodexApi, onOpenLibrary: (Library
 }
 
 @Composable
-private fun LibraryRow(library: LibraryDto, onClick: () -> Unit) {
+private fun LibraryRow(library: LibraryDto, seriesCount: Long?, onClick: () -> Unit) {
     Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().padding(14.dp),
@@ -80,36 +97,38 @@ private fun LibraryRow(library: LibraryDto, onClick: () -> Unit) {
                 }
             }
             Spacer(Modifier.size(14.dp))
-            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
                 Text(
                     library.name,
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
                 )
+                // Left out entirely while the count is loading, so the row doesn't flash a placeholder.
+                seriesCountLabel(seriesCount)?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
             }
-            Chip(if (library.isWeb) "WEB" else "LOCAL")
-            library.mediaKind?.let {
+            Spacer(Modifier.size(8.dp))
+            // Colour-coded, sharing the app-wide badge palette — this row used to draw its own flat
+            // surfaceVariant chip, which is why WEB/LOCAL/COMIC all read as the same grey.
+            ColorBadge(if (library.isWeb) "WEB" else "LOCAL")
+            library.mediaKind?.takeIf { it.isNotBlank() }?.let {
                 Spacer(Modifier.size(6.dp))
-                Chip(it)
+                ColorBadge(it)
             }
         }
     }
 }
 
-@Composable
-private fun Chip(text: String) {
-    Surface(
-        shape = RoundedCornerShape(6.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-    ) {
-        Text(
-            text,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
+/** `null` while the count is still loading or if it failed — the caller then shows no subtitle. */
+private fun seriesCountLabel(count: Long?): String? = when {
+    count == null || count < 0 -> null
+    count == 1L -> "1 series"
+    else -> "$count series"
 }
