@@ -170,24 +170,28 @@ private fun SourceList(
             }
         }
         LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
-            fun sourceItems(list: List<SourceDescriptor>, prefix: String) {
+            fun sourceItems(list: List<SourceDescriptor>, prefix: String, showLanguage: Boolean = false) {
                 items(list, key = { "$prefix-${it.id}" }) { source ->
                     SourceRow(
                         source = source,
                         isFavorite = source.id in favorites,
+                        showLanguage = showLanguage,
                         onToggleFavorite = { sourcePrefs.toggleFavorite(source.id) },
                         onOpen = { feed -> onOpen(source, feed) },
                     )
                     Spacer(Modifier.size(10.dp))
                 }
             }
+            // Favourites and recents are pulled out of the language grouping below, so they're the
+            // only rows where the language isn't already stated by the section header — hence the
+            // badge here and not there, where it would just repeat the heading on every row.
             if (favoriteSources.isNotEmpty()) {
                 item(key = "hdr-fav") { SourceSectionHeader("Favorites") }
-                sourceItems(favoriteSources, "fav")
+                sourceItems(favoriteSources, "fav", showLanguage = true)
             }
             if (recentSources.isNotEmpty()) {
                 item(key = "hdr-recent") { SourceSectionHeader("Recently used") }
-                sourceItems(recentSources, "recent")
+                sourceItems(recentSources, "recent", showLanguage = true)
             }
             groups.forEach { (language, list) ->
                 item(key = "hdr-${language ?: "multi"}") { SourceSectionHeader(languageLabel(language)) }
@@ -209,7 +213,14 @@ private fun SourceSectionHeader(text: String) {
 }
 
 @Composable
-private fun SourceRow(source: SourceDescriptor, isFavorite: Boolean, onToggleFavorite: () -> Unit, onOpen: (String) -> Unit) {
+private fun SourceRow(
+    source: SourceDescriptor,
+    isFavorite: Boolean,
+    /** Set outside the language-grouped sections, where the header doesn't already say it. */
+    showLanguage: Boolean = false,
+    onToggleFavorite: () -> Unit,
+    onOpen: (String) -> Unit,
+) {
     Card(onClick = { onOpen("popular") }, modifier = Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
@@ -222,6 +233,12 @@ private fun SourceRow(source: SourceDescriptor, isFavorite: Boolean, onToggleFav
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (source.adultContent) { app.kodex.client.ui.catalog.ColorBadge("18+"); Spacer(Modifier.size(6.dp)) }
                     app.kodex.client.ui.catalog.ColorBadge(source.kind)
+                    if (showLanguage) {
+                        Spacer(Modifier.size(6.dp))
+                        // No language code collides with the coloured badge labels, so this lands on
+                        // ColorBadge's neutral pill and stays visually subordinate to the kind.
+                        app.kodex.client.ui.catalog.ColorBadge(languageBadge(source.language))
+                    }
                 }
             }
             IconButton(onClick = onToggleFavorite) {
@@ -287,6 +304,14 @@ private fun Chip(text: String) {
         )
     }
 }
+
+/**
+ * Badge-sized language label: the bare tag, uppercased. The full name is right for a section header
+ * but too wide for a pill sitting beside the kind badge — "PT" reads fine where "Portuguese" would
+ * push the row's title into an ellipsis on a narrow phone.
+ */
+private fun languageBadge(code: String?): String =
+    if (code.isNullOrBlank()) "Multi" else code.uppercase()
 
 /** Friendly name for a BCP-47 language tag; falls back to the uppercased code, or "Multi-language". */
 private fun languageLabel(code: String?): String {

@@ -33,6 +33,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Settings
@@ -155,7 +156,14 @@ private val eventJson = Json { ignoreUnknownKeys = true }
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EbookReaderScreen(session: SessionManager, api: KodexApi, source: EbookSource, onBack: () -> Unit) {
+fun EbookReaderScreen(
+    session: SessionManager,
+    api: KodexApi,
+    source: EbookSource,
+    onBack: () -> Unit,
+    /** Leave for the Home tab; null where the host has no tabs to return to. */
+    onGoHome: (() -> Unit)? = null,
+) {
     val server by session.activeServer.collectAsStateSafe()
     val scope = rememberCoroutineScope()
     val orientation = app.kodex.client.platform.rememberOrientationController()
@@ -175,7 +183,6 @@ fun EbookReaderScreen(session: SessionManager, api: KodexApi, source: EbookSourc
     var fraction by remember { mutableStateOf(source.initialFraction ?: 0.0) }
     var locator by remember { mutableStateOf(source.initialLocator) }
     var chapterLabel by remember { mutableStateOf("") }
-    var sectionCurrent by remember { mutableStateOf(0) }
     var sectionTotal by remember { mutableStateOf(1) }
     var atStart by remember { mutableStateOf(false) }
     var atEnd by remember { mutableStateOf(false) }
@@ -284,7 +291,6 @@ fun EbookReaderScreen(session: SessionManager, api: KodexApi, source: EbookSourc
                     fraction = obj["fraction"]?.jsonPrimitive?.doubleOrNull ?: 0.0
                     locator = obj["cfi"]?.jsonPrimitive?.contentOrNullSafe()
                     chapterLabel = obj["chapter"]?.jsonPrimitive?.content.orEmpty()
-                    sectionCurrent = obj["sectionCurrent"]?.jsonPrimitive?.intOrNull ?: 0
                     sectionTotal = obj["sectionTotal"]?.jsonPrimitive?.intOrNull ?: sectionTotal
                     atStart = obj["atStart"]?.jsonPrimitive?.booleanOrNull ?: false
                     atEnd = obj["atEnd"]?.jsonPrimitive?.booleanOrNull ?: false
@@ -467,16 +473,21 @@ fun EbookReaderScreen(session: SessionManager, api: KodexApi, source: EbookSourc
                 chapterLabel = chapterLabel,
                 percent = ((scrub ?: (fraction * 100).toFloat())).roundToInt(),
                 sliderValue = scrub ?: (fraction * 100).toFloat(),
-                canPrevSection = sectionCurrent > 0,
-                canNextSection = sectionCurrent < sectionTotal - 1,
+                // Skip buttons move between *books/chapters of the series*, exactly as the image
+                // reader's do. They used to jump spine sections instead, which read as the same
+                // control doing two different things — and was dead weight for a source chapter,
+                // whose ephemeral EPUB has only ever one section. Jumping within a book is what the
+                // contents sheet is for.
+                canPrevChapter = source.nav?.prev != null,
+                canNextChapter = source.nav?.next != null,
                 hasChapters = !source.nav?.chapters.isNullOrEmpty(),
                 hasToc = toc.isNotEmpty(),
                 webEnabled = source.webUrl != null,
                 orientation = orientation.orientation,
                 onPrevPage = { goPrev() },
                 onNextPage = { goNext() },
-                onPrevSection = { call(sectionCommand(sectionCurrent - 1, sectionTotal)) },
-                onNextSection = { call(sectionCommand(sectionCurrent + 1, sectionTotal)) },
+                onPrevChapter = { source.nav?.prev?.open(ReaderEdge.FIRST) },
+                onNextChapter = { source.nav?.next?.open(ReaderEdge.FIRST) },
                 onScrub = { scrub = it },
                 onScrubEnd = {
                     val target = (scrub ?: it) / 100f
@@ -488,6 +499,7 @@ fun EbookReaderScreen(session: SessionManager, api: KodexApi, source: EbookSourc
                 onOpenWeb = { source.webUrl?.let(openUrl) },
                 onCycleOrientation = { orientation.cycle() },
                 onOpenSettings = { settingsOpen = true },
+                onGoHome = onGoHome,
             )
         }
 
@@ -630,16 +642,16 @@ private fun EbookBottomBar(
     chapterLabel: String,
     percent: Int,
     sliderValue: Float,
-    canPrevSection: Boolean,
-    canNextSection: Boolean,
+    canPrevChapter: Boolean,
+    canNextChapter: Boolean,
     hasChapters: Boolean,
     hasToc: Boolean,
     webEnabled: Boolean,
     orientation: app.kodex.client.platform.ScreenOrientation,
     onPrevPage: () -> Unit,
     onNextPage: () -> Unit,
-    onPrevSection: () -> Unit,
-    onNextSection: () -> Unit,
+    onPrevChapter: () -> Unit,
+    onNextChapter: () -> Unit,
     onScrub: (Float) -> Unit,
     onScrubEnd: (Float) -> Unit,
     onOpenToc: () -> Unit,
@@ -647,6 +659,7 @@ private fun EbookBottomBar(
     onOpenWeb: () -> Unit,
     onCycleOrientation: () -> Unit,
     onOpenSettings: () -> Unit,
+    onGoHome: (() -> Unit)?,
 ) {
     val content = MaterialTheme.colorScheme.readerBarContentColor
     val raised = MaterialTheme.colorScheme.readerBarRaisedColor
@@ -668,12 +681,12 @@ private fun EbookBottomBar(
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp),
         )
-        // Seek row: skip-section buttons at the ends, page turns just inside them, scrubber between.
+        // Seek row: skip-chapter buttons at the ends, page turns just inside them, scrubber between.
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            FilledIconButton(onClick = onPrevSection, enabled = canPrevSection, colors = buttonColors) {
+            FilledIconButton(onClick = onPrevChapter, enabled = canPrevChapter, colors = buttonColors) {
                 Icon(app.kodex.client.ui.icons.SkipPreviousIcon, "Previous chapter")
             }
             IconButton(onClick = onPrevPage) { Icon(Icons.Filled.KeyboardArrowLeft, "Previous page", tint = content) }
@@ -685,7 +698,7 @@ private fun EbookBottomBar(
                 modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
             )
             IconButton(onClick = onNextPage) { Icon(Icons.Filled.KeyboardArrowRight, "Next page", tint = content) }
-            FilledIconButton(onClick = onNextSection, enabled = canNextSection, colors = buttonColors) {
+            FilledIconButton(onClick = onNextChapter, enabled = canNextChapter, colors = buttonColors) {
                 Icon(app.kodex.client.ui.icons.SkipNextIcon, "Next chapter")
             }
         }
@@ -695,8 +708,11 @@ private fun EbookBottomBar(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ToolbarButton(Icons.AutoMirrored.Filled.List, "Contents", enabled = hasToc, onClick = onOpenToc)
-            ToolbarButton(app.kodex.client.ui.icons.LabelIcon, "Chapters", enabled = hasChapters, onClick = onOpenChapters)
+            // "Book contents" = this file's own TOC; "Chapters" = the other books/chapters of the
+            // series. The list icon means the latter in the image reader too, so it stays put here.
+            onGoHome?.let { home -> ToolbarButton(Icons.Filled.Home, "Home", onClick = home) }
+            ToolbarButton(app.kodex.client.ui.icons.TocIcon, "Book contents", enabled = hasToc, onClick = onOpenToc)
+            ToolbarButton(Icons.AutoMirrored.Filled.List, "Chapters", enabled = hasChapters, onClick = onOpenChapters)
             ToolbarButton(app.kodex.client.ui.icons.OpenInWebIcon, "Open in web", enabled = webEnabled, onClick = onOpenWeb)
             ToolbarButton(
                 app.kodex.client.ui.icons.OrientationIcon,
@@ -714,7 +730,7 @@ private fun EbookBottomBar(
 private fun TocSheet(items: List<TocEntry>, current: String, onSelect: (String) -> Unit) {
     Column(Modifier.fillMaxWidth().heightIn(max = 480.dp).padding(bottom = 24.dp)) {
         Text(
-            "Contents",
+            "Book contents",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 8.dp),
@@ -970,12 +986,6 @@ private fun hrefCommand(href: String): String =
         put("href", href)
     }.toString()
 
-private fun sectionCommand(index: Int, total: Int): String =
-    buildJsonObject {
-        put("cmd", "section")
-        put("index", index)
-        put("total", total)
-    }.toString()
 
 private fun JsonPrimitive.contentOrNullSafe(): String? = if (this is kotlinx.serialization.json.JsonNull) null else content
 

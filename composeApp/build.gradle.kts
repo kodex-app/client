@@ -143,8 +143,13 @@ android {
 // Temporary: run the real client against a live server (see VerifyApi.kt). Reads host/key from
 // kodex/.env.test so no secret lands in source or build config.
 fun JavaExec.liveServerArgs() {
-    val env = rootProject.file("../kodex/.env.test")
-    if (env.exists()) {
+    // Workspace-root test.env; kodex/.env.test is the pre-move location, kept as a fallback so an
+    // older checkout still runs. Not fatal when absent — this runs at configuration time, so
+    // throwing here would break every build, not just the verify tasks.
+    val env = listOf("../test.env", "../kodex/.env.test")
+        .map { rootProject.file(it) }
+        .firstOrNull { it.exists() }
+    if (env != null) {
         val props = env.readLines().mapNotNull {
             val i = it.indexOf('=')
             if (i > 0) it.substring(0, i).trim() to it.substring(i + 1).trim() else null

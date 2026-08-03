@@ -196,6 +196,29 @@ val PauseIcon: ImageVector = materialIcon(name = "Filled.Pause") {
     }
 }
 
+/**
+ * Material "toc" glyph — the ebook reader's *book contents* action. Deliberately not the plain list
+ * icon: that one means "chapters in this series" in both readers, and the two were colliding.
+ */
+val TocIcon: ImageVector = materialIcon(name = "Filled.Toc") {
+    // Three long rules, each with a short dash beside it — the conventional contents mark.
+    materialPath { tocBar(3f, 17f, 7f) }
+    materialPath { tocBar(19f, 21f, 7f) }
+    materialPath { tocBar(3f, 17f, 11f) }
+    materialPath { tocBar(19f, 21f, 11f) }
+    materialPath { tocBar(3f, 17f, 15f) }
+    materialPath { tocBar(19f, 21f, 15f) }
+}
+
+/** One filled bar of [TocIcon], from [left] to [right] at vertical offset [top] (2dp tall). */
+private fun androidx.compose.ui.graphics.vector.PathBuilder.tocBar(left: Float, right: Float, top: Float) {
+    moveTo(left, top)
+    horizontalLineTo(right)
+    verticalLineTo(top + 2f)
+    horizontalLineTo(left)
+    close()
+}
+
 /** Material "remove" glyph — the minus half of the ebook reader's steppers (not in icons-core). */
 val MinusIcon: ImageVector = materialIcon(name = "Filled.Remove") {
     materialPath {

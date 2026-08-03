@@ -60,6 +60,14 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
     val openSeries: (String) -> Unit = { backStack.add(DetailRoute.SeriesDetail(it)) }
     val openBook: (String) -> Unit = { backStack.add(DetailRoute.BookDetail(it)) }
 
+    // Straight back to Home from anywhere. The readers are full-screen and hide the bottom nav, so
+    // without this the only way out is popping the stack one screen at a time.
+    val goHome: () -> Unit = {
+        backStack.clear()
+        searchOpen = false
+        tab = BottomTab.Home
+    }
+
     // System back navigates within the app: close search → pop a detail screen → return to Home tab.
     // Disabled only on the Home tab with nothing open, so back there exits the app (expected).
     AppBackHandler(enabled = searchOpen || backStack.isNotEmpty() || tab != BottomTab.Home) {
@@ -105,6 +113,7 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
             onOpenBrowseReaderIncognito = { source, chapterId, chapterName ->
                 backStack.add(DetailRoute.SourceReader(source.providerId, chapterId, null, chapterName, source, incognito = true))
             },
+            onGoHome = goHome,
             onOpenMigrate = { seriesId, providerId, sourceSeriesId, title ->
                 backStack.add(DetailRoute.Migrate(seriesId, providerId, sourceSeriesId, title))
             },

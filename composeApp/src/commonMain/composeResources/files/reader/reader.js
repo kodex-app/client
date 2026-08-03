@@ -357,12 +357,6 @@ async function dispatch(c) {
       return view.goTo && view.goTo(c.href)
     case 'prefs':
       return applyPrefs(c.prefs)
-    case 'section': {
-      // Jump to the start of another spine section, clamped to the book's sections.
-      if (!view.renderer || !view.renderer.goTo) return
-      const target = clamp(c.index, 0, (c.total || 1) - 1)
-      return view.renderer.goTo({ index: target, anchor: 0 })
-    }
     default:
       return
   }

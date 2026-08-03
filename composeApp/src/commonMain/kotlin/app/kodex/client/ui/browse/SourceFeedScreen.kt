@@ -111,6 +111,7 @@ fun SourceFeedScreen(
     val server by session.activeServer.collectAsStateSafe()
     val scope = rememberCoroutineScope()
     val snackbar = rememberSnackbar()
+    val openUrl = app.kodex.client.platform.rememberUrlOpener()
 
     var feed by remember(source.id) { mutableStateOf(initialFeed) }
     var searchOpen by remember(source.id) { mutableStateOf(false) }
@@ -287,6 +288,15 @@ fun SourceFeedScreen(
                             }
                         }
                     } else {
+                        // Open the source's own site. Only offered when the plugin declares one —
+                        // `website` is optional in the SPI, so a blank value means "no homepage".
+                        source.website?.takeIf { it.isNotBlank() }?.let { site ->
+                            Tip("Source website") {
+                                IconButton(onClick = { openUrl(site) }) {
+                                    Icon(app.kodex.client.ui.icons.OpenInWebIcon, contentDescription = "Source website")
+                                }
+                            }
+                        }
                         Tip("Search") {
                             IconButton(onClick = { searchOpen = true }) { Icon(Icons.Filled.Search, contentDescription = "Search") }
                         }

@@ -69,6 +69,7 @@ fun SourceReaderScreen(
     onBack: () -> Unit,
     sourceSeries: SourceSeriesContext? = null,
     incognito: Boolean = false,
+    onGoHome: (() -> Unit)? = null,
 ) {
     val server by session.activeServer.collectAsStateSafe()
     var target by remember(chapterId) { mutableStateOf(ChapterTarget(chapterId, chapterName)) }
@@ -195,7 +196,7 @@ fun SourceReaderScreen(
                             bookmarks = null,
                         )
                     }
-                    key(current.id) { EbookReaderScreen(session, api, ebook, onBack) }
+                    key(current.id) { EbookReaderScreen(session, api, ebook, onBack, onGoHome) }
                 }
 
                 st.pageCount <= 0 -> ReaderShell(onBack) {
@@ -243,7 +244,7 @@ fun SourceReaderScreen(
                         )
                     }
                     // The reader keeps its own page state, so a chapter swap has to remount it.
-                    key(current.id) { ImageReaderScreen(session, api, source, onBack) }
+                    key(current.id) { ImageReaderScreen(session, api, source, onBack, onGoHome) }
                 }
             }
         }

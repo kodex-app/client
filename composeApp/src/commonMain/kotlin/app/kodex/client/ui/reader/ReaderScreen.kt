@@ -62,7 +62,15 @@ private data class BookTarget(val id: String, val edge: ReaderEdge? = null)
  * the book in place so back returns to the series, not a chain of readers (matching the web).
  */
 @Composable
-fun ReaderScreen(session: SessionManager, api: KodexApi, bookId: String, onBack: () -> Unit, startPage: Int? = null, incognito: Boolean = false) {
+fun ReaderScreen(
+    session: SessionManager,
+    api: KodexApi,
+    bookId: String,
+    onBack: () -> Unit,
+    startPage: Int? = null,
+    incognito: Boolean = false,
+    onGoHome: (() -> Unit)? = null,
+) {
     val server by session.activeServer.collectAsStateSafe()
     var target by remember(bookId) { mutableStateOf(BookTarget(bookId)) }
     var state by remember(bookId) { mutableStateOf<ReaderState>(ReaderState.Loading) }
@@ -138,7 +146,7 @@ fun ReaderScreen(session: SessionManager, api: KodexApi, bookId: String, onBack:
                         onBookmarksChanged = { reloadBookmarks(s, book.id) },
                     )
                     // The reader keeps its own position state, so a book swap has to remount it.
-                    key(current.id) { EbookReaderScreen(session, api, source, onBack) }
+                    key(current.id) { EbookReaderScreen(session, api, source, onBack, onGoHome) }
                 }
 
                 book.pageCount <= 0 -> ReaderShell(onBack) { ReaderMessage("This book has no readable pages.") }
@@ -196,7 +204,7 @@ fun ReaderScreen(session: SessionManager, api: KodexApi, bookId: String, onBack:
                         )
                     }
                     // The reader keeps its own page state, so a book swap has to remount it.
-                    key(current.id) { ImageReaderScreen(session, api, source, onBack) }
+                    key(current.id) { ImageReaderScreen(session, api, source, onBack, onGoHome) }
                 }
             }
         }
