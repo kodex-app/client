@@ -1,7 +1,9 @@
 package app.kodex.client.ui.recents
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
@@ -11,6 +13,8 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -19,6 +23,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
 import app.kodex.client.network.HistoryEntryDto
 import app.kodex.client.network.KodexApi
@@ -68,23 +74,39 @@ fun UpdatesList(
     ) { paged.silentRefresh() }
 
     PagedList(paged, emptyText = "No updates yet.\nFollow a series in Browse to see new chapters here.") { items ->
-        groupedByDay(items, dayKeyOf = { isoDayKey(it.foundDate) }) { u ->
-            val open = {
-                when {
-                    u.bookId != null -> onOpenReader(u.bookId!!)
-                    u.providerId != null && u.chapterId != null ->
-                        onOpenSourceReader(u.providerId!!, u.chapterId!!, u.seriesId, u.chapterName)
-                    else -> Unit
-                }
-            }
-            MediaRow(
-                coverUrl = sourceCoverUrl(baseUrl, u.providerId ?: "", u.coverUrl),
-                apiKey = apiKey,
-                title = u.seriesName,
-                subtitle = u.chapterName ?: "New chapter",
+        val groups = groupByDayThenSeries(
+            items,
+            dayKeyOf = { isoDayKey(it.foundDate) },
+            // Followed series have an id; a series without one still groups by its name.
+            seriesKeyOf = { it.seriesId ?: it.seriesName },
+            labelOf = { it.seriesName },
+        )
+        groupedByDayAndSeries(
+            groups,
+            header = { group ->
+                val first = group.items.first()
+                MediaRow(
+                    coverUrl = sourceCoverUrl(baseUrl, first.providerId ?: "", first.coverUrl),
+                    apiKey = apiKey,
+                    title = group.label,
+                    subtitle = null,
+                    caption = if (group.items.size > 1) "${group.items.size} new chapters" else null,
+                    onClick = first.seriesId?.let { sid -> { onOpenSeries(sid) } },
+                    onCoverClick = first.seriesId?.let { sid -> { onOpenSeries(sid) } },
+                )
+            },
+        ) { u ->
+            ChapterSubRow(
+                title = u.chapterName ?: "New chapter",
                 caption = relativeTime(u.foundDate) + (if (u.bookId != null) " · downloaded" else ""),
-                onClick = open,
-                onCoverClick = u.seriesId?.let { sid -> { onOpenSeries(sid) } },
+                onClick = {
+                    when {
+                        u.bookId != null -> onOpenReader(u.bookId!!)
+                        u.providerId != null && u.chapterId != null ->
+                            onOpenSourceReader(u.providerId!!, u.chapterId!!, u.seriesId, u.chapterName)
+                        else -> Unit
+                    }
+                },
             )
         }
     }
@@ -143,75 +165,143 @@ fun HistoryList(
         }
 
         PagedList(paged, emptyText = "No reading history yet.") { items ->
-            groupedByDay(items, dayKeyOf = { isoDayKey(it.readDate) }) { h ->
-                HistoryRow(baseUrl, apiKey, h, onOpenReader, onOpenSourceReader, onOpenBrowseReader, onOpenSeries)
+            val groups = groupByDayThenSeries(
+                items,
+                dayKeyOf = { isoDayKey(it.readDate) },
+                // Library series first, then the source series a Browse read was attributed to.
+                seriesKeyOf = { it.seriesId ?: it.sourceSeriesId ?: it.seriesName },
+                labelOf = { it.seriesName.ifBlank { it.title.orEmpty() } },
+            )
+            groupedByDayAndSeries(
+                groups,
+                header = { group ->
+                    val first = group.items.first()
+                    MediaRow(
+                        coverUrl = historyCover(baseUrl, first),
+                        apiKey = apiKey,
+                        title = group.label,
+                        subtitle = null,
+                        caption = if (group.items.size > 1) "${group.items.size} chapters" else null,
+                        onClick = first.seriesId?.let { sid -> { onOpenSeries(sid) } },
+                        onCoverClick = first.seriesId?.let { sid -> { onOpenSeries(sid) } },
+                    )
+                },
+            ) { h ->
+                ChapterSubRow(
+                    title = h.title?.takeIf { it.isNotBlank() } ?: h.seriesName,
+                    caption = "${relativeTime(h.readDate)} · ${if (h.completed) "Finished" else "Page ${h.page}"}",
+                    onClick = { openHistoryEntry(h, onOpenReader, onOpenSourceReader, onOpenBrowseReader) },
+                )
             }
         }
     }
 }
 
-@Composable
-private fun HistoryRow(
-    baseUrl: String,
-    apiKey: String,
+/** Cover for a history entry: a local book's own cover, else its series', else the source's. */
+private fun historyCover(baseUrl: String, h: HistoryEntryDto): String = when {
+    h.isBook && h.bookId != null -> bookCoverUrl(baseUrl, h.bookId!!)
+    h.seriesId != null && h.coverUrl.isNullOrBlank() -> seriesCoverUrl(baseUrl, h.seriesId!!, null)
+    else -> sourceCoverUrl(baseUrl, h.providerId ?: "", h.coverUrl)
+}
+
+/** Re-opens whatever a history entry points at: a local book, a followed chapter, or a Browse read. */
+private fun openHistoryEntry(
     h: HistoryEntryDto,
     onOpenReader: (String) -> Unit,
     onOpenSourceReader: OpenSourceReader,
     onOpenBrowseReader: OpenBrowseReader,
-    onOpenSeries: (String) -> Unit,
 ) {
-    val cover = when {
-        h.isBook && h.bookId != null -> bookCoverUrl(baseUrl, h.bookId!!)
-        h.seriesId != null && h.coverUrl.isNullOrBlank() -> seriesCoverUrl(baseUrl, h.seriesId!!, null)
-        else -> sourceCoverUrl(baseUrl, h.providerId ?: "", h.coverUrl)
+    val provider = h.providerId
+    val chapter = h.chapterId
+    val sourceSeries = h.sourceSeriesId
+    when {
+        h.isBook && h.bookId != null -> onOpenReader(h.bookId!!)
+        provider == null || chapter == null -> Unit
+        // Read while browsing (no local series): re-open with the source series' identity so the
+        // reader can rebuild its chapter navigation from the source's live list.
+        h.seriesId == null && sourceSeries != null ->
+            onOpenBrowseReader(
+                SourceSeriesContext(provider, sourceSeries, h.seriesName.ifBlank { h.title.orEmpty() }, h.coverUrl),
+                chapter,
+                h.title,
+            )
+        else -> onOpenSourceReader(provider, chapter, h.seriesId, h.title)
     }
-    val open = {
-        val provider = h.providerId
-        val chapter = h.chapterId
-        val sourceSeries = h.sourceSeriesId
-        when {
-            h.isBook && h.bookId != null -> onOpenReader(h.bookId!!)
-            provider == null || chapter == null -> Unit
-            // Read while browsing (no local series): re-open with the source series' identity so the
-            // reader can rebuild its chapter navigation from the source's live list.
-            h.seriesId == null && sourceSeries != null ->
-                onOpenBrowseReader(
-                    SourceSeriesContext(provider, sourceSeries, h.seriesName.ifBlank { h.title.orEmpty() }, h.coverUrl),
-                    chapter,
-                    h.title,
-                )
-            else -> onOpenSourceReader(provider, chapter, h.seriesId, h.title)
+}
+
+/** One series' items within a single day, kept in feed order. */
+private class SeriesGroup<T>(val day: String, val label: String, val items: List<T>)
+
+/**
+ * Buckets a newest-first feed by day, then by series within each day. Both levels keep
+ * first-appearance order, so the feed still reads newest-first — series are only pulled together, not
+ * re-sorted. Grouping runs over the whole accumulated list, so a series split across a page boundary
+ * still lands in one group once the later page arrives.
+ */
+private fun <T> groupByDayThenSeries(
+    items: List<T>,
+    dayKeyOf: (T) -> String,
+    seriesKeyOf: (T) -> String,
+    labelOf: (T) -> String,
+): List<SeriesGroup<T>> {
+    val byDay = LinkedHashMap<String, LinkedHashMap<String, MutableList<T>>>()
+    for (item in items) {
+        byDay.getOrPut(dayKeyOf(item)) { LinkedHashMap() }
+            .getOrPut(seriesKeyOf(item)) { mutableListOf() }
+            .add(item)
+    }
+    return buildList {
+        byDay.forEach { (day, series) ->
+            series.values.forEach { group -> add(SeriesGroup(day, labelOf(group.first()), group)) }
         }
     }
-    val progress = if (h.completed) "Finished" else "Page ${h.page}"
-    MediaRow(
-        coverUrl = cover,
-        apiKey = apiKey,
-        title = h.seriesName.ifBlank { h.title ?: "" },
-        subtitle = h.title ?: "",
-        caption = "${relativeTime(h.readDate)} · $progress",
-        onClick = open,
-        onCoverClick = h.seriesId?.let { sid -> { onOpenSeries(sid) } },
-    )
 }
 
 /**
- * Emits [items] into a LazyColumn as day-grouped sections: a sticky [DayHeader] whenever the day key
- * changes, followed by [row] for each item. Items are assumed already sorted newest-first.
+ * Emits day → series sections: a sticky [DayHeader] when the day changes, then a [header] row per
+ * series carrying the cover, then a compact [row] per item beneath it.
  */
 @OptIn(ExperimentalFoundationApi::class)
-private inline fun <T> LazyListScope.groupedByDay(
-    items: List<T>,
-    crossinline dayKeyOf: (T) -> String,
+private inline fun <T> LazyListScope.groupedByDayAndSeries(
+    groups: List<SeriesGroup<T>>,
+    crossinline header: @Composable (SeriesGroup<T>) -> Unit,
     crossinline row: @Composable (T) -> Unit,
 ) {
     var lastDay: String? = null
-    items.forEachIndexed { index, item ->
-        val day = dayKeyOf(item)
-        if (day != lastDay) {
-            lastDay = day
-            stickyHeader(key = "day-$day-$index") { DayHeader(dayLabel(day), Modifier.fillMaxWidth()) }
+    groups.forEachIndexed { gi, group ->
+        if (group.day != lastDay) {
+            lastDay = group.day
+            stickyHeader(key = "day-${group.day}-$gi") { DayHeader(dayLabel(group.day), Modifier.fillMaxWidth()) }
         }
-        item(key = "row-$index") { row(item) }
+        item(key = "series-$gi") { header(group) }
+        group.items.forEachIndexed { i, item -> item(key = "row-$gi-$i") { row(item) } }
+    }
+}
+
+/**
+ * A chapter under a series header. Text-only and indented to line up with the header's title column,
+ * so the series cover isn't repeated once per chapter.
+ */
+@Composable
+private fun ChapterSubRow(title: String, caption: String?, onClick: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().clickable(onClick = onClick)
+            .padding(start = 72.dp, end = 16.dp, top = 6.dp, bottom = 6.dp),
+    ) {
+        Text(
+            title,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (!caption.isNullOrBlank()) {
+            Text(
+                caption,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }

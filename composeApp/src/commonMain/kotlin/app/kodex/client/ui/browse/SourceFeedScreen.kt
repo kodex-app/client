@@ -16,7 +16,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -59,6 +58,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.toMutableStateList
@@ -128,7 +128,14 @@ fun SourceFeedScreen(
     var loading by remember(source.id) { mutableStateOf(false) }
     var error by remember(source.id) { mutableStateOf<String?>(null) }
     var reloadKey by remember(source.id) { mutableIntStateOf(0) }
-    val gridState = rememberLazyGridState()
+    // A fresh scroll state per mode, so switching feed (or submitting a search) starts at the top
+    // instead of restoring the previous feed's offset. Keyed rather than scrolled imperatively:
+    // the grid only exists while the list is non-empty, so a scrollToItem() during a reload would
+    // suspend waiting for a layout that never happens and never hand back control.
+    val gridState = rememberSaveable(
+        source.id, feed, searching, searchToken,
+        saver = androidx.compose.foundation.lazy.grid.LazyGridState.Saver,
+    ) { androidx.compose.foundation.lazy.grid.LazyGridState() }
 
     // Multi-select (long-press) + "Add to libraries". Selection is keyed by the item's external id.
     val selection = rememberSelection<String>()
@@ -201,10 +208,6 @@ fun SourceFeedScreen(
     // Reload from scratch when the mode changes (feed / search submit / filter apply / retry).
     LaunchedEffect(source.id, feed, searching, searchToken, reloadKey) {
         items.clear(); page = 0; hasNext = true; error = null
-        // Reset the scroll as well. Emptying the list doesn't move the grid back: LazyGrid keeps its
-        // remembered first-visible index, and once the replacement page fills in far enough for that
-        // index to exist again it restores to it — dropping you partway down a feed you haven't seen.
-        gridState.scrollToItem(0)
         loadNext()
     }
 
