@@ -33,7 +33,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Settings
@@ -161,8 +161,8 @@ fun EbookReaderScreen(
     api: KodexApi,
     source: EbookSource,
     onBack: () -> Unit,
-    /** Leave for the Home tab; null where the host has no tabs to return to. */
-    onGoHome: (() -> Unit)? = null,
+    /** Open this book's series; null when there's no series to open (or no host to navigate). */
+    onOpenSeries: (() -> Unit)? = null,
 ) {
     val server by session.activeServer.collectAsStateSafe()
     val scope = rememberCoroutineScope()
@@ -499,7 +499,7 @@ fun EbookReaderScreen(
                 onOpenWeb = { source.webUrl?.let(openUrl) },
                 onCycleOrientation = { orientation.cycle() },
                 onOpenSettings = { settingsOpen = true },
-                onGoHome = onGoHome,
+                onOpenSeries = onOpenSeries,
             )
         }
 
@@ -659,7 +659,7 @@ private fun EbookBottomBar(
     onOpenWeb: () -> Unit,
     onCycleOrientation: () -> Unit,
     onOpenSettings: () -> Unit,
-    onGoHome: (() -> Unit)?,
+    onOpenSeries: (() -> Unit)?,
 ) {
     val content = MaterialTheme.colorScheme.readerBarContentColor
     val raised = MaterialTheme.colorScheme.readerBarRaisedColor
@@ -710,8 +710,8 @@ private fun EbookBottomBar(
         ) {
             // "Book contents" = this file's own TOC; "Chapters" = the other books/chapters of the
             // series. The list icon means the latter in the image reader too, so it stays put here.
-            onGoHome?.let { home -> ToolbarButton(Icons.Filled.Home, "Home", onClick = home) }
-            ToolbarButton(app.kodex.client.ui.icons.TocIcon, "Book contents", enabled = hasToc, onClick = onOpenToc)
+            onOpenSeries?.let { open -> ToolbarButton(Icons.Filled.Info, "Series details", onClick = open) }
+            ToolbarButton(app.kodex.client.ui.icons.BookContentsIcon, "Book contents", enabled = hasToc, onClick = onOpenToc)
             ToolbarButton(Icons.AutoMirrored.Filled.List, "Chapters", enabled = hasChapters, onClick = onOpenChapters)
             ToolbarButton(app.kodex.client.ui.icons.OpenInWebIcon, "Open in web", enabled = webEnabled, onClick = onOpenWeb)
             ToolbarButton(

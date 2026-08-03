@@ -98,8 +98,8 @@ fun DetailHost(
     onOpenSourceReaderIncognito: OpenSourceReader,
     onOpenBrowseReaderIncognito: OpenBrowseReader,
     onOpenMigrate: (seriesId: String, providerId: String, sourceSeriesId: String, title: String) -> Unit,
-    /** Leave the whole detail stack and land on the Home tab (the readers hide the bottom nav). */
-    onGoHome: () -> Unit,
+    /** Swap the open reader for the series it belongs to (local series detail, or a source series). */
+    onOpenSeriesFromReader: (DetailRoute) -> Unit,
     onBack: () -> Unit,
 ) {
     when (route) {
@@ -133,12 +133,12 @@ fun DetailHost(
             BookDetailScreen(session, api, route.bookId, onBack, onRead = onOpenReader, onOpenReaderAt = onOpenReaderAt)
 
         is DetailRoute.Reader ->
-            ReaderScreen(session, api, route.bookId, onBack, route.startPage, route.incognito, onGoHome)
+            ReaderScreen(session, api, route.bookId, onBack, route.startPage, route.incognito, onOpenSeriesFromReader)
 
         is DetailRoute.SourceReader ->
             SourceReaderScreen(
                 session, api, route.providerId, route.chapterId, route.seriesId, route.chapterName,
-                onBack, route.sourceSeries, route.incognito, onGoHome,
+                onBack, route.sourceSeries, route.incognito, onOpenSeriesFromReader,
             )
 
         is DetailRoute.Downloads ->

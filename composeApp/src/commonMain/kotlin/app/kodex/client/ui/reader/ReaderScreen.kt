@@ -69,7 +69,7 @@ fun ReaderScreen(
     onBack: () -> Unit,
     startPage: Int? = null,
     incognito: Boolean = false,
-    onGoHome: (() -> Unit)? = null,
+    onOpenSeriesFromReader: ((app.kodex.client.ui.main.DetailRoute) -> Unit)? = null,
 ) {
     val server by session.activeServer.collectAsStateSafe()
     var target by remember(bookId) { mutableStateOf(BookTarget(bookId)) }
@@ -126,6 +126,10 @@ fun ReaderScreen(
             val s = server
             val book = st.book
             val ebookFormat = foliateFormat(book.mediaType)
+            // "Series details" in the reader toolbar. Standalone books have no series to open.
+            val openSeries: (() -> Unit)? = book.seriesId?.let { sid ->
+                onOpenSeriesFromReader?.let { open -> { open(app.kodex.client.ui.main.DetailRoute.SeriesDetail(sid)) } }
+            }
             when {
                 s == null -> ReaderShell(onBack) { ReaderMessage("Not signed in.") }
                 ebookFormat != null -> {
@@ -146,7 +150,7 @@ fun ReaderScreen(
                         onBookmarksChanged = { reloadBookmarks(s, book.id) },
                     )
                     // The reader keeps its own position state, so a book swap has to remount it.
-                    key(current.id) { EbookReaderScreen(session, api, source, onBack, onGoHome) }
+                    key(current.id) { EbookReaderScreen(session, api, source, onBack, openSeries) }
                 }
 
                 book.pageCount <= 0 -> ReaderShell(onBack) { ReaderMessage("This book has no readable pages.") }
@@ -204,7 +208,7 @@ fun ReaderScreen(
                         )
                     }
                     // The reader keeps its own page state, so a book swap has to remount it.
-                    key(current.id) { ImageReaderScreen(session, api, source, onBack, onGoHome) }
+                    key(current.id) { ImageReaderScreen(session, api, source, onBack, openSeries) }
                 }
             }
         }

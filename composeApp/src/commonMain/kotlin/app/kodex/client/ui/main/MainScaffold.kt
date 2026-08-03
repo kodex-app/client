@@ -60,12 +60,22 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
     val openSeries: (String) -> Unit = { backStack.add(DetailRoute.SeriesDetail(it)) }
     val openBook: (String) -> Unit = { backStack.add(DetailRoute.BookDetail(it)) }
 
-    // Straight back to Home from anywhere. The readers are full-screen and hide the bottom nav, so
-    // without this the only way out is popping the stack one screen at a time.
-    val goHome: () -> Unit = {
-        backStack.clear()
-        searchOpen = false
-        tab = BottomTab.Home
+    /**
+     * Swap the open reader for the series it belongs to. Replaces rather than pushes, so the stack
+     * doesn't grow a second copy of the series you came from; and when that series is already the
+     * entry underneath, popping the reader is enough.
+     */
+    val openSeriesFromReader: (DetailRoute) -> Unit = { route ->
+        backStack.removeLastOrNull()
+        val prev = backStack.lastOrNull()
+        val alreadyOpen = when {
+            prev is DetailRoute.SeriesDetail && route is DetailRoute.SeriesDetail ->
+                prev.seriesId == route.seriesId
+            prev is DetailRoute.SourceSeries && route is DetailRoute.SourceSeries ->
+                prev.source.id == route.source.id && prev.seed.externalId == route.seed.externalId
+            else -> false
+        }
+        if (!alreadyOpen) backStack.add(route)
     }
 
     // System back navigates within the app: close search → pop a detail screen → return to Home tab.
@@ -113,7 +123,7 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
             onOpenBrowseReaderIncognito = { source, chapterId, chapterName ->
                 backStack.add(DetailRoute.SourceReader(source.providerId, chapterId, null, chapterName, source, incognito = true))
             },
-            onGoHome = goHome,
+            onOpenSeriesFromReader = openSeriesFromReader,
             onOpenMigrate = { seriesId, providerId, sourceSeriesId, title ->
                 backStack.add(DetailRoute.Migrate(seriesId, providerId, sourceSeriesId, title))
             },

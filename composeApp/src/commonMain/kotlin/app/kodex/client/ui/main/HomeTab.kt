@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -64,6 +65,7 @@ private sealed interface HomeUiState {
  * updated series, Recently added books. Rows load independently; only a full failure surfaces an
  * error (with retry), matching the web's per-query behaviour.
  */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun HomeTab(
     session: SessionManager,
@@ -75,10 +77,13 @@ fun HomeTab(
     val server by session.activeServer.collectAsStateSafe()
     var reloadKey by remember { mutableStateOf(0) }
     var state by remember { mutableStateOf<HomeUiState>(HomeUiState.Loading) }
+    // Distinct from the cold-load spinner: a pull keeps the current rails on screen and shows the
+    // indicator instead of blanking Home back to a spinner.
+    var refreshing by remember { mutableStateOf(false) }
 
     androidx.compose.runtime.LaunchedEffect(server?.id, reloadKey) {
-        val current = server ?: return@LaunchedEffect
-        state = HomeUiState.Loading
+        val current = server ?: run { refreshing = false; return@LaunchedEffect }
+        if (!refreshing) state = HomeUiState.Loading
         val (keepReading, recentSeries, updatedSeries, recentBooks) = coroutineScope {
             val kr = async { runCatching { api.keepReading(current.baseUrl, current.apiKey) } }
             val rs = async { runCatching { api.recentSeries(current.baseUrl, current.apiKey) } }
@@ -99,9 +104,15 @@ fun HomeTab(
                 ),
             )
         }
+        refreshing = false
     }
 
-    when (val s = state) {
+    PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = { refreshing = true; reloadKey++ },
+        modifier = Modifier.fillMaxSize(),
+    ) {
+      when (val s = state) {
         is HomeUiState.Loading -> Centered { CircularProgressIndicator() }
 
         is HomeUiState.Error -> Centered {
@@ -167,6 +178,7 @@ fun HomeTab(
             }
         }
     }
+    }
 }
 
 @Composable
@@ -181,7 +193,18 @@ private fun SeriesCard(baseUrl: String, apiKey: String, series: SeriesDto, onOpe
     )
 }
 
+/**
+ * A full-screen centred message that is still *scrollable*, so pull-to-refresh works on the empty and
+ * error states — the very screens where you'd pull. A plain Box emits no scroll events, leaving the
+ * gesture dead exactly when Home has nothing to show. A single `fillParentMaxSize` item keeps the
+ * content vertically centred, which a bare `verticalScroll` would not (it measures against unbounded
+ * height, pinning the content to the top).
+ */
 @Composable
 private fun Centered(content: @Composable () -> Unit) {
-    Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) { content() }
+    LazyColumn(Modifier.fillMaxSize()) {
+        item {
+            Box(Modifier.fillParentMaxSize().padding(32.dp), contentAlignment = Alignment.Center) { content() }
+        }
+    }
 }

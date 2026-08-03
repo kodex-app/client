@@ -1,13 +1,16 @@
 package app.kodex.client.ui.catalog
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,6 +30,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -104,6 +109,7 @@ fun CoverCard(
                     modifier = Modifier.align(Alignment.TopStart).padding(6.dp),
                 )
             } else if (inLibrary) {
+                InLibraryShading()
                 // "In library" mark for Browse — a filled check badge in the corner.
                 Box(
                     Modifier.align(Alignment.TopStart).padding(6.dp).size(20.dp)
@@ -133,6 +139,40 @@ fun CoverCard(
         }
     }
 }
+
+/**
+ * "Already in your library" treatment for Browse covers: a coloured ring plus shading pulled in from
+ * all four edges, matching the web UI's `inset 0 0 0 2px` + `inset 0 0 48px 14px` box-shadow. Compose
+ * has no inset shadow, so the vignette is four edge gradients — they overlap at the corners, which is
+ * what an inset shadow does there anyway.
+ */
+@Composable
+private fun BoxScope.InLibraryShading() {
+    val scrim = Color.Black.copy(alpha = 0.55f)
+    val depth = 34.dp
+    Box(Modifier.fillMaxSize()) {
+        Box(
+            Modifier.fillMaxWidth().height(depth).align(Alignment.TopCenter)
+                .background(Brush.verticalGradient(listOf(scrim, Color.Transparent))),
+        )
+        Box(
+            Modifier.fillMaxWidth().height(depth).align(Alignment.BottomCenter)
+                .background(Brush.verticalGradient(listOf(Color.Transparent, scrim))),
+        )
+        Box(
+            Modifier.fillMaxHeight().width(depth).align(Alignment.CenterStart)
+                .background(Brush.horizontalGradient(listOf(scrim, Color.Transparent))),
+        )
+        Box(
+            Modifier.fillMaxHeight().width(depth).align(Alignment.CenterEnd)
+                .background(Brush.horizontalGradient(listOf(Color.Transparent, scrim))),
+        )
+    }
+    Box(Modifier.fillMaxSize().border(2.dp, InLibraryRing, RoundedCornerShape(12.dp)))
+}
+
+/** The web UI's in-library ring colour, kept identical so both clients mark it the same way. */
+private val InLibraryRing = Color(0xFF20C997)
 
 @Composable
 private fun UnreadBadge(count: Int, modifier: Modifier = Modifier) {

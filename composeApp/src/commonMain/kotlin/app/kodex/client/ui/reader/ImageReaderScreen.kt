@@ -53,7 +53,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
@@ -191,8 +191,8 @@ fun ImageReaderScreen(
     api: KodexApi,
     source: ReaderSource,
     onBack: () -> Unit,
-    /** Leave for the Home tab; null where the host has no tabs to return to. */
-    onGoHome: (() -> Unit)? = null,
+    /** Open this book's series; null when there's no series to open (or no host to navigate). */
+    onOpenSeries: (() -> Unit)? = null,
 ) {
     val server by session.activeServer.collectAsStateSafe()
     val context = LocalPlatformContext.current
@@ -421,7 +421,7 @@ fun ImageReaderScreen(
                     onOpenWeb = { source.webUrl?.let { openUrl(it) } },
                     onCycleOrientation = { orientation.cycle() },
                     onOpenSettings = { settingsOpen = true },
-                    onGoHome = onGoHome,
+                    onOpenSeries = onOpenSeries,
                     onToggleAutoScroll = { autoScroll = !autoScroll },
                     onSeek = { target -> page = target.coerceIn(1, source.pageCount) },
                     onOpenPicker = { pickerOpen = true },
@@ -836,7 +836,7 @@ private fun BottomBar(
     onOpenWeb: () -> Unit,
     onCycleOrientation: () -> Unit,
     onOpenSettings: () -> Unit,
-    onGoHome: (() -> Unit)?,
+    onOpenSeries: (() -> Unit)?,
     onToggleAutoScroll: () -> Unit,
     onSeek: (Int) -> Unit,
     onOpenPicker: () -> Unit,
@@ -869,7 +869,7 @@ private fun BottomBar(
                     onClick = onToggleAutoScroll,
                 )
             }
-            onGoHome?.let { home -> ToolbarButton(Icons.Filled.Home, "Home", onClick = home) }
+            onOpenSeries?.let { open -> ToolbarButton(Icons.Filled.Info, "Series details", onClick = open) }
             ToolbarButton(Icons.AutoMirrored.Filled.List, "Chapters", enabled = hasChapters, onClick = onOpenChapters)
             ToolbarButton(app.kodex.client.ui.icons.OpenInWebIcon, "Open in web", enabled = webEnabled, onClick = onOpenWeb)
             ToolbarButton(

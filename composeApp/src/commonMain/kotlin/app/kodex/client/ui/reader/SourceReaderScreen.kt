@@ -69,7 +69,7 @@ fun SourceReaderScreen(
     onBack: () -> Unit,
     sourceSeries: SourceSeriesContext? = null,
     incognito: Boolean = false,
-    onGoHome: (() -> Unit)? = null,
+    onOpenSeriesFromReader: ((app.kodex.client.ui.main.DetailRoute) -> Unit)? = null,
 ) {
     val server by session.activeServer.collectAsStateSafe()
     var target by remember(chapterId) { mutableStateOf(ChapterTarget(chapterId, chapterName)) }
@@ -105,12 +105,41 @@ fun SourceReaderScreen(
     // series arrives by local id with no such hint, so ask the server what kind the provider is —
     // the same lookup the web does. Null means "not resolved yet".
     var isNovel by remember(providerId) { mutableStateOf(sourceSeries?.isNovel?.takeIf { it }) }
+    // Also kept for "Series details": reopening a Browse series needs the source descriptor, which
+    // only this lookup has.
+    var descriptor by remember(providerId) { mutableStateOf<app.kodex.client.network.SourceDescriptor?>(null) }
     LaunchedEffect(providerId, server?.id) {
-        if (isNovel != null) return@LaunchedEffect
         val s = server ?: return@LaunchedEffect
-        isNovel = runCatching {
-            api.contentSources(s.baseUrl, s.apiKey).firstOrNull { it.id == providerId }?.kind == KIND_BOOK
-        }.getOrDefault(false)
+        val found = runCatching {
+            api.contentSources(s.baseUrl, s.apiKey).firstOrNull { it.id == providerId }
+        }.getOrNull()
+        descriptor = found
+        if (isNovel == null) isNovel = found?.kind == KIND_BOOK
+    }
+
+    /**
+     * A followed chapter reopens its local series; a Browse read reopens the source series screen,
+     * rebuilding a seed from the identity the reader was handed.
+     */
+    val openSeries: (() -> Unit)? = onOpenSeriesFromReader?.let { open ->
+        val d = descriptor
+        when {
+            seriesId != null -> ({ open(app.kodex.client.ui.main.DetailRoute.SeriesDetail(seriesId)) })
+            sourceSeries != null && d != null -> ({
+                open(
+                    app.kodex.client.ui.main.DetailRoute.SourceSeries(
+                        d,
+                        app.kodex.client.network.SourceSearchResult(
+                            providerId = sourceSeries.providerId,
+                            externalId = sourceSeries.externalId,
+                            title = sourceSeries.title,
+                            coverUrl = sourceSeries.coverUrl,
+                        ),
+                    ),
+                )
+            })
+            else -> null
+        }
     }
 
     LaunchedEffect(target.id, server?.id, isNovel) {
@@ -196,7 +225,7 @@ fun SourceReaderScreen(
                             bookmarks = null,
                         )
                     }
-                    key(current.id) { EbookReaderScreen(session, api, ebook, onBack, onGoHome) }
+                    key(current.id) { EbookReaderScreen(session, api, ebook, onBack, openSeries) }
                 }
 
                 st.pageCount <= 0 -> ReaderShell(onBack) {
@@ -244,7 +273,7 @@ fun SourceReaderScreen(
                         )
                     }
                     // The reader keeps its own page state, so a chapter swap has to remount it.
-                    key(current.id) { ImageReaderScreen(session, api, source, onBack, onGoHome) }
+                    key(current.id) { ImageReaderScreen(session, api, source, onBack, openSeries) }
                 }
             }
         }
