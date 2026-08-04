@@ -62,6 +62,26 @@ class AppSettings(private val settings: Settings = Settings()) {
         settings.putBoolean(KEY_INCOGNITO, value); _incognito.value = value
     }
 
+    /**
+     * Per-library grouping dimension (none | status | source | category) and the group tab last open
+     * within it. Device-local rather than a server setting, matching the web UI, which keeps these two
+     * in localStorage while sort lives server-side — grouping is about how *this* screen is laid out
+     * on *this* device, not a preference worth syncing.
+     */
+    fun libraryGroupBy(libraryId: String): String =
+        settings.getStringOrNull("$KEY_LIBRARY_GROUP.$libraryId") ?: "none"
+
+    fun setLibraryGroupBy(libraryId: String, value: String) {
+        settings.putString("$KEY_LIBRARY_GROUP.$libraryId", value)
+    }
+
+    fun libraryGroupTab(libraryId: String, groupBy: String): String? =
+        settings.getStringOrNull("$KEY_LIBRARY_GROUP_TAB.$libraryId.$groupBy")
+
+    fun setLibraryGroupTab(libraryId: String, groupBy: String, key: String) {
+        settings.putString("$KEY_LIBRARY_GROUP_TAB.$libraryId.$groupBy", key)
+    }
+
     fun setLibraryDisplayBy(value: String) {
         settings.putString(KEY_LIBRARY_DISPLAY, value); _libraryDisplayBy.value = value
     }
@@ -78,6 +98,8 @@ class AppSettings(private val settings: Settings = Settings()) {
         const val KEY_DYNAMIC = "appearance.dynamicColor"
         const val KEY_LIBRARY_GRID = "library.gridView"
         const val KEY_LIBRARY_DISPLAY = "library.displayBy"
+        const val KEY_LIBRARY_GROUP = "library.groupBy"
+        const val KEY_LIBRARY_GROUP_TAB = "library.groupTab"
         const val KEY_INCOGNITO = "reader.incognito"
     }
 }

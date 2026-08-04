@@ -140,8 +140,10 @@ fun LibrarySeriesScreen(
     var statusTri by remember { mutableStateOf<Tri?>(null) } // COMPLETED series status
     var reloadTick by remember { mutableIntStateOf(0) }
     var sheetOpen by remember { mutableStateOf(false) }
-    var groupBy by remember { mutableStateOf("none") } // none | status | source | category
-    var selectedGroup by remember { mutableStateOf<String?>(null) }
+    // Seeded from the per-library store rather than defaulting to "none", so reopening a library
+    // comes back grouped the way it was left (the web keeps the same two values in localStorage).
+    var groupBy by remember(library.id) { mutableStateOf(appSettings.libraryGroupBy(library.id)) } // none | status | source | category
+    var selectedGroup by remember(library.id) { mutableStateOf(appSettings.libraryGroupTab(library.id, appSettings.libraryGroupBy(library.id))) }
     var groups by remember { mutableStateOf<List<SeriesGroupCount>>(emptyList()) }
     var groupNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) } // key → friendly label (source/category)
     var allSeriesIds by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -301,7 +303,10 @@ fun LibrarySeriesScreen(
                 val pagerState = androidx.compose.foundation.pager.rememberPagerState(initialPage) { tabGroups.size }
                 // Keep the persisted/active group in sync with the page the user swiped or tapped to.
                 LaunchedEffect(pagerState.currentPage, tabGroups) {
-                    tabGroups.getOrNull(pagerState.currentPage)?.let { selectedGroup = it.key }
+                    tabGroups.getOrNull(pagerState.currentPage)?.let {
+                        selectedGroup = it.key
+                        appSettings.setLibraryGroupTab(library.id, groupBy, it.key)
+                    }
                 }
                 GroupTabs(tabGroups, tabGroups.getOrNull(pagerState.currentPage)?.key, onSelect = { key ->
                     val idx = tabGroups.indexOfFirst { it.key == key }
@@ -405,7 +410,13 @@ fun LibrarySeriesScreen(
                             if (library.isWeb) add("category" to "Category")
                         }
                         opts.forEach { (value, label) ->
-                            CheckRow(label, groupBy == value) { groupBy = value; selectedGroup = null }
+                            CheckRow(label, groupBy == value) {
+                                groupBy = value
+                                appSettings.setLibraryGroupBy(library.id, value)
+                                // A new dimension has different tabs, so fall back to whichever one
+                                // was last open under it (null → the first).
+                                selectedGroup = appSettings.libraryGroupTab(library.id, value)
+                            }
                         }
                         if (groupBy != "none") {
                             Text(

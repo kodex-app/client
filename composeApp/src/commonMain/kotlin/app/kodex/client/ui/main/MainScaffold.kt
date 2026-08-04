@@ -183,6 +183,7 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
                     appSettings,
                     onOpenDownloads = { backStack.add(DetailRoute.Downloads) },
                     onOpenSettings = { backStack.add(DetailRoute.Settings) },
+                    onEditServer = { backStack.add(DetailRoute.ServerConnection) },
                     onOpenAppearance = { backStack.add(DetailRoute.Appearance) },
                     onOpenAbout = { backStack.add(DetailRoute.About) },
                     onOpenLibraries = { backStack.add(DetailRoute.Libraries) },

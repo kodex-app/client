@@ -94,6 +94,12 @@ import app.kodex.client.ui.rememberSelection
 import app.kodex.client.ui.rememberSnackbar
 import kotlinx.coroutines.launch
 
+/**
+ * How a series' books/chapters are ordered. SOURCE leaves the server's own ordering alone — for a WEB
+ * series that's the order the content source lists them in, which numbering often doesn't reproduce.
+ */
+private enum class SeriesSort { NUMBER, DATE, SOURCE }
+
 private data class SeriesContent(
     val detail: SeriesDetailDto,
     val books: List<BookDto>,
@@ -133,7 +139,7 @@ fun SeriesDetailScreen(
     val selection = rememberSelection<String>()
     var reloadTick by remember { mutableIntStateOf(0) }
     var sortDesc by remember { mutableStateOf(true) }
-    var sortByDate by remember { mutableStateOf(false) } // false = by chapter number, true = by release date
+    var sortKey by remember { mutableStateOf(SeriesSort.NUMBER) }
     var translator by remember { mutableStateOf<String?>(null) } // scanlator filter; null = all
     var menuOpen by remember { mutableStateOf(false) }
     var bookmarksOpen by remember { mutableStateOf(false) }
@@ -319,8 +325,8 @@ fun SeriesDetailScreen(
                     content == null -> Box(Modifier.fillMaxSize().padding(padding), Alignment.Center) { CircularProgressIndicator() }
                     s != null && isWeb -> ChaptersLayout(
                         s.baseUrl, s.apiKey, content, visibleChapters,
-                        sortDesc = sortDesc, sortByDate = sortByDate,
-                        onToggleDir = { sortDesc = !sortDesc }, onSetSortByDate = { sortByDate = it },
+                        sortDesc = sortDesc, sortKey = sortKey,
+                        onToggleDir = { sortDesc = !sortDesc }, onSetSortKey = { sortKey = it },
                         translator = translator, onSetTranslator = { translator = it },
                         onRefresh = { runAction("Chapters refreshed") { api.refreshSeriesChapters(s.baseUrl, s.apiKey, seriesId) } },
                         selection = selection,
@@ -330,8 +336,8 @@ fun SeriesDetailScreen(
                     )
                     s != null -> BooksLayout(
                         s.baseUrl, s.apiKey, content,
-                        sortDesc = sortDesc, sortByDate = sortByDate,
-                        onToggleDir = { sortDesc = !sortDesc }, onSetSortByDate = { sortByDate = it },
+                        sortDesc = sortDesc, sortKey = sortKey,
+                        onToggleDir = { sortDesc = !sortDesc }, onSetSortKey = { sortKey = it },
                         onRefresh = { runAction("Refreshing metadata…") { api.refreshSeriesMetadata(s.baseUrl, s.apiKey, seriesId) } },
                         selection = selection, onOpenBook = onOpenBook, onOpenSeries = onOpenSeries,
                         listState = listState, topInset = topInset, bottomInset = bottomInset,
@@ -556,9 +562,9 @@ private fun BooksLayout(
     apiKey: String,
     content: SeriesContent,
     sortDesc: Boolean,
-    sortByDate: Boolean,
+    sortKey: SeriesSort,
     onToggleDir: () -> Unit,
-    onSetSortByDate: (Boolean) -> Unit,
+    onSetSortKey: (SeriesSort) -> Unit,
     onRefresh: () -> Unit,
     selection: SelectionState<String>,
     onOpenBook: (String) -> Unit,
@@ -567,8 +573,12 @@ private fun BooksLayout(
     topInset: androidx.compose.ui.unit.Dp,
     bottomInset: androidx.compose.ui.unit.Dp,
 ) {
-    val ascending = if (sortByDate) content.books.sortedWith(compareBy(nullsLast()) { it.releaseDate })
-    else content.books.sortedBy { it.number }
+    // SOURCE keeps the server's own ordering untouched; the others sort a copy of it.
+    val ascending = when (sortKey) {
+        SeriesSort.DATE -> content.books.sortedWith(compareBy(nullsLast()) { it.releaseDate })
+        SeriesSort.NUMBER -> content.books.sortedBy { it.number }
+        SeriesSort.SOURCE -> content.books
+    }
     val display = if (sortDesc) ascending.asReversed() else ascending
     LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(top = topInset + 8.dp, bottom = 96.dp + bottomInset)) {
         item {
@@ -597,7 +607,7 @@ private fun BooksLayout(
                 SeriesListControls(
                     countLabel = "Books · ${content.books.size}",
                     numberLabel = "Book number",
-                    sortByDate = sortByDate, sortDesc = sortDesc, onToggleDir = onToggleDir, onSetSortByDate = onSetSortByDate,
+                    sortKey = sortKey, sortDesc = sortDesc, onToggleDir = onToggleDir, onSetSortKey = onSetSortKey,
                     scanlators = emptyList(), translator = null, onSetTranslator = {},
                     onRefresh = onRefresh,
                 )
@@ -664,9 +674,9 @@ private fun ChaptersLayout(
     content: SeriesContent,
     visibleChapters: List<SeriesChapterDto>,
     sortDesc: Boolean,
-    sortByDate: Boolean,
+    sortKey: SeriesSort,
     onToggleDir: () -> Unit,
-    onSetSortByDate: (Boolean) -> Unit,
+    onSetSortKey: (SeriesSort) -> Unit,
     translator: String?,
     onSetTranslator: (String?) -> Unit,
     onRefresh: () -> Unit,
@@ -682,8 +692,13 @@ private fun ChaptersLayout(
     val providerId = content.detail.sourceProviderId.orEmpty()
     val seriesId = content.detail.id
     val scanlators = content.chapters.mapNotNull { it.scanlator?.takeIf { s -> s.isNotBlank() } }.distinct().sorted()
-    val ascending = if (sortByDate) visibleChapters.sortedWith(compareBy(nullsLast()) { it.releaseDate })
-    else visibleChapters.sortedWith(compareBy(nullsLast()) { it.number })
+    // SOURCE is the order the content source itself lists them in — the stored catalogue order,
+    // which is what /series/{id}/chapters already returns.
+    val ascending = when (sortKey) {
+        SeriesSort.DATE -> visibleChapters.sortedWith(compareBy(nullsLast()) { it.releaseDate })
+        SeriesSort.NUMBER -> visibleChapters.sortedWith(compareBy(nullsLast()) { it.number })
+        SeriesSort.SOURCE -> visibleChapters
+    }
     val display = if (sortDesc) ascending.asReversed() else ascending
     val downloaded = visibleChapters.count { it.downloaded }
     // Rows are full-bleed (their selection highlight spans the width), so the list itself has no side padding.
@@ -692,16 +707,16 @@ private fun ChaptersLayout(
             Column(Modifier.padding(horizontal = 16.dp)) {
                 SeriesHeader(
                     baseUrl, apiKey, content.detail,
-                    countLabel = "${visibleChapters.size} chapters · $downloaded downloaded",
+                    countLabel = "${visibleChapters.size} books · $downloaded downloaded",
                     unread = visibleChapters.count { !it.read },
                     libraryName = content.libraryName,
                     sourceName = content.sourceName,
                 )
                 Spacer(Modifier.height(20.dp))
                 SeriesListControls(
-                    countLabel = "Chapters · ${visibleChapters.size}",
-                    numberLabel = "Chapter number",
-                    sortByDate = sortByDate, sortDesc = sortDesc, onToggleDir = onToggleDir, onSetSortByDate = onSetSortByDate,
+                    countLabel = "Books · ${visibleChapters.size}",
+                    numberLabel = "Book number",
+                    sortKey = sortKey, sortDesc = sortDesc, onToggleDir = onToggleDir, onSetSortKey = onSetSortKey,
                     scanlators = scanlators, translator = translator, onSetTranslator = onSetTranslator,
                     onRefresh = onRefresh,
                 )
@@ -720,10 +735,10 @@ private fun ChaptersLayout(
 private fun SeriesListControls(
     countLabel: String,
     numberLabel: String,
-    sortByDate: Boolean,
+    sortKey: SeriesSort,
     sortDesc: Boolean,
     onToggleDir: () -> Unit,
-    onSetSortByDate: (Boolean) -> Unit,
+    onSetSortKey: (SeriesSort) -> Unit,
     scanlators: List<String>,
     translator: String?,
     onSetTranslator: (String?) -> Unit,
@@ -738,10 +753,23 @@ private fun SeriesListControls(
     }
     Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Box {
-            ControlChip(if (sortByDate) "Release date" else numberLabel) { sortMenu = true }
+            val activeLabel = when (sortKey) {
+                SeriesSort.NUMBER -> numberLabel
+                SeriesSort.DATE -> "Release date"
+                SeriesSort.SOURCE -> "Source order"
+            }
+            ControlChip(activeLabel) { sortMenu = true }
             DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
-                SortMenuItem(numberLabel, selected = !sortByDate, sortDesc = sortDesc) { if (sortByDate) onSetSortByDate(false) else onToggleDir() }
-                SortMenuItem("Release date", selected = sortByDate, sortDesc = sortDesc) { if (!sortByDate) onSetSortByDate(true) else onToggleDir() }
+                // Tapping the active key flips direction; tapping another switches to it.
+                listOf(
+                    SeriesSort.NUMBER to numberLabel,
+                    SeriesSort.DATE to "Release date",
+                    SeriesSort.SOURCE to "Source order",
+                ).forEach { (key, label) ->
+                    SortMenuItem(label, selected = sortKey == key, sortDesc = sortDesc) {
+                        if (sortKey == key) onToggleDir() else onSetSortKey(key)
+                    }
+                }
             }
         }
         if (scanlators.size > 1) {

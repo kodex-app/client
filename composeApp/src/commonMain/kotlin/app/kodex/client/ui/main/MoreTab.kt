@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Info
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -46,6 +48,7 @@ fun MoreTab(
     appSettings: app.kodex.client.data.AppSettings,
     onOpenDownloads: () -> Unit,
     onOpenSettings: () -> Unit,
+    onEditServer: () -> Unit = {},
     onOpenAppearance: () -> Unit,
     onOpenAbout: () -> Unit,
     onOpenLibraries: () -> Unit = {},
@@ -97,6 +100,16 @@ fun MoreTab(
                                 color = MaterialTheme.colorScheme.primary,
                             )
                         }
+                    }
+                }
+                // Edit the connection you're signed in to (name, address, account).
+                server?.let {
+                    IconButton(onClick = onEditServer) {
+                        Icon(
+                            Icons.Filled.Edit,
+                            contentDescription = "Edit server connection",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }

@@ -94,6 +94,51 @@ class SessionManager(
         _currentUser.value = me
     }
 
+    /**
+     * Edit the active connection in place, keeping its id so nothing keyed to this server is lost.
+     *
+     * The stored API key is only valid for the server that minted it, so a changed [rawUrl] forces a
+     * re-authentication — [password] is required in that case. Supplying a password without moving
+     * the address just mints a fresh key (useful when the old one was revoked server-side). Leaving
+     * it blank keeps the existing key and merely re-validates it, so a rename costs one request.
+     */
+    suspend fun updateActiveServer(
+        label: String,
+        rawUrl: String,
+        email: String,
+        password: String,
+    ): Result<ServerConnection> = runCatching {
+        val current = requireNotNull(_activeServer.value) { "No server is signed in" }
+        val base = normalizeBaseUrl(rawUrl)
+        require(base.isNotEmpty()) { "Enter a server address" }
+
+        val moved = base != current.baseUrl
+        require(!moved || password.isNotBlank()) {
+            "Changing the server address needs your password — the saved key only works on the old server."
+        }
+        require(password.isBlank() || email.isNotBlank()) { "Enter the email to sign in with" }
+
+        val key = if (moved || password.isNotBlank()) {
+            api.createApiKey(base, email, password, comment = "Kodex mobile").key
+        } else {
+            current.apiKey
+        }
+        val me = api.getMe(base, key)
+
+        val updated = current.copy(
+            label = label.ifBlank { base.substringAfter("://").substringBefore("/") },
+            baseUrl = base,
+            email = me.email,
+            apiKey = key,
+            lastUsedAt = nowMillis(),
+        )
+        store.upsert(updated)
+        _servers.value = store.getServers()
+        _activeServer.value = updated
+        _currentUser.value = me
+        updated
+    }
+
     /** Leave the active server (back to login) but keep it saved. */
     fun signOut() {
         _activeServer.value = null

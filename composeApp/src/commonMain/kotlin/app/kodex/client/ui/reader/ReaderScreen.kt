@@ -215,7 +215,7 @@ fun ReaderScreen(
     }
 }
 
-private fun chapterTitle(book: BookDto): String = book.title.ifBlank { book.numberDisplay ?: "Chapter" }
+private fun chapterTitle(book: BookDto): String = book.title.ifBlank { book.numberDisplay ?: "Book" }
 
 /** Black full-screen shell with a persistent back button (for loading/error/gate states). */
 @Composable

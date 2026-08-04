@@ -315,4 +315,4 @@ private fun rememberChapterNav(
 }
 
 private fun chapterLabel(c: NavChapter): String =
-    c.number?.let { n -> if (n % 1.0 == 0.0) "Chapter ${n.toInt()}" else "Chapter $n" } ?: "Chapter"
+    c.number?.let { n -> if (n % 1.0 == 0.0) "Book ${n.toInt()}" else "Book $n" } ?: "Book"

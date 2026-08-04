@@ -687,7 +687,7 @@ private fun EbookBottomBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             FilledIconButton(onClick = onPrevChapter, enabled = canPrevChapter, colors = buttonColors) {
-                Icon(app.kodex.client.ui.icons.SkipPreviousIcon, "Previous chapter")
+                Icon(app.kodex.client.ui.icons.SkipPreviousIcon, "Previous book")
             }
             IconButton(onClick = onPrevPage) { Icon(Icons.Filled.KeyboardArrowLeft, "Previous page", tint = content) }
             Slider(
@@ -699,7 +699,7 @@ private fun EbookBottomBar(
             )
             IconButton(onClick = onNextPage) { Icon(Icons.Filled.KeyboardArrowRight, "Next page", tint = content) }
             FilledIconButton(onClick = onNextChapter, enabled = canNextChapter, colors = buttonColors) {
-                Icon(app.kodex.client.ui.icons.SkipNextIcon, "Next chapter")
+                Icon(app.kodex.client.ui.icons.SkipNextIcon, "Next book")
             }
         }
         // Toolbar row: contents · chapter list · open in web · orientation · settings.
@@ -708,11 +708,11 @@ private fun EbookBottomBar(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // "Book contents" = this file's own TOC; "Chapters" = the other books/chapters of the
+            // "Book contents" = this file's own TOC; "Books" = the other books of the
             // series. The list icon means the latter in the image reader too, so it stays put here.
             onOpenSeries?.let { open -> ToolbarButton(Icons.Filled.Info, "Series details", onClick = open) }
             ToolbarButton(app.kodex.client.ui.icons.BookContentsIcon, "Book contents", enabled = hasToc, onClick = onOpenToc)
-            ToolbarButton(Icons.AutoMirrored.Filled.List, "Chapters", enabled = hasChapters, onClick = onOpenChapters)
+            ToolbarButton(Icons.AutoMirrored.Filled.List, "Books", enabled = hasChapters, onClick = onOpenChapters)
             ToolbarButton(app.kodex.client.ui.icons.OpenInWebIcon, "Open in web", enabled = webEnabled, onClick = onOpenWeb)
             ToolbarButton(
                 app.kodex.client.ui.icons.OrientationIcon,

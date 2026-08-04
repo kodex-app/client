@@ -708,7 +708,7 @@ private fun ContinuousNextTile(title: String, onClick: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Text("Next chapter", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelMedium)
+        Text("Next book", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelMedium)
         Text(title, color = Color.White, style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.Center, maxLines = 2)
     }
 }
@@ -870,7 +870,7 @@ private fun BottomBar(
                 )
             }
             onOpenSeries?.let { open -> ToolbarButton(Icons.Filled.Info, "Series details", onClick = open) }
-            ToolbarButton(Icons.AutoMirrored.Filled.List, "Chapters", enabled = hasChapters, onClick = onOpenChapters)
+            ToolbarButton(Icons.AutoMirrored.Filled.List, "Books", enabled = hasChapters, onClick = onOpenChapters)
             ToolbarButton(app.kodex.client.ui.icons.OpenInWebIcon, "Open in web", enabled = webEnabled, onClick = onOpenWeb)
             ToolbarButton(
                 app.kodex.client.ui.icons.OrientationIcon,
@@ -920,7 +920,7 @@ private fun ChapterNavigator(
                 enabled = if (rtl) canNextChapter else canPrevChapter,
                 colors = buttonColors,
             ) {
-                Icon(app.kodex.client.ui.icons.SkipPreviousIcon, if (rtl) "Next chapter" else "Previous chapter")
+                Icon(app.kodex.client.ui.icons.SkipPreviousIcon, if (rtl) "Next book" else "Previous book")
             }
 
             if (pageCount > 1) {
@@ -957,7 +957,7 @@ private fun ChapterNavigator(
                 enabled = if (rtl) canPrevChapter else canNextChapter,
                 colors = buttonColors,
             ) {
-                Icon(app.kodex.client.ui.icons.SkipNextIcon, if (rtl) "Previous chapter" else "Next chapter")
+                Icon(app.kodex.client.ui.icons.SkipNextIcon, if (rtl) "Previous book" else "Next book")
             }
         }
     }
@@ -1033,7 +1033,7 @@ internal fun ChapterTransitionOverlay(isNext: Boolean, title: String, onConfirm:
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(if (isNext) "Next chapter" else "Previous chapter", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelLarge)
+            Text(if (isNext) "Next book" else "Previous book", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelLarge)
             Text(title, color = Color.White, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center, maxLines = 3)
             Button(onClick = onConfirm) { Text(if (isNext) "Continue" else "Go back") }
             TextButton(onClick = onDismiss) { Text("Keep reading", color = Color.White) }
@@ -1045,7 +1045,7 @@ internal fun ChapterTransitionOverlay(isNext: Boolean, title: String, onConfirm:
 @Composable
 internal fun ChapterListSheet(chapters: List<ReaderChapterItem>, onClose: () -> Unit) {
     Column(Modifier.fillMaxWidth().heightIn(max = 480.dp).padding(bottom = 24.dp)) {
-        Text("Chapters", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 8.dp))
+        Text("Books", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 8.dp))
         LazyColumn {
             items(chapters) { ch ->
                 Text(

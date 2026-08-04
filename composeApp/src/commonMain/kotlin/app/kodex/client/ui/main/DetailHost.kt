@@ -46,6 +46,7 @@ sealed interface DetailRoute {
 
     data object Downloads : DetailRoute
     data object Settings : DetailRoute
+    data object ServerConnection : DetailRoute
     data object Appearance : DetailRoute
     data object About : DetailRoute
     data object Libraries : DetailRoute
@@ -146,6 +147,9 @@ fun DetailHost(
 
         is DetailRoute.Settings ->
             SettingsScreen(session, api, onBack)
+
+        is DetailRoute.ServerConnection ->
+            app.kodex.client.ui.settings.ServerConnectionScreen(session, onBack)
 
         is DetailRoute.Appearance ->
             AppearanceScreen(appSettings, onBack)
