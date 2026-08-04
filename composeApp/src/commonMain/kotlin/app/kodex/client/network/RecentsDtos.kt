@@ -32,6 +32,8 @@ data class UpdateDto(
  */
 @Serializable
 data class HistoryEntryDto(
+    /** Progress-record id — the handle for deleting this single entry. */
+    val id: String = "",
     val kind: String = "BOOK",
     val bookId: String? = null,
     val seriesId: String? = null,

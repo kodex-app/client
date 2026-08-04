@@ -12,6 +12,7 @@ data class CreateLibraryRequest(
     val mediaKind: String? = null,
     val root: String? = null,
     val contentSourceId: String? = null,
+    val refresh: RefreshSettingsDto? = null,
 )
 
 /** Body of `PATCH /api/v1/libraries/{id}`. */
@@ -20,6 +21,25 @@ data class UpdateLibraryRequest(
     val name: String,
     val root: String? = null,
     val contentSourceId: String? = null,
+    val refresh: RefreshSettingsDto? = null,
+)
+
+/**
+ * Refresh schedule + what a scan indexes, shared by create and update. Every field is nullable and
+ * omitted fields keep their current value server-side, so a form only needs to send what it edits.
+ */
+@Serializable
+data class RefreshSettingsDto(
+    /** NONE | EVERY_3H | EVERY_6H | EVERY_12H | EVERY_24H | WEEKLY. */
+    val refreshInterval: String? = null,
+    val refreshOnStartup: Boolean? = null,
+    val scanForceModifiedTime: Boolean? = null,
+    val scanCbx: Boolean? = null,
+    val scanPdf: Boolean? = null,
+    val scanEpub: Boolean? = null,
+    val scanDirectoryExclusions: Set<String>? = null,
+    val specialFolders: Set<String>? = null,
+    val autoDownload: Boolean? = null,
 )
 
 /** A directory entry in the admin folder picker (`GET /api/v1/filesystem`). */

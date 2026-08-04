@@ -725,6 +725,14 @@ class KodexApi(private val client: HttpClient) {
         }
     }
 
+    /**
+     * Remove one history entry. This deletes the progress record behind it, so the saved position and
+     * read flag for that book/chapter go with it — worth spelling out before calling.
+     */
+    suspend fun deleteHistoryEntry(baseUrl: String, apiKey: String, entryId: String) {
+        client.delete("$baseUrl/api/v1/history/$entryId") { header(HEADER_API_KEY, apiKey) }
+    }
+
     // ── Downloads ────────────────────────────────────────────────────────────────────────────────
 
     suspend fun downloads(baseUrl: String, apiKey: String, page: Int, size: Int = PAGE_SIZE): PageResponse<DownloadJobDto> =

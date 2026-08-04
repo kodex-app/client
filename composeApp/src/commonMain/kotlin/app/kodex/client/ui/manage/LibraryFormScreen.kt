@@ -22,6 +22,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,6 +33,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -47,17 +49,38 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
+import app.kodex.client.data.LibraryNavPrefs
+import app.kodex.client.data.loadLibraryNavPrefs
+import app.kodex.client.data.saveLibraryNavPrefs
 import app.kodex.client.network.CreateLibraryRequest
 import app.kodex.client.network.DirectoryListing
 import app.kodex.client.network.KodexApi
 import app.kodex.client.network.LibraryDto
+import app.kodex.client.network.RefreshSettingsDto
 import app.kodex.client.network.SourceDescriptor
 import app.kodex.client.network.UpdateLibraryRequest
 import app.kodex.client.ui.collectAsStateSafe
+import app.kodex.client.ui.friendlyMessage
 import app.kodex.client.ui.rememberSnackbar
 import kotlinx.coroutines.launch
 
-/** Create a new library (LOCAL folder scan or WEB content source) or edit an existing one's name/root. */
+/** Refresh cadences the server accepts, with their labels. */
+private val REFRESH_INTERVALS = listOf(
+    "NONE" to "Never",
+    "EVERY_3H" to "Every 3 hours",
+    "EVERY_6H" to "Every 6 hours",
+    "EVERY_12H" to "Every 12 hours",
+    "EVERY_24H" to "Daily",
+    "WEEKLY" to "Weekly",
+)
+
+/**
+ * Create or edit a library, covering what the web's form does: identity, location, per-user
+ * visibility, the refresh schedule, and — for LOCAL — what a scan indexes.
+ *
+ * Laid out as one scrolling form with section headings rather than the web's stepper: a wizard earns
+ * its keep on a wide screen, but on a phone it only hides fields behind extra taps.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryFormScreen(
@@ -80,10 +103,34 @@ fun LibraryFormScreen(
     var sources by remember { mutableStateOf<List<SourceDescriptor>>(emptyList()) }
     var picking by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    // Refresh + scan settings seeded from the server's own values, so saving an edit never silently
+    // resets something that was configured elsewhere.
+    var refreshInterval by remember { mutableStateOf(existing?.refreshInterval ?: "EVERY_6H") }
+    var refreshOnStartup by remember { mutableStateOf(existing?.refreshOnStartup ?: false) }
+    var forceModTime by remember { mutableStateOf(existing?.scanForceModifiedTime ?: false) }
+    var scanCbx by remember { mutableStateOf(existing?.scanCbx ?: true) }
+    var scanPdf by remember { mutableStateOf(existing?.scanPdf ?: true) }
+    var scanEpub by remember { mutableStateOf(existing?.scanEpub ?: true) }
+    var autoDownload by remember { mutableStateOf(existing?.autoDownload ?: false) }
+    var exclusions by remember { mutableStateOf((existing?.scanDirectoryExclusions ?: emptySet()).joinToString(", ")) }
+    var specialFolders by remember { mutableStateOf((existing?.specialFolders ?: emptySet()).joinToString(", ")) }
+
+    // Visibility is a per-user view preference in nav.libraries, not a field on the Library record —
+    // the same store the Libraries screen toggles, so the two can't disagree.
+    var navPrefs by remember { mutableStateOf(LibraryNavPrefs()) }
+    var hideFromNav by remember { mutableStateOf(false) }
+    var hideFromHome by remember { mutableStateOf(false) }
 
     LaunchedEffect(server?.id) {
         val s = server ?: return@LaunchedEffect
-        if (type == "WEB" || !isEdit) sources = runCatching { api.contentSources(s.baseUrl, s.apiKey) }.getOrDefault(emptyList())
+        sources = runCatching { api.contentSources(s.baseUrl, s.apiKey) }.getOrDefault(emptyList())
+        navPrefs = loadLibraryNavPrefs(api, s.baseUrl, s.apiKey)
+        existing?.let {
+            hideFromNav = navPrefs.isHidden(it.id)
+            hideFromHome = navPrefs.isHiddenFromHome(it.id)
+        }
     }
 
     if (picking) {
@@ -91,18 +138,75 @@ fun LibraryFormScreen(
         return
     }
 
-    val canSave = name.isNotBlank() && (if (type == "LOCAL") root.isNotBlank() else sourceId.isNotBlank())
+    val isLocal = type == "LOCAL"
+    val canSave = name.isNotBlank() && (if (isLocal) root.isNotBlank() else sourceId.isNotBlank())
+
+    /** Comma-separated field to a set, dropping blanks so a trailing comma adds no empty entry. */
+    fun parseList(raw: String): Set<String> =
+        raw.split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
 
     fun save() {
         val s = server ?: return
+        error = null
         saving = true
         scope.launch {
+            // Fields that don't apply to this library type are sent as null, which the server reads
+            // as "leave unchanged" rather than writing a meaningless value.
+            val refresh = RefreshSettingsDto(
+                refreshInterval = refreshInterval,
+                refreshOnStartup = refreshOnStartup,
+                scanForceModifiedTime = forceModTime.takeIf { isLocal },
+                scanCbx = scanCbx.takeIf { isLocal },
+                scanPdf = scanPdf.takeIf { isLocal },
+                scanEpub = scanEpub.takeIf { isLocal },
+                scanDirectoryExclusions = parseList(exclusions).takeIf { isLocal },
+                specialFolders = parseList(specialFolders).takeIf { isLocal },
+                autoDownload = autoDownload.takeIf { !isLocal },
+            )
             val result = runCatching {
-                if (isEdit) api.updateLibrary(s.baseUrl, s.apiKey, existing!!.id, UpdateLibraryRequest(name = name, root = root.ifBlank { null }, contentSourceId = sourceId.ifBlank { null }))
-                else api.createLibrary(s.baseUrl, s.apiKey, CreateLibraryRequest(name = name, type = type, mediaKind = mediaKind, root = root.ifBlank { null }, contentSourceId = sourceId.ifBlank { null }))
+                if (isEdit) {
+                    api.updateLibrary(
+                        s.baseUrl, s.apiKey, existing!!.id,
+                        UpdateLibraryRequest(
+                            name = name,
+                            root = root.ifBlank { null },
+                            contentSourceId = sourceId.ifBlank { null },
+                            refresh = refresh,
+                        ),
+                    )
+                    existing.id
+                } else {
+                    api.createLibrary(
+                        s.baseUrl, s.apiKey,
+                        CreateLibraryRequest(
+                            name = name,
+                            type = type,
+                            mediaKind = mediaKind,
+                            root = root.ifBlank { null },
+                            contentSourceId = sourceId.ifBlank { null },
+                            refresh = refresh,
+                        ),
+                    ).id
+                }
             }
-            saving = false
-            result.fold(onSuccess = { onSaved() }, onFailure = { snackbar?.show("Couldn't save library.") })
+            result.fold(
+                onSuccess = { id ->
+                    // Visibility lives in a different store, and a new library only has an id now.
+                    runCatching {
+                        saveLibraryNavPrefs(
+                            api, s.baseUrl, s.apiKey,
+                            navPrefs.withHidden(id, hideFromNav).withHiddenFromHome(id, hideFromHome),
+                        )
+                    }
+                    saving = false
+                    onSaved()
+                },
+                onFailure = {
+                    saving = false
+                    error = it.friendlyMessage()
+                    snackbar?.show("Couldn't save library.")
+                },
+            )
         }
     }
 
@@ -118,27 +222,35 @@ fun LibraryFormScreen(
             OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
 
             Spacer(Modifier.size(12.dp))
-            Text("Type", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            // Type and content kind decide the storage model, so the server won't let them change later.
+            FormLabel("Type")
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                SegmentedButton(selected = type == "LOCAL", onClick = { if (!isEdit) type = "LOCAL" }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("Local folder") }
-                SegmentedButton(selected = type == "WEB", onClick = { if (!isEdit) type = "WEB" }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("Web source") }
+                SegmentedButton(selected = isLocal, onClick = { type = "LOCAL" }, enabled = !isEdit, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("Local folder") }
+                SegmentedButton(selected = !isLocal, onClick = { type = "WEB" }, enabled = !isEdit, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("Web source") }
             }
 
             Spacer(Modifier.size(12.dp))
-            Text("Content", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            FormLabel("Content")
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                SegmentedButton(selected = mediaKind == "COMIC", onClick = { mediaKind = "COMIC" }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("Comics") }
-                SegmentedButton(selected = mediaKind == "BOOK", onClick = { mediaKind = "BOOK" }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("Books") }
+                SegmentedButton(selected = mediaKind == "COMIC", onClick = { mediaKind = "COMIC" }, enabled = !isEdit, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("Comics") }
+                SegmentedButton(selected = mediaKind == "BOOK", onClick = { mediaKind = "BOOK" }, enabled = !isEdit, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("Books") }
+            }
+            if (isEdit) {
+                Text(
+                    "Type and content kind can't change after a library is created.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
             Spacer(Modifier.size(12.dp))
-            if (type == "LOCAL") {
+            if (isLocal) {
                 OutlinedTextField(
                     root, { root = it }, label = { Text("Folder path") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                     trailingIcon = { TextButton(onClick = { picking = true }) { Text("Browse") } },
                 )
             } else {
-                Text("Source", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                FormLabel("Source")
                 var open by remember { mutableStateOf(false) }
                 Box {
                     OutlinedButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth()) {
@@ -152,10 +264,93 @@ fun LibraryFormScreen(
             }
 
             Spacer(Modifier.size(20.dp))
+            FormLabel("Visibility")
+            ToggleRow("Hide from Libraries", "Keep it out of the Libraries tab", hideFromNav) { hideFromNav = it }
+            ToggleRow("Hide from Home", "Keep its series out of Home's rows", hideFromHome) { hideFromHome = it }
+
+            Spacer(Modifier.size(20.dp))
+            FormLabel(if (isLocal) "Scanning" else "Updates")
+            var intervalOpen by remember { mutableStateOf(false) }
+            Box {
+                OutlinedButton(onClick = { intervalOpen = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text(REFRESH_INTERVALS.firstOrNull { it.first == refreshInterval }?.second ?: refreshInterval)
+                }
+                DropdownMenu(expanded = intervalOpen, onDismissRequest = { intervalOpen = false }) {
+                    REFRESH_INTERVALS.forEach { (value, label) ->
+                        DropdownMenuItem(text = { Text(label) }, onClick = { intervalOpen = false; refreshInterval = value })
+                    }
+                }
+            }
+            ToggleRow(
+                if (isLocal) "Scan on startup" else "Update on startup",
+                "Run once when the server starts",
+                refreshOnStartup,
+            ) { refreshOnStartup = it }
+
+            if (!isLocal) {
+                ToggleRow("Auto-download new chapters", "Download as soon as they're found", autoDownload) { autoDownload = it }
+            }
+
+            if (isLocal) {
+                ToggleRow(
+                    "Trust modified times",
+                    "Skip files whose timestamp hasn't changed. Faster, but misses in-place edits",
+                    forceModTime,
+                ) { forceModTime = it }
+
+                Spacer(Modifier.size(12.dp))
+                FormLabel("File types to index")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = scanCbx, onClick = { scanCbx = !scanCbx }, label = { Text("CBZ/CBR") })
+                    FilterChip(selected = scanPdf, onClick = { scanPdf = !scanPdf }, label = { Text("PDF") })
+                    FilterChip(selected = scanEpub, onClick = { scanEpub = !scanEpub }, label = { Text("EPUB") })
+                }
+
+                Spacer(Modifier.size(12.dp))
+                OutlinedTextField(
+                    exclusions, { exclusions = it },
+                    label = { Text("Excluded folders") },
+                    supportingText = { Text("Comma-separated folder names skipped during a scan.") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.size(8.dp))
+                OutlinedTextField(
+                    specialFolders, { specialFolders = it },
+                    label = { Text("Special folders") },
+                    supportingText = { Text("Comma-separated names treated as one-shots or specials.") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
+            error?.let {
+                Spacer(Modifier.size(12.dp))
+                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+
+            Spacer(Modifier.size(20.dp))
             Button(onClick = { save() }, enabled = canSave && !saving, modifier = Modifier.fillMaxWidth()) {
                 if (saving) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Text(if (isEdit) "Save" else "Create library")
             }
+            Spacer(Modifier.size(24.dp))
         }
+    }
+}
+
+@Composable
+private fun FormLabel(text: String) {
+    Text(text, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+}
+
+@Composable
+private fun ToggleRow(title: String, subtitle: String?, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            if (!subtitle.isNullOrBlank()) {
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Switch(checked = checked, onCheckedChange = onChange)
     }
 }
 

@@ -67,6 +67,16 @@ fun daysAgoIsoUtc(days: Int): String {
     return epochMillisToIso(epochDay * 86_400_000L)
 }
 
+/**
+ * Whole-day ISO bounds for a picked date. The Material date picker hands back UTC midnight, so the
+ * window is widened to that day's full span before it becomes an inclusive [from, to] for the API.
+ */
+fun isoAtStartOfDay(millis: Long): String = epochMillisToIso(millis - (millis.mod(DAY_MS)))
+
+fun isoAtEndOfDay(millis: Long): String = epochMillisToIso(millis - (millis.mod(DAY_MS)) + DAY_MS - 1)
+
+private const val DAY_MS = 86_400_000L
+
 private fun epochMillisToIso(millis: Long): String {
     val days = millis.floorDiv(86_400_000L)
     var rem = millis.mod(86_400_000L) / 1000L

@@ -12,6 +12,17 @@ data class LibraryDto(
     val root: String? = null,
     val contentSourceId: String? = null,
     val lastRefreshedDate: String? = null,
+    // Refresh schedule + scan settings, so the edit form can seed itself from the server's own values
+    // instead of guessing defaults and silently overwriting whatever was configured elsewhere.
+    val refreshInterval: String = "EVERY_6H",
+    val refreshOnStartup: Boolean = false,
+    val scanForceModifiedTime: Boolean = false,
+    val scanCbx: Boolean = true,
+    val scanPdf: Boolean = true,
+    val scanEpub: Boolean = true,
+    val scanDirectoryExclusions: Set<String> = emptySet(),
+    val specialFolders: Set<String> = emptySet(),
+    val autoDownload: Boolean = false,
 ) {
     val isWeb: Boolean get() = type == "WEB"
 }
