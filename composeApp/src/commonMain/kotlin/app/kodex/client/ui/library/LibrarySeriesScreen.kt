@@ -39,6 +39,7 @@ import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -140,6 +141,7 @@ fun LibrarySeriesScreen(
     var statusTri by remember { mutableStateOf<Tri?>(null) } // COMPLETED series status
     var reloadTick by remember { mutableIntStateOf(0) }
     var sheetOpen by remember { mutableStateOf(false) }
+    var sheetTab by remember { mutableStateOf(0) }
     // Seeded from the per-library store rather than defaulting to "none", so reopening a library
     // comes back grouped the way it was left (the web keeps the same two values in localStorage).
     var groupBy by remember(library.id) { mutableStateOf(appSettings.libraryGroupBy(library.id)) } // none | status | source | category
@@ -151,6 +153,10 @@ fun LibrarySeriesScreen(
     var categoriesDialog by remember { mutableStateOf(false) }
     var confirmRemove by remember { mutableStateOf(false) }
     val selection = rememberSelection<String>()
+
+    val activeFilters = readingTri.size +
+        (if (downloadedTri != null) 1 else 0) +
+        (if (statusTri != null) 1 else 0)
 
     val sortExpr = "${sortKey.field},${if (sortAsc) "asc" else "desc"}"
 
@@ -271,8 +277,19 @@ fun LibrarySeriesScreen(
                     },
                     actions = {
                         IconButton(onClick = { refresh() }) { Icon(Icons.Filled.Refresh, contentDescription = "Refresh") }
-                        IconButton(onClick = { sheetOpen = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "View options") }
+                        IconButton(onClick = { sheetTab = 0; sheetOpen = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "View options") }
                     },
+                )
+            }
+        },
+        floatingActionButton = {
+            // Hidden while selecting: the selection bottom bar owns the screen then, and a FAB over it
+            // would sit on top of its actions.
+            if (!selection.active) {
+                ExtendedFloatingActionButton(
+                    onClick = { sheetTab = 1; sheetOpen = true },
+                    icon = { Icon(app.kodex.client.ui.icons.FilterIcon, contentDescription = null) },
+                    text = { Text(if (activeFilters > 0) "Filter ($activeFilters)" else "Filter") },
                 )
             }
         },
@@ -333,7 +350,7 @@ fun LibrarySeriesScreen(
         val sheetState = rememberModalBottomSheetState()
         ModalBottomSheet(onDismissRequest = { sheetOpen = false }, sheetState = sheetState) {
             val tabs = listOf("Sort", "Filter", "Group", "Display")
-            val sheetPager = androidx.compose.foundation.pager.rememberPagerState(0) { tabs.size }
+            val sheetPager = androidx.compose.foundation.pager.rememberPagerState(sheetTab) { tabs.size }
             // Transparent container so the tab strip blends with the sheet (no mismatched white band/seam).
             TabRow(
                 selectedTabIndex = sheetPager.currentPage,
