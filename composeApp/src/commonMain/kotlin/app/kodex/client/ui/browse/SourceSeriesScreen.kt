@@ -245,7 +245,7 @@ fun SourceSeriesScreen(
                 ) {
                     item {
                         Column(Modifier.padding(horizontal = 16.dp)) {
-                            Header(s, source.id, data.info)
+                            Header(s, source.id, data.info, seed)
                             Spacer(Modifier.height(16.dp))
                             Actions(
                                 followed = followed,
@@ -333,7 +333,17 @@ private fun SourceBackdrop(baseUrl: String, apiKey: String, providerId: String, 
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Header(server: ServerConnection, providerId: String, info: SourceSearchResult) {
+private fun Header(
+    server: ServerConnection,
+    providerId: String,
+    info: SourceSearchResult,
+    /**
+     * The row this screen was opened from. Several sources fill in author/artist on their listing
+     * pages but return null for them from `seriesDetails`, which made the credit visible on the card
+     * and then vanish on open — so the listing's values stand in when the detail omits them.
+     */
+    seed: SourceSearchResult,
+) {
     Column {
         Row {
             Box(Modifier.width(120.dp).height(180.dp).clip(RoundedCornerShape(12.dp))) {
@@ -342,7 +352,9 @@ private fun Header(server: ServerConnection, providerId: String, info: SourceSea
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
                 Text(info.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                val by = listOfNotNull(info.author, info.artist).filter { it.isNotBlank() }.distinct().joinToString(", ")
+                val author = info.author?.takeIf { it.isNotBlank() } ?: seed.author
+                val artist = info.artist?.takeIf { it.isNotBlank() } ?: seed.artist
+                val by = listOfNotNull(author, artist).filter { it.isNotBlank() }.distinct().joinToString(", ")
                 if (by.isNotBlank()) {
                     Spacer(Modifier.height(6.dp))
                     Text(by, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
