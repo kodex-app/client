@@ -13,6 +13,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -81,16 +83,23 @@ fun LibrariesTab(session: SessionManager, api: KodexApi, onOpenLibrary: (Library
 
 @Composable
 private fun LibraryRow(library: LibraryDto, seriesCount: Long?, onClick: () -> Unit) {
-    Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+    ) {
         Row(
-            Modifier.fillMaxWidth().padding(14.dp),
+            Modifier.fillMaxWidth().padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primary) {
-                Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+            // Tonal rather than a solid primary block: at 48dp a fully saturated square dominated the
+            // row and fought the badges for attention.
+            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
                     Text(
                         library.name.firstOrNull()?.uppercase() ?: "?",
-                        color = MaterialTheme.colorScheme.onPrimary,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.titleMedium,
                     )
@@ -101,27 +110,34 @@ private fun LibraryRow(library: LibraryDto, seriesCount: Long?, onClick: () -> U
                 Text(
                     library.name,
                     style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                // Left out entirely while the count is loading, so the row doesn't flash a placeholder.
-                seriesCountLabel(seriesCount)?.let {
-                    Text(
-                        it,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                    )
+                Spacer(Modifier.size(6.dp))
+                // Badges and the count share one line beneath the name, which keeps the right edge
+                // free for the chevron instead of stacking two competing clusters.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    ColorBadge(if (library.isWeb) "WEB" else "LOCAL")
+                    library.mediaKind?.takeIf { it.isNotBlank() }?.let { ColorBadge(it) }
+                    seriesCountLabel(seriesCount)?.let {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                    }
                 }
             }
-            Spacer(Modifier.size(8.dp))
-            // Colour-coded, sharing the app-wide badge palette — this row used to draw its own flat
-            // surfaceVariant chip, which is why WEB/LOCAL/COMIC all read as the same grey.
-            ColorBadge(if (library.isWeb) "WEB" else "LOCAL")
-            library.mediaKind?.takeIf { it.isNotBlank() }?.let {
-                Spacer(Modifier.size(6.dp))
-                ColorBadge(it)
-            }
+            Icon(
+                app.kodex.client.ui.icons.ChevronRightIcon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            )
         }
     }
 }

@@ -61,22 +61,13 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
     val openBook: (String) -> Unit = { backStack.add(DetailRoute.BookDetail(it)) }
 
     /**
-     * Swap the open reader for the series it belongs to. Replaces rather than pushes, so the stack
-     * doesn't grow a second copy of the series you came from; and when that series is already the
-     * entry underneath, popping the reader is enough.
+     * Open the series a reader belongs to, *on top of* the reader.
+     *
+     * Pushing rather than replacing costs a duplicate series entry when you arrived from that same
+     * series, but it keeps back meaning "undo that button" — replacing dropped the reader, so back
+     * from the series skipped past it to whatever was underneath.
      */
-    val openSeriesFromReader: (DetailRoute) -> Unit = { route ->
-        backStack.removeLastOrNull()
-        val prev = backStack.lastOrNull()
-        val alreadyOpen = when {
-            prev is DetailRoute.SeriesDetail && route is DetailRoute.SeriesDetail ->
-                prev.seriesId == route.seriesId
-            prev is DetailRoute.SourceSeries && route is DetailRoute.SourceSeries ->
-                prev.source.id == route.source.id && prev.seed.externalId == route.seed.externalId
-            else -> false
-        }
-        if (!alreadyOpen) backStack.add(route)
-    }
+    val openSeriesFromReader: (DetailRoute) -> Unit = { route -> backStack.add(route) }
 
     // System back navigates within the app: close search → pop a detail screen → return to Home tab.
     // Disabled only on the Home tab with nothing open, so back there exits the app (expected).

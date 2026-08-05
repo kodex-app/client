@@ -17,18 +17,21 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -43,9 +46,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.kodex.client.auth.SessionManager
 import app.kodex.client.network.KodexApi
 import app.kodex.client.network.SourceDescriptor
@@ -123,7 +128,22 @@ private fun SourceList(
                 modifier = Modifier.weight(1f),
                 placeholder = { Text("Filter sources") },
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (filter.isNotEmpty()) {
+                        IconButton(onClick = { filter = "" }) {
+                            Icon(Icons.Filled.Close, contentDescription = "Clear filter")
+                        }
+                    }
+                },
                 singleLine = true,
+                // Pill + tonal fill: reads as a search affordance rather than a form input, and the
+                // hairline box no longer competes with the cards below it.
+                shape = RoundedCornerShape(28.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    unfocusedBorderColor = Color.Transparent,
+                ),
             )
             if (langs.size > 1) {
                 Spacer(Modifier.size(8.dp))
@@ -186,15 +206,15 @@ private fun SourceList(
             // only rows where the language isn't already stated by the section header — hence the
             // badge here and not there, where it would just repeat the heading on every row.
             if (favoriteSources.isNotEmpty()) {
-                item(key = "hdr-fav") { SourceSectionHeader("Favorites") }
+                item(key = "hdr-fav") { SourceSectionHeader("Favorites", favoriteSources.size) }
                 sourceItems(favoriteSources, "fav", showLanguage = true)
             }
             if (recentSources.isNotEmpty()) {
-                item(key = "hdr-recent") { SourceSectionHeader("Recently used") }
+                item(key = "hdr-recent") { SourceSectionHeader("Recently used", recentSources.size) }
                 sourceItems(recentSources, "recent", showLanguage = true)
             }
             groups.forEach { (language, list) ->
-                item(key = "hdr-${language ?: "multi"}") { SourceSectionHeader(languageLabel(language)) }
+                item(key = "hdr-${language ?: "multi"}") { SourceSectionHeader(languageLabel(language), list.size) }
                 sourceItems(list, "grp")
             }
         }
@@ -202,14 +222,25 @@ private fun SourceList(
 }
 
 @Composable
-private fun SourceSectionHeader(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.titleSmall,
-        fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(top = 12.dp, bottom = 8.dp),
-    )
+private fun SourceSectionHeader(text: String, count: Int) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text.uppercase(),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.8.sp,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Spacer(Modifier.weight(1f))
+        Text(
+            "$count",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 @Composable
@@ -221,40 +252,53 @@ private fun SourceRow(
     onToggleFavorite: () -> Unit,
     onOpen: (String) -> Unit,
 ) {
-    Card(onClick = { onOpen("popular") }, modifier = Modifier.fillMaxWidth()) {
+    Card(
+        onClick = { onOpen("popular") },
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+    ) {
         Row(
-            Modifier.fillMaxWidth().padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
+            Modifier.fillMaxWidth().padding(start = 12.dp, top = 10.dp, bottom = 10.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             SourceAvatar(source)
             Spacer(Modifier.size(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(source.displayName, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (source.adultContent) { app.kodex.client.ui.catalog.ColorBadge("18+"); Spacer(Modifier.size(6.dp)) }
+                Text(
+                    source.displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.size(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (source.adultContent) app.kodex.client.ui.catalog.ColorBadge("18+")
                     app.kodex.client.ui.catalog.ColorBadge(source.kind)
-                    if (showLanguage) {
-                        Spacer(Modifier.size(6.dp))
-                        // No language code collides with the coloured badge labels, so this lands on
-                        // ColorBadge's neutral pill and stays visually subordinate to the kind.
-                        app.kodex.client.ui.catalog.ColorBadge(languageBadge(source.language))
-                    }
+                    if (showLanguage) app.kodex.client.ui.catalog.ColorBadge(languageBadge(source.language))
                 }
             }
+            // Outlined when off, so a glance distinguishes favourites instead of every row showing
+            // the same amber star.
             IconButton(onClick = onToggleFavorite) {
                 Icon(
-                    Icons.Filled.Star,
+                    if (isFavorite) Icons.Filled.Star else app.kodex.client.ui.icons.StarBorderIcon,
                     contentDescription = if (isFavorite) "Unfavorite" else "Favorite",
-                    tint = if (isFavorite) androidx.compose.ui.graphics.Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    tint = if (isFavorite) FavoriteAmber else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
                 )
             }
-            // Direct entry into the source's Latest feed (when supported).
+            // Secondary to the row's own tap (which opens Popular), so it stays a quiet text action.
             if (source.supportsLatest) {
-                TextButton(onClick = { onOpen("latest") }) { Text("Latest") }
+                TextButton(onClick = { onOpen("latest") }, contentPadding = PaddingValues(horizontal = 10.dp)) {
+                    Text("Latest", style = MaterialTheme.typography.labelLarge)
+                }
             }
         }
     }
 }
+
+private val FavoriteAmber = Color(0xFFF59E0B)
 
 /**
  * The source's "logo": its website favicon (via Google's favicon service, matching the web UI), with

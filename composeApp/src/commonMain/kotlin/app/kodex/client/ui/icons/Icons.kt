@@ -221,6 +221,51 @@ val BookContentsIcon: ImageVector = materialIcon(name = "Filled.MenuBook") {
     }
 }
 
+/**
+ * Material "star_border" glyph — the un-favourited half of Browse's toggle. With only a filled star
+ * available, every row rendered one and the list read as "everything is a favourite".
+ */
+val StarBorderIcon: ImageVector = materialIcon(name = "Filled.StarBorder") {
+    materialPath(pathFillType = androidx.compose.ui.graphics.PathFillType.EvenOdd) {
+        moveTo(22f, 9.24f)
+        lineToRelative(-7.19f, -0.62f)
+        lineTo(12f, 2f)
+        lineTo(9.19f, 8.63f)
+        lineTo(2f, 9.24f)
+        lineToRelative(5.46f, 4.73f)
+        lineTo(5.82f, 21f)
+        lineTo(12f, 17.27f)
+        lineTo(18.18f, 21f)
+        lineToRelative(-1.63f, -7.03f)
+        lineTo(22f, 9.24f)
+        close()
+        moveTo(12f, 15.4f)
+        lineToRelative(-3.76f, 2.27f)
+        lineToRelative(1f, -4.28f)
+        lineToRelative(-3.32f, -2.88f)
+        lineToRelative(4.38f, -0.38f)
+        lineTo(12f, 6.1f)
+        lineToRelative(1.71f, 4.04f)
+        lineToRelative(4.38f, 0.38f)
+        lineToRelative(-3.32f, 2.88f)
+        lineToRelative(1f, 4.28f)
+        close()
+    }
+}
+
+/** Chevron pointing to the end — a "this row opens something" affordance on list rows. */
+val ChevronRightIcon: ImageVector = materialIcon(name = "Filled.ChevronRight", autoMirror = true) {
+    materialPath {
+        moveTo(10f, 6f)
+        lineTo(8.59f, 7.41f)
+        lineTo(13.17f, 12f)
+        lineToRelative(-4.58f, 4.59f)
+        lineTo(10f, 18f)
+        lineToRelative(6f, -6f)
+        close()
+    }
+}
+
 /** Material "remove" glyph — the minus half of the ebook reader's steppers (not in icons-core). */
 val MinusIcon: ImageVector = materialIcon(name = "Filled.Remove") {
     materialPath {
