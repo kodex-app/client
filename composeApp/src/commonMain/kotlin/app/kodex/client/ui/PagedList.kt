@@ -85,8 +85,10 @@ class PagedListState<T>(
     }
 
     private fun reload(initial: Boolean) {
+        // Set synchronously, before launching: loadMore() checks these flags, and flipping them inside
+        // the coroutine left a window where it saw an idle state and paged in parallel with page 0.
+        if (initial) loading = true
         scope.launch {
-            if (initial) loading = true
             error = null
             runCatching { fetch(0) }.fold(
                 onSuccess = { pageResp ->
@@ -104,6 +106,9 @@ class PagedListState<T>(
 
     fun loadMore() {
         if (appending || loading || refreshing || endReached) return
+        // Nothing to page past yet. Without this, an early trigger (the near-end check fires on an
+        // empty list) would fetch page 0 a second time and duplicate every row.
+        if (!loadedOnce || nextPage == 0 || items.isEmpty()) return
         appending = true
         scope.launch {
             runCatching { fetch(nextPage) }.fold(
@@ -151,8 +156,11 @@ fun <T> PagedList(
     LaunchedEffect(listState, state) {
         snapshotFlow {
             val info = listState.layoutInfo
+            val total = info.totalItemsCount
             val last = info.visibleItemsInfo.lastOrNull()?.index ?: 0
-            last >= info.totalItemsCount - 4
+            // `total > 0` matters: on an empty list this read as "near the end" (0 >= -4) and asked
+            // for another page before the first had even arrived.
+            total > 0 && last >= total - 4
         }.distinctUntilChanged().collect { near -> if (near) state.loadMore() }
     }
 
