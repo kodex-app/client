@@ -1,11 +1,18 @@
 package app.kodex.client.ui.main
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
@@ -16,12 +23,14 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -30,8 +39,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
 import app.kodex.client.data.AppSettings
@@ -79,7 +90,11 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
         }
     }
 
+    val immersive = backStack.lastOrNull().let { it is DetailRoute.Reader || it is DetailRoute.SourceReader }
+    val turnOffIncognito = { appSettings.setIncognitoMode(false) }
+
     if (searchOpen) {
+      WithIncognitoBanner(incognito, turnOffIncognito) {
         SearchScreen(
             session, api,
             onClose = { searchOpen = false },
@@ -87,10 +102,12 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
             onOpenBook = { searchOpen = false; openBook(it.id) },
             onOpenSourceSeries = { source, seed -> searchOpen = false; backStack.add(DetailRoute.SourceSeries(source, seed)) },
         )
+      }
         return
     }
 
     if (backStack.isNotEmpty()) {
+      WithIncognitoBanner(incognito && !immersive, turnOffIncognito) {
         DetailHost(
             route = backStack.last(),
             session = session,
@@ -120,9 +137,11 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
             },
             onBack = { backStack.removeAt(backStack.lastIndex) },
         )
+      }
         return
     }
 
+    WithIncognitoBanner(incognito, turnOffIncognito) {
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
@@ -184,5 +203,54 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
             }
         }
     }
+    }
 }
 
+/**
+ * Wraps a screen with the persistent incognito strip. The strip takes the status-bar inset itself and
+ * the content below is told it's consumed, so top bars underneath don't pad for it a second time.
+ */
+@Composable
+private fun WithIncognitoBanner(show: Boolean, onTurnOff: () -> Unit, content: @Composable () -> Unit) {
+    if (!show) {
+        content()
+        return
+    }
+    Column(Modifier.fillMaxSize()) {
+        IncognitoBanner(onTurnOff)
+        Box(Modifier.weight(1f).consumeWindowInsets(WindowInsets.statusBars)) { content() }
+    }
+}
+
+/** Slim indigo strip: an unmistakable, app-wide sign that nothing is being recorded. */
+@Composable
+private fun IncognitoBanner(onTurnOff: () -> Unit) {
+    Row(
+        // Background before the inset padding, so the colour runs under the status bar.
+        Modifier.fillMaxWidth().background(IncognitoIndigo).statusBarsPadding()
+            .padding(start = 12.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Icon(
+            app.kodex.client.ui.icons.IncognitoIcon,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.size(8.dp))
+        Text(
+            "Incognito — nothing is being recorded",
+            color = Color.White,
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        TextButton(onClick = onTurnOff, colors = ButtonDefaults.textButtonColors(contentColor = Color.White)) {
+            Text("Turn off", style = MaterialTheme.typography.labelLarge)
+        }
+    }
+}
+
+/** The web UI's incognito tone, matched so both clients signal the mode identically. */
+private val IncognitoIndigo = Color(0xFF4A3F8F)
