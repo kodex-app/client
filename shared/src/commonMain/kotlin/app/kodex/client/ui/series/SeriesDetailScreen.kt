@@ -655,7 +655,7 @@ private fun BookRow(
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f).alpha(if (read && !selected) 0.55f else 1f)) {
-            Text(bookLabel(book), style = MaterialTheme.typography.bodyLarge, maxLines = 2)
+            Text(bookLabel(book), style = MaterialTheme.typography.bodyMedium, maxLines = 2)
             val meta = listOfNotNull(
                 "#" + (if (book.number % 1.0 == 0.0) book.number.toInt().toString() else book.number.toString()),
                 "${book.pageCount} pages".takeIf { book.pageCount > 0 },
@@ -866,7 +866,7 @@ private fun ChapterRow(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     chapter.name?.takeIf { it.isNotBlank() } ?: chapterNumberLabel(chapter),
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.weight(1f),
                     maxLines = 2,
                 )
