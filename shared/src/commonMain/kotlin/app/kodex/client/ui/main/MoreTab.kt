@@ -14,6 +14,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.LibraryBooks
+import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.LocalOffer
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.List
@@ -134,7 +138,7 @@ fun MoreTab(
                 HorizontalDivider(Modifier.padding(start = 56.dp))
                 HubRow(Icons.Filled.Settings, "Settings", "Series behaviour and reader defaults", onOpenSettings)
                 HorizontalDivider(Modifier.padding(start = 56.dp))
-                HubRow(Icons.Filled.Star, "Appearance", "Theme, colours, dark mode", onOpenAppearance)
+                HubRow(Icons.Filled.Palette, "Appearance", "Theme, colours, dark mode", onOpenAppearance)
                 HorizontalDivider(Modifier.padding(start = 56.dp))
                 HubRow(Icons.Filled.Info, "About", "Version and licence", onOpenAbout)
             }
@@ -150,12 +154,12 @@ fun MoreTab(
             )
             Card(Modifier.fillMaxWidth()) {
                 Column {
-                    HubRow(Icons.AutoMirrored.Filled.List, "Libraries", "Add, edit, refresh, delete libraries", onOpenLibraries)
+                    HubRow(Icons.Filled.LibraryBooks, "Libraries", "Add, edit, refresh, delete libraries", onOpenLibraries)
                     HorizontalDivider(Modifier.padding(start = 56.dp))
-                    HubRow(Icons.Filled.Star, "Labels", "Create and manage metadata labels", onOpenLabels)
+                    HubRow(Icons.Filled.LocalOffer, "Labels", "Create and manage metadata labels", onOpenLabels)
                     if (isAdmin) {
                         HorizontalDivider(Modifier.padding(start = 56.dp))
-                        HubRow(Icons.Filled.Settings, "Plugins", "Install and manage content sources", onOpenPlugins)
+                        HubRow(Icons.Filled.Extension, "Plugins", "Install and manage content sources", onOpenPlugins)
                     }
                 }
             }

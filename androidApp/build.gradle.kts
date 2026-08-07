@@ -56,7 +56,12 @@ android {
             signingConfig = signingConfigs.getByName("nightly")
         }
         getByName("release") {
-            isMinifyEnabled = false
+            // R8 + resource shrinking. material-icons-extended bundles thousands of vectors and the
+            // app uses a couple of dozen; without shrinking they all ship. Rules live in
+            // proguard-rules.pro — mostly keeps for reflection-driven kotlinx.serialization.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.findByName("release")
         }
     }
