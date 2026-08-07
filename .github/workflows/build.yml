@@ -59,7 +59,7 @@ jobs:
       - name: Build release APK
         run: |
           chmod +x ./gradlew
-          ./gradlew :composeApp:assembleRelease --no-daemon --stacktrace
+          ./gradlew :androidApp:assembleRelease --no-daemon --stacktrace
 
       - name: Stage APK
         id: stage
@@ -70,7 +70,7 @@ jobs:
           else
             version="nightly-$(git rev-parse --short HEAD)"
           fi
-          apk="$(find composeApp/build/outputs/apk/release -maxdepth 1 -name '*.apk' | head -n1)"
+          apk="$(find androidApp/build/outputs/apk/release -maxdepth 1 -name '*.apk' | head -n1)"
           if [[ -z "$apk" ]]; then echo "No APK produced" >&2; exit 1; fi
           # An unsigned APK builds fine and installs nowhere — check before it reaches a release.
           apksigner="$(find "${ANDROID_HOME}/build-tools" -name apksigner -type f | sort -V | tail -n1)"

@@ -5,30 +5,33 @@ Compose Multiplatform mobile client for [Kodex](https://github.com/kodex-app) �
 
 ## Stack
 
-- Kotlin 2.1 · Compose Multiplatform 1.7.3 · AGP 8.7 (Gradle 8.11)
+- Kotlin 2.2 · Compose Multiplatform 1.10.3 · AGP 9.3.1 (Gradle 9.6.1)
 - Ktor 3 client (OkHttp / Darwin / CIO engines) · kotlinx.serialization
 - multiplatform-settings for persistence
 
 ## Structure
 
+Follows the KMP default layout: one shared library module plus a runnable application module per
+platform. AGP 9 requires this split — it refuses a module that applies both `com.android.application`
+and the Kotlin Multiplatform plugin.
+
 ```
-composeApp/src/
-  commonMain/   all shared UI + logic (see app/kodex/client/…)
-    auth/       SessionManager — servers, active session, current user
-    data/       ServerStore (persistence) + models
-    network/    KodexApi (Ktor) + DTOs
-    ui/         theme, login/, main/ (bottom-nav scaffold + tabs)
-  androidMain/  MainActivity + Android engine/manifest
-  iosMain/      MainViewController + iOS engine
-  desktopMain/  desktop window entry point
-    ui/reader/  image reader (comic/PDF) + reader/ebook/ (EPUB · MOBI/KF8 · FB2)
+shared/src/       Kotlin Multiplatform library — all shared UI + logic
+  commonMain/       app/kodex/client/…
+    auth/           SessionManager — servers, active session, current user
+    data/           ServerStore (persistence) + models
+    network/        KodexApi (Ktor) + DTOs
+    ui/             theme, login/, main/ (bottom-nav scaffold + tabs)
+    ui/reader/      image reader (comic/PDF) + reader/ebook/ (EPUB · MOBI/KF8 · FB2)
   commonMain/composeResources/files/
-    foliate/    vendored foliate-js engine (same copy the web UI ships)
-    reader/     reader.js — the page that drives foliate
-  androidMain/  MainActivity + Android engine/manifest
-  iosMain/      MainViewController + iOS engine
-  desktopMain/  desktop window entry point
-iosApp/         SwiftUI shell (Xcode project must be generated on a Mac — see iosApp/README.md)
+    foliate/        vendored foliate-js engine (same copy the web UI ships)
+    reader/         reader.js — the page that drives foliate
+  androidMain/      Android actuals (HTTP engine, orientation, system bars)
+  iosMain/          iOS actuals + MainViewController
+  desktopMain/      desktop actuals (KCEF bootstrap, orientation no-op)
+androidApp/       Android application — MainActivity, manifest, res, signing/packaging
+desktopApp/       Desktop application — window entry point + the live-server verify harnesses
+iosApp/           SwiftUI shell (Xcode project must be generated on a Mac — see iosApp/README.md)
 ```
 
 ## Ebook reader
@@ -72,19 +75,19 @@ auto-selects the most recently used one.
 ## Build / run
 
 ```bash
-./gradlew :composeApp:assembleDebug          # Android APK
-./gradlew :composeApp:run                     # desktop dev harness
+./gradlew :androidApp:assembleDebug           # Android APK
+./gradlew :desktopApp:run                     # desktop dev harness
 # iOS: open iosApp in Xcode on a Mac (see iosApp/README.md)
 ```
 
 `local.properties` needs `sdk.dir=<Android SDK path>` (auto-created here; gitignored).
 
-Live checks against a running server (host/key read from `../kodex/.env.test`):
+Live checks against a running server (host/key read from `../test.env`):
 
 ```bash
-./gradlew :composeApp:verifyApi            # KodexApi deserializes real responses
-./gradlew :composeApp:verifyEbookHost      # reader host: assets, proxy routes, token/traversal guards
-./gradlew :composeApp:verifyEbookRender    # drives a real WebView: renders a book, then pages/seeks it
+./gradlew :desktopApp:verifyApi           # KodexApi deserializes real responses
+./gradlew :desktopApp:verifyEbookHost      # reader host: assets, proxy routes, token/traversal guards
+./gradlew :desktopApp:verifyEbookRender    # drives a real WebView: renders a book, then pages/seeks it
 ```
 
 `verifyEbookRender` needs an EPUB in the library and downloads Chromium on first run.

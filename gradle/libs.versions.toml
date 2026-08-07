@@ -1,17 +1,17 @@
 [versions]
-agp = "8.13.2"
-kotlin = "2.2.0"
-compose = "1.10.3"
-androidx-activityCompose = "1.9.3"
-coroutines = "1.9.0"
-serialization = "1.7.3"
-ktor = "3.0.3"
+agp = "9.3.1"
+kotlin = "2.4.10"
+compose = "1.11.1"
+androidx-activityCompose = "1.13.0"
+coroutines = "1.11.0"
+serialization = "1.11.0"
+ktor = "3.5.2"
 multiplatformSettings = "1.3.0"
-coil = "3.0.4"
+coil = "3.5.0"
 # Compose Multiplatform stopped publishing the bundled Material icons after 1.7.3, so this
 # one stays pinned rather than tracking `compose`.
 materialIcons = "1.7.3"
-composeWebview = "2.0.1"
+composeWebview = "2.0.3"
 
 android-compileSdk = "35"
 android-minSdk = "24"
@@ -47,11 +47,15 @@ coil-network-ktor3 = { module = "io.coil-kt.coil3:coil-network-ktor3", version.r
 compose-webview = { module = "io.github.kevinnzou:compose-webview-multiplatform", version.ref = "composeWebview" }
 # Desktop-only Chromium backend behind compose-webview. Pinned to the version that artifact resolves,
 # so the bootstrap in WebEngine.desktop.kt compiles against exactly what ships.
-kcef = { module = "dev.datlag:kcef", version = "2024.04.20.3" }
+kcef = { module = "dev.datlag:kcef", version = "2025.03.23" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }
+# AGP 9 forbids the KMP plugin alongside com.android.application, so the shared module uses
+# the Android-KMP library plugin and the app module keeps com.android.application.
+androidMultiplatformLibrary = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlinSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "compose" }
 composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
