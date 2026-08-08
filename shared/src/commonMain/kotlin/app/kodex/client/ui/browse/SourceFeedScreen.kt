@@ -38,13 +38,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Button
-import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TooltipBox
-import androidx.compose.material3.TooltipDefaults
-import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -86,6 +82,7 @@ import app.kodex.client.network.TriStateFilter
 import app.kodex.client.network.SeriesPage
 import app.kodex.client.ui.EmptyMessage
 import app.kodex.client.ui.SelectionState
+import app.kodex.client.ui.Tip
 import app.kodex.client.ui.catalog.CoverCard
 import app.kodex.client.ui.catalog.sourceCoverUrl
 import app.kodex.client.ui.collectAsStateSafe
@@ -555,18 +552,6 @@ private fun DropdownRow(label: String, current: String, options: List<String>, o
 private fun Modifier.clickableRow(onClick: () -> Unit): Modifier =
     this.then(Modifier.clickable(onClick = onClick))
 
-/** Wraps an action with a plain tooltip shown on long-press / hover. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun Tip(text: String, content: @Composable () -> Unit) {
-    TooltipBox(
-        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-        tooltip = { PlainTooltip { Text(text) } },
-        state = rememberTooltipState(),
-    ) {
-        content()
-    }
-}
 
 private fun triGlyph(state: Int): String = when (state) {
     TriStateFilter.INCLUDE -> "✓"

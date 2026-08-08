@@ -17,6 +17,15 @@ android {
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
         versionName = "0.1.0"
+
+        // Dev-channel builds ship as a separate package (app.kodex.client.dev) so they install
+        // alongside the production app instead of fighting it for the same applicationId. CI sets
+        // APP_ID_SUFFIX=.dev on the dev branch; empty everywhere else.
+        val appIdSuffix = System.getenv("APP_ID_SUFFIX")?.trim().orEmpty()
+        applicationIdSuffix = appIdSuffix.takeIf { it.isNotEmpty() }
+        // Same reason the package differs: two identically-named launcher icons are unusable.
+        manifestPlaceholders["appLabel"] =
+            if (appIdSuffix.isEmpty()) "Kodex" else "Kodex ${appIdSuffix.removePrefix(".").uppercase()}"
     }
 
     compileOptions {
@@ -27,20 +36,10 @@ android {
     // The real release key never lands in the repo: CI decodes the KEYSTORE_BASE64 secret to
     // keystore/release.jks (gitignored) and passes the rest as environment variables. Without that
     // file the release config is simply absent, so local `assembleRelease` produces an unsigned APK
-    // rather than silently signing with the throwaway nightly key below.
+    // rather than silently signing with a throwaway key.
     val releaseStore = rootProject.file("keystore/release.jks").takeIf { it.exists() }
 
-    // Stable signing key for the debug/nightly APK so a new nightly installs over a previous one
-    // (Android rejects an update whose signature differs from the installed app). The default debug
-    // keystore is regenerated per CI run, which is exactly what caused the "signatures don't match"
-    // failure — so we ship a fixed keystore. This is a throwaway nightly key, not a release key.
     signingConfigs {
-        create("nightly") {
-            storeFile = rootProject.file("keystore/nightly.jks")
-            storePassword = "kodexnightly"
-            keyAlias = "nightly"
-            keyPassword = "kodexnightly"
-        }
         if (releaseStore != null) {
             create("release") {
                 storeFile = releaseStore
@@ -52,9 +51,6 @@ android {
     }
 
     buildTypes {
-        getByName("debug") {
-            signingConfig = signingConfigs.getByName("nightly")
-        }
         getByName("release") {
             // R8 + resource shrinking. material-icons-extended bundles thousands of vectors and the
             // app uses a couple of dozen; without shrinking they all ship. Rules live in

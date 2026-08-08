@@ -7,14 +7,10 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -26,22 +22,13 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -66,9 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -83,8 +68,12 @@ import app.kodex.client.network.SourceChapter
 import app.kodex.client.network.SourceDescriptor
 import app.kodex.client.network.SourceSearchResult
 import app.kodex.client.ui.LoadedContent
-import app.kodex.client.ui.MetaChip
-import app.kodex.client.ui.catalog.CoverImage
+import app.kodex.client.ui.catalog.SeriesBackdrop
+import app.kodex.client.ui.catalog.SeriesDetailList
+import app.kodex.client.ui.catalog.SeriesEntryRow
+import app.kodex.client.ui.catalog.SeriesHeader
+import app.kodex.client.ui.catalog.SeriesListControls
+import app.kodex.client.ui.catalog.SeriesSort
 import app.kodex.client.ui.catalog.sourceCoverUrl
 import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.friendlyMessage
@@ -126,7 +115,7 @@ fun SourceSeriesScreen(
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var sortDesc by remember { mutableStateOf(true) }
-    var sortByDate by remember { mutableStateOf(false) }
+    var sortKey by remember { mutableStateOf(SeriesSort.NUMBER) }
     var translator by remember { mutableStateOf<String?>(null) }
     // The read actions live in the Scaffold's FAB slot, but only the loaded chapter list knows which
     // chapter to resume — so the content publishes it up here (and clears it while reloading).
@@ -213,8 +202,12 @@ fun SourceSeriesScreen(
                 val followed = data.followed
                 val scanlators = data.chapters.mapNotNull { it.scanlator?.takeIf { sc -> sc.isNotBlank() } }.distinct().sorted()
                 val visible = if (translator == null) data.chapters else data.chapters.filter { it.scanlator == translator }
-                val ascending = if (sortByDate) visible.sortedWith(compareBy(nullsLast()) { it.releaseDate })
-                else visible.sortedWith(compareBy(nullsLast()) { it.number })
+                // SOURCE is the order the source itself listed them in, left untouched.
+                val ascending = when (sortKey) {
+                    SeriesSort.DATE -> visible.sortedWith(compareBy(nullsLast()) { it.releaseDate })
+                    SeriesSort.NUMBER -> visible.sortedWith(compareBy(nullsLast()) { it.number })
+                    SeriesSort.SOURCE -> visible
+                }
                 val display = if (sortDesc) ascending.asReversed() else ascending
                 // Identity of this source series, carried into the reader (nav + progress attribution).
                 val context = SourceSeriesContext(
@@ -238,49 +231,43 @@ fun SourceSeriesScreen(
                 LaunchedEffect(fab) { readFab = fab }
                 DisposableEffect(Unit) { onDispose { readFab = null } }
 
-                LazyColumn(
-                    Modifier.fillMaxSize(),
-                    state = listState,
-                    contentPadding = PaddingValues(top = topInset + 8.dp, bottom = 96.dp + bottomInset),
-                ) {
-                    item {
-                        Column(Modifier.padding(horizontal = 16.dp)) {
-                            Header(s, source.id, data.info, seed)
-                            Spacer(Modifier.height(16.dp))
-                            Actions(
-                                followed = followed,
-                                busy = busy,
-                                message = message,
-                                onFollow = {
-                                    act { srv ->
-                                        val lib = api.webLibrary(srv.baseUrl, srv.apiKey)
-                                        api.followWebSeries(srv.baseUrl, srv.apiKey, lib.id, source.id, seed.externalId)
-                                        "Added to your library"
-                                    }
-                                },
-                                onDownload = {
-                                    act { srv ->
-                                        api.downloadWebSeries(srv.baseUrl, srv.apiKey, followed!!.libraryId, followed.seriesId, null)
-                                        "Download queued"
-                                    }
-                                },
-                                onUnfollow = {
-                                    act { srv ->
-                                        api.unfollowWebSeries(srv.baseUrl, srv.apiKey, followed!!.libraryId, followed.seriesId, deleteFiles = false)
-                                        "Removed from your library"
-                                    }
-                                },
-                            )
-                            Spacer(Modifier.height(20.dp))
-                            ChapterControls(
-                                total = visible.size,
-                                sortByDate = sortByDate, sortDesc = sortDesc,
-                                onToggleDir = { sortDesc = !sortDesc }, onSetSortByDate = { sortByDate = it },
-                                scanlators = scanlators, translator = translator, onSetTranslator = { translator = it },
-                                onRefresh = { reload++ },
-                            )
-                        }
-                    }
+                SeriesDetailList(listState, topInset, bottomInset, header = {
+                    Header(s, source.id, data.info, seed)
+                    Spacer(Modifier.height(16.dp))
+                    Actions(
+                        followed = followed,
+                        busy = busy,
+                        message = message,
+                        onFollow = {
+                            act { srv ->
+                                val lib = api.webLibrary(srv.baseUrl, srv.apiKey)
+                                api.followWebSeries(srv.baseUrl, srv.apiKey, lib.id, source.id, seed.externalId)
+                                "Added to your library"
+                            }
+                        },
+                        onDownload = {
+                            act { srv ->
+                                api.downloadWebSeries(srv.baseUrl, srv.apiKey, followed!!.libraryId, followed.seriesId, null)
+                                "Download queued"
+                            }
+                        },
+                        onUnfollow = {
+                            act { srv ->
+                                api.unfollowWebSeries(srv.baseUrl, srv.apiKey, followed!!.libraryId, followed.seriesId, deleteFiles = false)
+                                "Removed from your library"
+                            }
+                        },
+                    )
+                    Spacer(Modifier.height(20.dp))
+                    SeriesListControls(
+                        countLabel = "Books · ${visible.size}",
+                        numberLabel = "Book number",
+                        sortKey = sortKey, sortDesc = sortDesc,
+                        onToggleDir = { sortDesc = !sortDesc }, onSetSortKey = { sortKey = it },
+                        scanlators = scanlators, translator = translator, onSetTranslator = { translator = it },
+                        onRefresh = { reload++ },
+                    )
+                }) {
                     if (display.isEmpty()) {
                         item {
                             Text(
@@ -316,19 +303,7 @@ fun SourceSeriesScreen(
 /** Blurred cover backdrop from the top (behind the toolbar) fading into the page background. */
 @Composable
 private fun SourceBackdrop(baseUrl: String, apiKey: String, providerId: String, coverUrl: String?, height: Dp) {
-    val surface = MaterialTheme.colorScheme.surface
-    Box(Modifier.fillMaxWidth().height(height)) {
-        CoverImage(sourceCoverUrl(baseUrl, providerId, coverUrl), apiKey, Modifier.fillMaxSize().blur(20.dp).alpha(0.55f))
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.verticalGradient(
-                    0f to surface.copy(alpha = 0.30f),
-                    0.65f to surface.copy(alpha = 0.75f),
-                    1f to surface,
-                ),
-            ),
-        )
-    }
+    SeriesBackdrop(sourceCoverUrl(baseUrl, providerId, coverUrl), apiKey, height)
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -344,64 +319,25 @@ private fun Header(
      */
     seed: SourceSearchResult,
 ) {
-    Column {
-        Row {
-            Box(Modifier.width(120.dp).height(180.dp).clip(RoundedCornerShape(12.dp))) {
-                CoverImage(sourceCoverUrl(server.baseUrl, providerId, info.coverUrl), server.apiKey, Modifier.fillMaxSize())
-            }
-            Spacer(Modifier.width(16.dp))
-            Column(Modifier.weight(1f)) {
-                Text(info.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                val author = info.author?.takeIf { it.isNotBlank() } ?: seed.author
-                val artist = info.artist?.takeIf { it.isNotBlank() } ?: seed.artist
-                val by = listOfNotNull(author, artist).filter { it.isNotBlank() }.distinct().joinToString(", ")
-                if (by.isNotBlank()) {
-                    Spacer(Modifier.height(6.dp))
-                    Text(by, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Spacer(Modifier.height(4.dp))
-                Text(prettyStatus(info.status), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-            }
+    SeriesHeader(
+        coverUrl = sourceCoverUrl(server.baseUrl, providerId, info.coverUrl),
+        apiKey = server.apiKey,
+        title = info.title,
+        chips = info.genres,
+        summary = info.description,
+    ) {
+        val author = info.author?.takeIf { it.isNotBlank() } ?: seed.author
+        val artist = info.artist?.takeIf { it.isNotBlank() } ?: seed.artist
+        val by = listOfNotNull(author, artist).filter { it.isNotBlank() }.distinct().joinToString(", ")
+        if (by.isNotBlank()) {
+            Spacer(Modifier.height(6.dp))
+            Text(by, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        if (info.genres.isNotEmpty()) {
-            Spacer(Modifier.height(14.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                info.genres.take(15).forEach { MetaChip(it) }
-            }
-        }
-        info.description?.takeIf { it.isNotBlank() }?.let {
-            Spacer(Modifier.height(14.dp))
-            ExpandableSummary(it)
-        }
+        Spacer(Modifier.height(4.dp))
+        Text(prettyStatus(info.status), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
     }
 }
 
-/** Series summary capped at 3 lines with a "Read more" toggle when it overflows; tapping toggles too. */
-@Composable
-private fun ExpandableSummary(text: String) {
-    var expanded by remember(text) { mutableStateOf(false) }
-    var overflows by remember(text) { mutableStateOf(false) }
-    Column(
-        Modifier.clip(RoundedCornerShape(6.dp)).clickable(enabled = overflows || expanded) { expanded = !expanded },
-    ) {
-        Text(
-            text,
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = if (expanded) Int.MAX_VALUE else 3,
-            overflow = TextOverflow.Ellipsis,
-            onTextLayout = { if (!expanded) overflows = it.hasVisualOverflow },
-        )
-        if (overflows || expanded) {
-            Text(
-                if (expanded) "Read less" else "Read more",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(vertical = 4.dp),
-            )
-        }
-    }
-}
 
 /**
  * The library actions (follow / download / unfollow). Reading is handled by the FABs — see [ReadFab].
@@ -433,85 +369,8 @@ private fun Actions(
     }
 }
 
-/** Sort (chapter/date + direction), translator filter, and refresh controls above the chapter list. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ChapterControls(
-    total: Int,
-    sortByDate: Boolean,
-    sortDesc: Boolean,
-    onToggleDir: () -> Unit,
-    onSetSortByDate: (Boolean) -> Unit,
-    scanlators: List<String>,
-    translator: String?,
-    onSetTranslator: (String?) -> Unit,
-    onRefresh: () -> Unit,
-) {
-    var sortMenu by remember { mutableStateOf(false) }
-    var transMenu by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text("Chapters · $total", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.weight(1f))
-        IconButton(onClick = onRefresh) { Icon(Icons.Filled.Refresh, contentDescription = "Refresh") }
-    }
-    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box {
-            ControlChip(if (sortByDate) "Release date" else "Chapter number") { sortMenu = true }
-            DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
-                SortMenuItem("Chapter number", selected = !sortByDate, sortDesc = sortDesc) { if (sortByDate) onSetSortByDate(false) else onToggleDir() }
-                SortMenuItem("Release date", selected = sortByDate, sortDesc = sortDesc) { if (!sortByDate) onSetSortByDate(true) else onToggleDir() }
-            }
-        }
-        if (scanlators.size > 1) {
-            Spacer(Modifier.width(8.dp))
-            Box {
-                ControlChip(translator ?: "All translators") { transMenu = true }
-                DropdownMenu(expanded = transMenu, onDismissRequest = { transMenu = false }) {
-                    DropdownMenuItem(
-                        text = { Text("All translators") },
-                        onClick = { transMenu = false; onSetTranslator(null) },
-                        leadingIcon = { if (translator == null) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary) },
-                    )
-                    scanlators.forEach { sc ->
-                        DropdownMenuItem(
-                            text = { Text(sc) },
-                            onClick = { transMenu = false; onSetTranslator(sc) },
-                            leadingIcon = { if (translator == sc) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary) },
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
 
-@Composable
-private fun ControlChip(label: String, onClick: () -> Unit) {
-    Row(
-        Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-    }
-}
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SortMenuItem(label: String, selected: Boolean, sortDesc: Boolean, onClick: () -> Unit) {
-    DropdownMenuItem(
-        text = { Text(label) },
-        onClick = onClick,
-        leadingIcon = { if (selected) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary) },
-        trailingIcon = {
-            if (selected) Icon(
-                if (sortDesc) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowUp,
-                contentDescription = if (sortDesc) "Descending" else "Ascending",
-                tint = MaterialTheme.colorScheme.primary,
-            )
-        },
-    )
-}
 
 /** The source's volume/section label, separating grouped chapters. */
 @Composable
@@ -539,34 +398,34 @@ private fun ChapterRow(
     onLongClick: () -> Unit,
 ) {
     val read = progress?.completed == true
-    Row(
-        Modifier.fillMaxWidth()
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier.size(7.dp).clip(CircleShape)
-                .background(if (read) Color.Transparent else MaterialTheme.colorScheme.primary),
-        )
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f).alpha(if (read) 0.55f else 1f)) {
-            Text(chapter.name.ifBlank { chapterNumber(chapter) }, style = MaterialTheme.typography.bodyLarge, maxLines = 2)
-            val meta = listOfNotNull(
-                chapter.number?.let { n -> "#" + (if (n % 1.0 == 0.0) n.toInt().toString() else n.toString()) },
-                chapter.scanlator?.takeIf { it.isNotBlank() },
-                chapter.releaseDate?.takeIf { it.isNotBlank() },
-            ).joinToString(" · ")
-            if (meta.isNotBlank()) {
-                Spacer(Modifier.height(2.dp))
-                Text(meta, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-        if (progress != null && !progress.completed) {
+    SeriesEntryRow(
+        title = chapter.name.ifBlank { chapterNumber(chapter) },
+        meta = listOfNotNull(
+            chapter.number?.let { n -> "#" + (if (n % 1.0 == 0.0) n.toInt().toString() else n.toString()) },
+            chapter.scanlator?.takeIf { it.isNotBlank() },
+            chapter.releaseDate?.takeIf { it.isNotBlank() },
+        ).joinToString(" · "),
+        onClick = onClick,
+        onLongClick = onLongClick,
+        dimmed = read,
+        leading = {
+            // Unread dot; a read chapter keeps the space so titles stay aligned down the list.
+            Box(
+                Modifier.size(7.dp).clip(CircleShape)
+                    .background(if (read) Color.Transparent else MaterialTheme.colorScheme.primary),
+            )
             Spacer(Modifier.width(10.dp))
-            Text("Page ${progress.page}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-        }
-    }
+        },
+        trailing = progress?.takeIf { !it.completed }?.let { p ->
+            {
+                Text(
+                    "Page ${p.page}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        },
+    )
 }
 
 @Composable

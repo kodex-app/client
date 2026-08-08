@@ -8,14 +8,10 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBars
@@ -26,7 +22,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -34,13 +29,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -51,15 +42,11 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TooltipBox
-import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -71,8 +58,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -83,8 +68,17 @@ import app.kodex.client.network.SeriesChapterDto
 import app.kodex.client.network.SeriesDetailDto
 import app.kodex.client.ui.MetaChip
 import app.kodex.client.ui.SelectionState
+import app.kodex.client.ui.SelectionActionBar
+import app.kodex.client.ui.SelectionTopBar
+import app.kodex.client.ui.TooltipIconButton
 import app.kodex.client.ui.catalog.CoverCard
 import app.kodex.client.ui.catalog.CoverImage
+import app.kodex.client.ui.catalog.SeriesBackdrop
+import app.kodex.client.ui.catalog.SeriesDetailList
+import app.kodex.client.ui.catalog.SeriesEntryRow
+import app.kodex.client.ui.catalog.SeriesHeader
+import app.kodex.client.ui.catalog.SeriesListControls
+import app.kodex.client.ui.catalog.SeriesSort
 import app.kodex.client.ui.catalog.bookCoverUrl
 import app.kodex.client.ui.catalog.seriesCoverUrl
 import app.kodex.client.ui.collectAsStateSafe
@@ -93,12 +87,6 @@ import app.kodex.client.ui.main.OpenSourceReader
 import app.kodex.client.ui.rememberSelection
 import app.kodex.client.ui.rememberSnackbar
 import kotlinx.coroutines.launch
-
-/**
- * How a series' books/chapters are ordered. SOURCE leaves the server's own ordering alone — for a WEB
- * series that's the order the content source lists them in, which numbering often doesn't reproduce.
- */
-private enum class SeriesSort { NUMBER, DATE, SOURCE }
 
 private data class SeriesContent(
     val detail: SeriesDetailDto,
@@ -222,7 +210,7 @@ fun SeriesDetailScreen(
     Scaffold(
             topBar = {
                 if (selection.active) {
-                    SelectionBar(
+                    SelectionTopBar(
                         count = selection.count,
                         onClose = { selection.clear() },
                         onSelectAll = { selection.selectAll(allIds) },
@@ -429,54 +417,9 @@ private fun ErrorRetry(message: String, onRetry: () -> Unit) {
 }
 
 // ── Selection bars ─────────────────────────────────────────────────────────────────────────────
-/** Contextual top bar while items are multi-selected: count + Select all / Select inverse. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SelectionBar(
-    count: Int,
-    onClose: () -> Unit,
-    onSelectAll: () -> Unit,
-    onSelectInverse: () -> Unit,
-) {
-    TopAppBar(
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-            titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        ),
-        title = { Text("$count selected", fontWeight = FontWeight.SemiBold) },
-        navigationIcon = {
-            Tip("Cancel selection") {
-                IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "Cancel selection") }
-            }
-        },
-        actions = {
-            Tip("Select all") {
-                IconButton(onClick = onSelectAll) { Icon(app.kodex.client.ui.icons.SelectAllIcon, contentDescription = "Select all") }
-            }
-            Tip("Select inverse") {
-                IconButton(onClick = onSelectInverse) { Icon(app.kodex.client.ui.icons.InvertSelectionIcon, contentDescription = "Select inverse") }
-            }
-        },
-    )
-}
 
-/** Wraps an action with a plain tooltip shown on long-press / hover. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun Tip(text: String, content: @Composable () -> Unit) {
-    TooltipBox(
-        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-        tooltip = { PlainTooltip { Text(text) } },
-        state = rememberTooltipState(),
-    ) {
-        content()
-    }
-}
 
 /** Contextual bottom action bar for multi-select — the bulk functions as icon buttons. */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SelectionBottomBar(
     isWeb: Boolean,
@@ -484,20 +427,11 @@ private fun SelectionBottomBar(
     onMarkUnread: () -> Unit,
     onDownload: () -> Unit,
 ) {
-    BottomAppBar(
-        containerColor = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-    ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-            Tip("Mark as read") {
-                IconButton(onClick = onMarkRead) { Icon(Icons.Filled.Check, contentDescription = "Mark as read") }
-            }
-            Tip("Mark as unread") {
-                IconButton(onClick = onMarkUnread) { Icon(app.kodex.client.ui.icons.MarkUnreadIcon, contentDescription = "Mark as unread") }
-            }
-            if (isWeb) Tip("Download") {
-                IconButton(onClick = onDownload) { Icon(app.kodex.client.ui.icons.DownloadIcon, contentDescription = "Download") }
-            }
+    SelectionActionBar {
+        TooltipIconButton("Mark as read", onMarkRead) { Icon(Icons.Filled.Check, contentDescription = "Mark as read") }
+        TooltipIconButton("Mark as unread", onMarkUnread) { Icon(app.kodex.client.ui.icons.MarkUnreadIcon, contentDescription = "Mark as unread") }
+        if (isWeb) {
+            TooltipIconButton("Download", onDownload) { Icon(app.kodex.client.ui.icons.DownloadIcon, contentDescription = "Download") }
         }
     }
 }
@@ -580,39 +514,36 @@ private fun BooksLayout(
         SeriesSort.SOURCE -> content.books
     }
     val display = if (sortDesc) ascending.asReversed() else ascending
-    LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(top = topInset + 8.dp, bottom = 96.dp + bottomInset)) {
-        item {
-            Column(Modifier.padding(horizontal = 16.dp)) {
-                SeriesHeader(
-                    baseUrl, apiKey, content.detail,
-                    countLabel = "${content.books.size} ${if (content.books.size == 1) "book" else "books"}",
-                    unread = content.books.count { it.readProgress?.completed != true },
-                    libraryName = content.libraryName,
-                    sourceName = content.sourceName,
-                )
-                if (content.subseries.isNotEmpty()) {
-                    Spacer(Modifier.height(16.dp))
-                    app.kodex.client.ui.catalog.CoverSection("Sub-series", content.subseries, key = { it.id }) { sub ->
-                        CoverCard(
-                            coverUrl = app.kodex.client.ui.catalog.seriesCoverUrl(baseUrl, sub),
-                            apiKey = apiKey,
-                            title = sub.title,
-                            subtitle = app.kodex.client.ui.catalog.seriesSubtitle(sub),
-                            unread = app.kodex.client.ui.catalog.seriesUnreadBadge(sub),
-                            onClick = { onOpenSeries(sub.id) },
-                        )
-                    }
-                }
-                Spacer(Modifier.height(20.dp))
-                SeriesListControls(
-                    countLabel = "Books · ${content.books.size}",
-                    numberLabel = "Book number",
-                    sortKey = sortKey, sortDesc = sortDesc, onToggleDir = onToggleDir, onSetSortKey = onSetSortKey,
-                    scanlators = emptyList(), translator = null, onSetTranslator = {},
-                    onRefresh = onRefresh,
+    SeriesDetailList(listState, topInset, bottomInset, header = {
+        SeriesHeader(
+            baseUrl, apiKey, content.detail,
+            countLabel = "${content.books.size} ${if (content.books.size == 1) "book" else "books"}",
+            unread = content.books.count { it.readProgress?.completed != true },
+            libraryName = content.libraryName,
+            sourceName = content.sourceName,
+        )
+        if (content.subseries.isNotEmpty()) {
+            Spacer(Modifier.height(16.dp))
+            app.kodex.client.ui.catalog.CoverSection("Sub-series", content.subseries, key = { it.id }) { sub ->
+                CoverCard(
+                    coverUrl = app.kodex.client.ui.catalog.seriesCoverUrl(baseUrl, sub),
+                    apiKey = apiKey,
+                    title = sub.title,
+                    subtitle = app.kodex.client.ui.catalog.seriesSubtitle(sub),
+                    unread = app.kodex.client.ui.catalog.seriesUnreadBadge(sub),
+                    onClick = { onOpenSeries(sub.id) },
                 )
             }
         }
+        Spacer(Modifier.height(20.dp))
+        SeriesListControls(
+            countLabel = "Books · ${content.books.size}",
+            numberLabel = "Book number",
+            sortKey = sortKey, sortDesc = sortDesc, onToggleDir = onToggleDir, onSetSortKey = onSetSortKey,
+            scanlators = emptyList(), translator = null, onSetTranslator = {},
+            onRefresh = onRefresh,
+        )
+    }) {
         items(display, key = { it.id }) { book ->
             BookRow(baseUrl, apiKey, book, selection, onOpenBook)
             HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
@@ -631,40 +562,36 @@ private fun BookRow(
 ) {
     val selected = selection.isSelected(book.id)
     val read = book.readProgress?.completed == true
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .then(if (selected) Modifier.background(MaterialTheme.colorScheme.primaryContainer) else Modifier)
-            .combinedClickable(
-                onClick = { if (selection.active) selection.toggle(book.id) else onOpenBook(book.id) },
-                onLongClick = { selection.toggle(book.id) },
-            )
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (selection.active) {
-            Icon(
-                Icons.Filled.Check,
-                contentDescription = null,
-                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.padding(end = 12.dp),
-            )
-        }
-        Box(Modifier.width(44.dp).height(62.dp).clip(RoundedCornerShape(6.dp))) {
-            CoverImage(bookCoverUrl(baseUrl, book.id), apiKey, Modifier.fillMaxSize())
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f).alpha(if (read && !selected) 0.55f else 1f)) {
-            Text(bookLabel(book), style = MaterialTheme.typography.bodyMedium, maxLines = 2)
-            val meta = listOfNotNull(
-                "#" + (if (book.number % 1.0 == 0.0) book.number.toInt().toString() else book.number.toString()),
-                "${book.pageCount} pages".takeIf { book.pageCount > 0 },
-                book.releaseDate?.takeIf { it.isNotBlank() },
-            ).joinToString(" · ")
-            Spacer(Modifier.height(2.dp))
-            Text(meta, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
+    SeriesEntryRow(
+        title = bookLabel(book),
+        meta = listOfNotNull(
+            "#" + (if (book.number % 1.0 == 0.0) book.number.toInt().toString() else book.number.toString()),
+            "${book.pageCount} pages".takeIf { book.pageCount > 0 },
+            book.releaseDate?.takeIf { it.isNotBlank() },
+        ).joinToString(" · "),
+        onClick = { if (selection.active) selection.toggle(book.id) else onOpenBook(book.id) },
+        onLongClick = { selection.toggle(book.id) },
+        dimmed = read,
+        selected = selected,
+        leading = {
+            if (selection.active) SelectionTick(selected)
+            Box(Modifier.width(44.dp).height(62.dp).clip(RoundedCornerShape(6.dp))) {
+                CoverImage(bookCoverUrl(baseUrl, book.id), apiKey, Modifier.fillMaxSize())
+            }
+            Spacer(Modifier.width(12.dp))
+        },
+    )
+}
+
+/** Selection tick shared by both rows while multi-select is active. */
+@Composable
+private fun SelectionTick(selected: Boolean) {
+    Icon(
+        Icons.Filled.Check,
+        contentDescription = null,
+        tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.padding(end = 12.dp),
+    )
 }
 
 @Composable
@@ -702,26 +629,23 @@ private fun ChaptersLayout(
     val display = if (sortDesc) ascending.asReversed() else ascending
     val downloaded = visibleChapters.count { it.downloaded }
     // Rows are full-bleed (their selection highlight spans the width), so the list itself has no side padding.
-    LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(top = topInset + 8.dp, bottom = 96.dp + bottomInset)) {
-        item {
-            Column(Modifier.padding(horizontal = 16.dp)) {
-                SeriesHeader(
-                    baseUrl, apiKey, content.detail,
-                    countLabel = "${visibleChapters.size} books · $downloaded downloaded",
-                    unread = visibleChapters.count { !it.read },
-                    libraryName = content.libraryName,
-                    sourceName = content.sourceName,
-                )
-                Spacer(Modifier.height(20.dp))
-                SeriesListControls(
-                    countLabel = "Books · ${visibleChapters.size}",
-                    numberLabel = "Book number",
-                    sortKey = sortKey, sortDesc = sortDesc, onToggleDir = onToggleDir, onSetSortKey = onSetSortKey,
-                    scanlators = scanlators, translator = translator, onSetTranslator = onSetTranslator,
-                    onRefresh = onRefresh,
-                )
-            }
-        }
+    SeriesDetailList(listState, topInset, bottomInset, header = {
+        SeriesHeader(
+            baseUrl, apiKey, content.detail,
+            countLabel = "${visibleChapters.size} books · $downloaded downloaded",
+            unread = visibleChapters.count { !it.read },
+            libraryName = content.libraryName,
+            sourceName = content.sourceName,
+        )
+        Spacer(Modifier.height(20.dp))
+        SeriesListControls(
+            countLabel = "Books · ${visibleChapters.size}",
+            numberLabel = "Book number",
+            sortKey = sortKey, sortDesc = sortDesc, onToggleDir = onToggleDir, onSetSortKey = onSetSortKey,
+            scanlators = scanlators, translator = translator, onSetTranslator = onSetTranslator,
+            onRefresh = onRefresh,
+        )
+    }) {
         items(display, key = { it.chapterId }) { chapter ->
             ChapterRow(chapter, providerId, seriesId, selection, onOpenReader, onOpenSourceReader)
             HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
@@ -729,101 +653,8 @@ private fun ChaptersLayout(
     }
 }
 
-/** Sort (number/date + direction), optional translator filter, and refresh controls above a list. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SeriesListControls(
-    countLabel: String,
-    numberLabel: String,
-    sortKey: SeriesSort,
-    sortDesc: Boolean,
-    onToggleDir: () -> Unit,
-    onSetSortKey: (SeriesSort) -> Unit,
-    scanlators: List<String>,
-    translator: String?,
-    onSetTranslator: (String?) -> Unit,
-    onRefresh: () -> Unit,
-) {
-    var sortMenu by remember { mutableStateOf(false) }
-    var transMenu by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        SectionLabel(countLabel)
-        Spacer(Modifier.weight(1f))
-        IconButton(onClick = onRefresh) { Icon(Icons.Filled.Refresh, contentDescription = "Refresh") }
-    }
-    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box {
-            val activeLabel = when (sortKey) {
-                SeriesSort.NUMBER -> numberLabel
-                SeriesSort.DATE -> "Release date"
-                SeriesSort.SOURCE -> "Source order"
-            }
-            ControlChip(activeLabel) { sortMenu = true }
-            DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
-                // Tapping the active key flips direction; tapping another switches to it.
-                listOf(
-                    SeriesSort.NUMBER to numberLabel,
-                    SeriesSort.DATE to "Release date",
-                    SeriesSort.SOURCE to "Source order",
-                ).forEach { (key, label) ->
-                    SortMenuItem(label, selected = sortKey == key, sortDesc = sortDesc) {
-                        if (sortKey == key) onToggleDir() else onSetSortKey(key)
-                    }
-                }
-            }
-        }
-        if (scanlators.size > 1) {
-            Spacer(Modifier.width(8.dp))
-            Box {
-                ControlChip(translator ?: "All translators") { transMenu = true }
-                DropdownMenu(expanded = transMenu, onDismissRequest = { transMenu = false }) {
-                    DropdownMenuItem(
-                        text = { Text("All translators") },
-                        onClick = { transMenu = false; onSetTranslator(null) },
-                        leadingIcon = { if (translator == null) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary) },
-                    )
-                    scanlators.forEach { sc ->
-                        DropdownMenuItem(
-                            text = { Text(sc) },
-                            onClick = { transMenu = false; onSetTranslator(sc) },
-                            leadingIcon = { if (translator == sc) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary) },
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
 
-/** A compact pill that opens a menu: label + dropdown caret, tinted in the primary color. */
-@Composable
-private fun ControlChip(label: String, onClick: () -> Unit) {
-    Row(
-        Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-    }
-}
 
-/** A sort-key menu row: leading check when active, trailing arrow for its direction. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SortMenuItem(label: String, selected: Boolean, sortDesc: Boolean, onClick: () -> Unit) {
-    DropdownMenuItem(
-        text = { Text(label) },
-        onClick = onClick,
-        leadingIcon = { if (selected) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary) },
-        trailingIcon = {
-            if (selected) Icon(
-                if (sortDesc) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowUp,
-                contentDescription = if (sortDesc) "Descending" else "Ascending",
-                tint = MaterialTheme.colorScheme.primary,
-            )
-        },
-    )
-}
 
 @Composable
 private fun ChapterRow(
@@ -835,81 +666,35 @@ private fun ChapterRow(
     onOpenSourceReader: OpenSourceReader,
 ) {
     val selected = selection.isSelected(chapter.chapterId)
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .then(if (selected) Modifier.background(MaterialTheme.colorScheme.primaryContainer) else Modifier)
-            .combinedClickable(
-                onClick = {
-                    if (selection.active) {
-                        selection.toggle(chapter.chapterId)
-                    } else {
-                        val bookId = chapter.bookId
-                        if (bookId != null) onOpenReader(bookId)
-                        else onOpenSourceReader(providerId, chapter.chapterId, seriesId, chapter.name)
-                    }
-                },
-                onLongClick = { selection.toggle(chapter.chapterId) },
-            )
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (selection.active) {
-            Icon(
-                Icons.Filled.Check,
-                contentDescription = null,
-                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.padding(end = 12.dp),
-            )
-        }
-        Column(Modifier.weight(1f).alpha(if (chapter.read && !selected) 0.55f else 1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    chapter.name?.takeIf { it.isNotBlank() } ?: chapterNumberLabel(chapter),
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 2,
-                )
-                if (chapter.isNew) {
-                    Spacer(Modifier.width(8.dp))
-                    MetaChip("New")
-                }
+    SeriesEntryRow(
+        title = chapter.name?.takeIf { it.isNotBlank() } ?: chapterNumberLabel(chapter),
+        meta = listOfNotNull(
+            chapter.number?.let { n -> "#" + (if (n % 1.0 == 0.0) n.toInt().toString() else n.toString()) },
+            if (chapter.downloaded) "Downloaded" else "Stream",
+            chapter.scanlator?.takeIf { it.isNotBlank() },
+            chapter.releaseDate?.takeIf { it.isNotBlank() },
+        ).joinToString(" · "),
+        onClick = {
+            if (selection.active) {
+                selection.toggle(chapter.chapterId)
+            } else {
+                val bookId = chapter.bookId
+                if (bookId != null) onOpenReader(bookId)
+                else onOpenSourceReader(providerId, chapter.chapterId, seriesId, chapter.name)
             }
-            val meta = listOfNotNull(
-                chapter.number?.let { n -> "#" + (if (n % 1.0 == 0.0) n.toInt().toString() else n.toString()) },
-                if (chapter.downloaded) "Downloaded" else "Stream",
-                chapter.scanlator?.takeIf { it.isNotBlank() },
-                chapter.releaseDate?.takeIf { it.isNotBlank() },
-            ).joinToString(" · ")
-            if (meta.isNotBlank()) {
-                Spacer(Modifier.height(2.dp))
-                Text(meta, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    }
+        },
+        onLongClick = { selection.toggle(chapter.chapterId) },
+        dimmed = chapter.read,
+        selected = selected,
+        leading = if (selection.active) ({ SelectionTick(selected) }) else null,
+        titleTrailing = if (chapter.isNew) ({ MetaChip("New") }) else null,
+    )
 }
 
 /** Mihon-style backdrop: the cover, blurred, fading into the page background under the header. */
 @Composable
 private fun SeriesBackdrop(baseUrl: String, apiKey: String, detail: SeriesDetailDto, height: androidx.compose.ui.unit.Dp) {
-    val surface = MaterialTheme.colorScheme.surface
-    Box(Modifier.fillMaxWidth().height(height)) {
-        CoverImage(
-            seriesCoverUrl(baseUrl, detail.id, detail.coverUrl),
-            apiKey,
-            Modifier.fillMaxSize().blur(20.dp).alpha(0.55f),
-        )
-        // Top-to-bottom scrim so toolbar icons stay legible and the backdrop dissolves into the content.
-        Box(
-            Modifier.fillMaxSize().background(
-                androidx.compose.ui.graphics.Brush.verticalGradient(
-                    0f to surface.copy(alpha = 0.30f),
-                    0.65f to surface.copy(alpha = 0.75f),
-                    1f to surface,
-                ),
-            ),
-        )
-    }
+    SeriesBackdrop(seriesCoverUrl(baseUrl, detail.id, detail.coverUrl), apiKey, height)
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -923,93 +708,46 @@ private fun SeriesHeader(
     libraryName: String? = null,
     sourceName: String? = null,
 ) {
-    Column {
-        Row {
-            Box(Modifier.width(120.dp).height(180.dp).clip(RoundedCornerShape(12.dp))) {
-                CoverImage(seriesCoverUrl(baseUrl, detail.id, detail.coverUrl), apiKey, Modifier.fillMaxSize())
-            }
-            Spacer(Modifier.width(16.dp))
-            Column(Modifier.weight(1f)) {
-                Text(detail.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(6.dp))
-                // Author / artist (artist shown only when it differs from the author).
-                val people = listOfNotNull(
-                    detail.author.takeIf { it.isNotBlank() },
-                    detail.artist.takeIf { it.isNotBlank() && !it.equals(detail.author, ignoreCase = true) },
-                ).joinToString(" · ")
-                if (people.isNotBlank()) {
-                    Text(people, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                }
-                Text(countLabel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (unread > 0) {
-                    Text("$unread unread", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                }
-                if (detail.publisher.isNotBlank()) {
-                    Text(detail.publisher, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                val provenance = listOfNotNull(
-                    sourceName?.takeIf { it.isNotBlank() },
-                    detail.language.takeIf { it.isNotBlank() }?.uppercase(),
-                ).joinToString(" · ")
-                if (provenance.isNotBlank()) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(provenance, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                // The library this series belongs to — shown so it's clear which shelf it came from.
-                if (!libraryName.isNullOrBlank()) {
-                    Spacer(Modifier.height(4.dp))
-                    Text("Library · $libraryName", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary)
-                }
-            }
-        }
-        val chips = (detail.genres + detail.tags).distinct()
-        if (chips.isNotEmpty()) {
-            Spacer(Modifier.height(14.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                chips.take(15).forEach { MetaChip(it) }
-            }
-        }
-        if (detail.summary.isNotBlank()) {
-            Spacer(Modifier.height(14.dp))
-            ExpandableSummary(detail.summary)
-        }
-    }
-}
-
-/** Series summary capped at 3 lines with a "Read more" toggle when it overflows; tapping toggles too. */
-@Composable
-private fun ExpandableSummary(text: String) {
-    var expanded by remember(text) { mutableStateOf(false) }
-    var overflows by remember(text) { mutableStateOf(false) }
-    Column(
-        Modifier.clip(RoundedCornerShape(6.dp))
-            .clickable(enabled = overflows || expanded) { expanded = !expanded },
+    SeriesHeader(
+        coverUrl = seriesCoverUrl(baseUrl, detail.id, detail.coverUrl),
+        apiKey = apiKey,
+        title = detail.title,
+        chips = (detail.genres + detail.tags).distinct(),
+        summary = detail.summary,
     ) {
-        Text(
-            text,
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = if (expanded) Int.MAX_VALUE else 3,
-            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-            onTextLayout = { if (!expanded) overflows = it.hasVisualOverflow },
-        )
-        if (overflows || expanded) {
-            Text(
-                if (expanded) "Read less" else "Read more",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.clip(RoundedCornerShape(6.dp))
-                    .combinedClickable(onClick = { expanded = !expanded }, onLongClick = { expanded = !expanded })
-                    .padding(vertical = 4.dp),
-            )
+        Spacer(Modifier.height(6.dp))
+        // Author / artist (artist shown only when it differs from the author).
+        val people = listOfNotNull(
+            detail.author.takeIf { it.isNotBlank() },
+            detail.artist.takeIf { it.isNotBlank() && !it.equals(detail.author, ignoreCase = true) },
+        ).joinToString(" · ")
+        if (people.isNotBlank()) {
+            Text(people, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+        }
+        Text(countLabel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (unread > 0) {
+            Text("$unread unread", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+        }
+        if (detail.publisher.isNotBlank()) {
+            Text(detail.publisher, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        val provenance = listOfNotNull(
+            sourceName?.takeIf { it.isNotBlank() },
+            detail.language.takeIf { it.isNotBlank() }?.uppercase(),
+        ).joinToString(" · ")
+        if (provenance.isNotBlank()) {
+            Spacer(Modifier.height(4.dp))
+            Text(provenance, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        // The library this series belongs to — shown so it's clear which shelf it came from.
+        if (!libraryName.isNullOrBlank()) {
+            Spacer(Modifier.height(4.dp))
+            Text("Library · $libraryName", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary)
         }
     }
 }
 
-@Composable
-private fun SectionLabel(text: String) {
-    Text(text, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-}
+
 
 private fun localResume(books: List<BookDto>, onOpenReader: (String) -> Unit, onOpenReaderIncognito: (String) -> Unit): Resume? {
     if (books.isEmpty()) return null

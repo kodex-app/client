@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -13,8 +12,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
@@ -33,10 +30,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.PlainTooltip
-import androidx.compose.material3.TooltipBox
-import androidx.compose.material3.TooltipDefaults
-import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -73,6 +66,9 @@ import app.kodex.client.network.ServerEvent
 import app.kodex.client.ui.EmptyMessage
 import app.kodex.client.ui.LoadedContent
 import app.kodex.client.ui.OnServerEvent
+import app.kodex.client.ui.SelectionActionBar
+import app.kodex.client.ui.SelectionTopBar
+import app.kodex.client.ui.TooltipIconButton
 import app.kodex.client.ui.catalog.SeriesGrid
 import app.kodex.client.ui.catalog.SeriesListView
 import app.kodex.client.ui.collectAsStateSafe
@@ -494,33 +490,8 @@ fun LibrarySeriesScreen(
     }
 }
 
-/** Contextual top bar while series are multi-selected: count + Select all / Select inverse (Mihon-style). */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SelectionTopBar(
-    count: Int,
-    onClose: () -> Unit,
-    onSelectAll: () -> Unit,
-    onSelectInverse: () -> Unit,
-) {
-    TopAppBar(
-        colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-            titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        ),
-        title = { Text("$count selected", fontWeight = FontWeight.SemiBold) },
-        navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "Cancel selection") } },
-        actions = {
-            TooltipIconButton("Select all", onSelectAll) { Icon(app.kodex.client.ui.icons.SelectAllIcon, contentDescription = "Select all") }
-            TooltipIconButton("Select inverse", onSelectInverse) { Icon(app.kodex.client.ui.icons.InvertSelectionIcon, contentDescription = "Select inverse") }
-        },
-    )
-}
 
 /** Contextual bottom action bar for the multi-select mode — the bulk functions as icon buttons. */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SelectionBottomBar(
     isWeb: Boolean,
@@ -531,39 +502,18 @@ private fun SelectionBottomBar(
     onCategories: () -> Unit,
     onRemove: () -> Unit,
 ) {
-    androidx.compose.material3.BottomAppBar(
-        containerColor = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-    ) {
-        androidx.compose.foundation.layout.Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TooltipIconButton("Mark as read", onMarkRead) { Icon(Icons.Filled.Check, contentDescription = "Mark as read") }
-            TooltipIconButton("Mark as unread", onMarkUnread) { Icon(app.kodex.client.ui.icons.MarkUnreadIcon, contentDescription = "Mark as unread") }
-            if (isWeb) {
-                TooltipIconButton("Update", onUpdate) { Icon(Icons.Filled.Refresh, contentDescription = "Update") }
-                TooltipIconButton("Download", onDownload) { Icon(app.kodex.client.ui.icons.DownloadIcon, contentDescription = "Download") }
-                TooltipIconButton("Add to categories", onCategories) { Icon(app.kodex.client.ui.icons.LabelIcon, contentDescription = "Add to categories") }
-                TooltipIconButton("Remove", onRemove) { Icon(Icons.Filled.Delete, contentDescription = "Remove") }
-            }
+    SelectionActionBar {
+        TooltipIconButton("Mark as read", onMarkRead) { Icon(Icons.Filled.Check, contentDescription = "Mark as read") }
+        TooltipIconButton("Mark as unread", onMarkUnread) { Icon(app.kodex.client.ui.icons.MarkUnreadIcon, contentDescription = "Mark as unread") }
+        if (isWeb) {
+            TooltipIconButton("Update", onUpdate) { Icon(Icons.Filled.Refresh, contentDescription = "Update") }
+            TooltipIconButton("Download", onDownload) { Icon(app.kodex.client.ui.icons.DownloadIcon, contentDescription = "Download") }
+            TooltipIconButton("Add to categories", onCategories) { Icon(app.kodex.client.ui.icons.LabelIcon, contentDescription = "Add to categories") }
+            TooltipIconButton("Remove", onRemove) { Icon(Icons.Filled.Delete, contentDescription = "Remove") }
         }
     }
 }
 
-/** An icon button with a plain tooltip (long-press / hover) showing [label]. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun TooltipIconButton(label: String, onClick: () -> Unit, icon: @Composable () -> Unit) {
-    TooltipBox(
-        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-        tooltip = { PlainTooltip { Text(label) } },
-        state = rememberTooltipState(),
-    ) {
-        IconButton(onClick = onClick) { icon() }
-    }
-}
 
 /** The shared query facets (everything except the group key), passed to each pager page / the flat list. */
 private data class SeriesFilterArgs(
