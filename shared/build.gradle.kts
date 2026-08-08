@@ -10,7 +10,7 @@ plugins {
 }
 
 kotlin {
-    androidLibrary {
+    android {
         namespace = "app.kodex.client.shared"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
@@ -24,8 +24,6 @@ kotlin {
         compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
     }
 
-    // No iosX64: Compose Multiplatform stopped publishing that target in 1.11 (Intel simulators are
-    // gone from modern Xcode). Apple Silicon simulators use iosSimulatorArm64.
     listOf(
         iosArm64(),
         iosSimulatorArm64(),
@@ -37,7 +35,7 @@ kotlin {
     }
 
     sourceSets {
-        val desktopMain by getting
+        val desktopMain = getByName("desktopMain")
 
         commonMain.dependencies {
             implementation(libs.compose.runtime)
@@ -84,4 +82,3 @@ kotlin {
         }
     }
 }
-
