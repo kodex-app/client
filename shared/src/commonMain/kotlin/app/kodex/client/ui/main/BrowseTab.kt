@@ -18,8 +18,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.IconButton
@@ -151,7 +153,7 @@ private fun SourceList(
                     BadgedBox(badge = { if (selectedLangs.isNotEmpty()) Badge { Text("${selectedLangs.size}") } }) {
                         IconButton(onClick = { langMenu = true }) {
                             Icon(
-                                app.kodex.client.ui.icons.LanguageIcon,
+                                Icons.Filled.Language,
                                 contentDescription = "Filter by language",
                                 tint = if (selectedLangs.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -283,7 +285,7 @@ private fun SourceRow(
             // the same amber star.
             IconButton(onClick = onToggleFavorite) {
                 Icon(
-                    if (isFavorite) Icons.Filled.Star else app.kodex.client.ui.icons.StarBorderIcon,
+                    if (isFavorite) Icons.Filled.Star else Icons.Filled.StarBorder,
                     contentDescription = if (isFavorite) "Unfavorite" else "Favorite",
                     tint = if (isFavorite) FavoriteAmber else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
                 )

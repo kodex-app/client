@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -30,13 +29,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.automirrored.filled.ChromeReaderMode
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
@@ -88,14 +94,11 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.add
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.doubleOrNull
-import kotlinx.serialization.json.int
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -631,7 +634,7 @@ private fun EbookTopBar(
         }
         if (hasBookmarks) {
             IconButton(onClick = onOpenBookmarks) {
-                Icon(app.kodex.client.ui.icons.BookmarkIcon, contentDescription = "Bookmarks", tint = content)
+                Icon(Icons.Filled.Bookmark, contentDescription = "Bookmarks", tint = content)
             }
         }
     }
@@ -687,7 +690,7 @@ private fun EbookBottomBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             FilledIconButton(onClick = onPrevChapter, enabled = canPrevChapter, colors = buttonColors) {
-                Icon(app.kodex.client.ui.icons.SkipPreviousIcon, "Previous book")
+                Icon(Icons.Filled.SkipPrevious, "Previous book")
             }
             IconButton(onClick = onPrevPage) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous page", tint = content) }
             Slider(
@@ -699,23 +702,23 @@ private fun EbookBottomBar(
             )
             IconButton(onClick = onNextPage) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next page", tint = content) }
             FilledIconButton(onClick = onNextChapter, enabled = canNextChapter, colors = buttonColors) {
-                Icon(app.kodex.client.ui.icons.SkipNextIcon, "Next book")
+                Icon(Icons.Filled.SkipNext, "Next book")
             }
         }
         // Toolbar row: contents · chapter list · open in web · orientation · settings.
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // "Book contents" = this file's own TOC; "Books" = the other books of the
             // series. The list icon means the latter in the image reader too, so it stays put here.
             onOpenSeries?.let { open -> ToolbarButton(Icons.Filled.Info, "Series details", onClick = open) }
-            ToolbarButton(app.kodex.client.ui.icons.BookContentsIcon, "Book contents", enabled = hasToc, onClick = onOpenToc)
-            ToolbarButton(Icons.AutoMirrored.Filled.List, "Books", enabled = hasChapters, onClick = onOpenChapters)
-            ToolbarButton(app.kodex.client.ui.icons.OpenInWebIcon, "Open in web", enabled = webEnabled, onClick = onOpenWeb)
+            ToolbarButton(Icons.AutoMirrored.Filled.ChromeReaderMode, "Book contents", enabled = hasToc, onClick = onOpenToc)
+            ToolbarButton(Icons.AutoMirrored.Filled.ViewList, "Books", enabled = hasChapters, onClick = onOpenChapters)
+            ToolbarButton(Icons.Filled.OpenInBrowser, "Open in web", enabled = webEnabled, onClick = onOpenWeb)
             ToolbarButton(
-                app.kodex.client.ui.icons.OrientationIcon,
+                Icons.Filled.ScreenRotation,
                 "Screen orientation",
                 tint = if (orientation == app.kodex.client.platform.ScreenOrientation.AUTO) content else MaterialTheme.colorScheme.primary,
                 onClick = onCycleOrientation,
@@ -928,7 +931,7 @@ private fun ChipRow(label: String, value: String, options: List<Pair<String, Str
 private fun StepperRow(label: String, value: String, onDecrease: () -> Unit, onIncrease: () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
-        IconButton(onClick = onDecrease) { Icon(app.kodex.client.ui.icons.MinusIcon, "Decrease $label") }
+        IconButton(onClick = onDecrease) { Icon(Icons.Filled.Remove, "Decrease $label") }
         Text(value, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.width(56.dp), textAlign = TextAlign.Center)
         IconButton(onClick = onIncrease) { Icon(Icons.Filled.Add, "Increase $label") }
     }

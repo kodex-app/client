@@ -29,9 +29,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.MarkAsUnread
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -286,7 +289,7 @@ fun SeriesDetailScreen(
                 if (resume != null && !selection.active) {
                     Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         androidx.compose.material3.SmallFloatingActionButton(onClick = resume.openIncognito) {
-                            Icon(app.kodex.client.ui.icons.IncognitoIcon, contentDescription = "Read incognito")
+                            Icon(Icons.Filled.VisibilityOff, contentDescription = "Read incognito")
                         }
                         androidx.compose.material3.ExtendedFloatingActionButton(
                             onClick = resume.open,
@@ -429,9 +432,9 @@ private fun SelectionBottomBar(
 ) {
     SelectionActionBar {
         TooltipIconButton("Mark as read", onMarkRead) { Icon(Icons.Filled.Check, contentDescription = "Mark as read") }
-        TooltipIconButton("Mark as unread", onMarkUnread) { Icon(app.kodex.client.ui.icons.MarkUnreadIcon, contentDescription = "Mark as unread") }
+        TooltipIconButton("Mark as unread", onMarkUnread) { Icon(Icons.Filled.MarkAsUnread, contentDescription = "Mark as unread") }
         if (isWeb) {
-            TooltipIconButton("Download", onDownload) { Icon(app.kodex.client.ui.icons.DownloadIcon, contentDescription = "Download") }
+            TooltipIconButton("Download", onDownload) { Icon(Icons.Filled.Download, contentDescription = "Download") }
         }
     }
 }

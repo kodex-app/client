@@ -17,11 +17,15 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.MarkAsUnread
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
@@ -284,7 +288,7 @@ fun LibrarySeriesScreen(
             if (!selection.active) {
                 ExtendedFloatingActionButton(
                     onClick = { sheetTab = 1; sheetOpen = true },
-                    icon = { Icon(app.kodex.client.ui.icons.FilterIcon, contentDescription = null) },
+                    icon = { Icon(Icons.Filled.FilterList, contentDescription = null) },
                     text = { Text(if (activeFilters > 0) "Filter ($activeFilters)" else "Filter") },
                 )
             }
@@ -504,11 +508,11 @@ private fun SelectionBottomBar(
 ) {
     SelectionActionBar {
         TooltipIconButton("Mark as read", onMarkRead) { Icon(Icons.Filled.Check, contentDescription = "Mark as read") }
-        TooltipIconButton("Mark as unread", onMarkUnread) { Icon(app.kodex.client.ui.icons.MarkUnreadIcon, contentDescription = "Mark as unread") }
+        TooltipIconButton("Mark as unread", onMarkUnread) { Icon(Icons.Filled.MarkAsUnread, contentDescription = "Mark as unread") }
         if (isWeb) {
             TooltipIconButton("Update", onUpdate) { Icon(Icons.Filled.Refresh, contentDescription = "Update") }
-            TooltipIconButton("Download", onDownload) { Icon(app.kodex.client.ui.icons.DownloadIcon, contentDescription = "Download") }
-            TooltipIconButton("Add to categories", onCategories) { Icon(app.kodex.client.ui.icons.LabelIcon, contentDescription = "Add to categories") }
+            TooltipIconButton("Download", onDownload) { Icon(Icons.Filled.Download, contentDescription = "Download") }
+            TooltipIconButton("Add to categories", onCategories) { Icon(Icons.AutoMirrored.Filled.Label, contentDescription = "Add to categories") }
             TooltipIconButton("Remove", onRemove) { Icon(Icons.Filled.Delete, contentDescription = "Remove") }
         }
     }

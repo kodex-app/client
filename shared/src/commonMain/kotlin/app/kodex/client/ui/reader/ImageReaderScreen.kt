@@ -52,10 +52,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ColorScheme
@@ -808,7 +816,7 @@ private fun TopBar(
         if (bookmarked != null) {
             IconButton(onClick = onToggleBookmark) {
                 Icon(
-                    if (bookmarked) app.kodex.client.ui.icons.BookmarkIcon else app.kodex.client.ui.icons.BookmarkBorderIcon,
+                    if (bookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
                     contentDescription = if (bookmarked) "Remove bookmark" else "Bookmark this page",
                     tint = if (bookmarked) MaterialTheme.colorScheme.primary else content,
                 )
@@ -858,22 +866,22 @@ private fun BottomBar(
         // Toolbar row: auto-scroll (continuous only) · chapter list · open in web · orientation · settings.
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
+            horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (continuous) {
                 ToolbarButton(
-                    if (autoScroll) app.kodex.client.ui.icons.PauseIcon else Icons.Filled.PlayArrow,
+                    if (autoScroll) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                     "Auto-scroll",
                     tint = if (autoScroll) MaterialTheme.colorScheme.primary else content,
                     onClick = onToggleAutoScroll,
                 )
             }
             onOpenSeries?.let { open -> ToolbarButton(Icons.Filled.Info, "Series details", onClick = open) }
-            ToolbarButton(Icons.AutoMirrored.Filled.List, "Books", enabled = hasChapters, onClick = onOpenChapters)
-            ToolbarButton(app.kodex.client.ui.icons.OpenInWebIcon, "Open in web", enabled = webEnabled, onClick = onOpenWeb)
+            ToolbarButton(Icons.AutoMirrored.Filled.ViewList, "Books", enabled = hasChapters, onClick = onOpenChapters)
+            ToolbarButton(Icons.Filled.OpenInBrowser, "Open in web", enabled = webEnabled, onClick = onOpenWeb)
             ToolbarButton(
-                app.kodex.client.ui.icons.OrientationIcon,
+                Icons.Filled.ScreenRotation,
                 "Screen orientation",
                 tint = if (orientation == app.kodex.client.platform.ScreenOrientation.AUTO) content else MaterialTheme.colorScheme.primary,
                 onClick = onCycleOrientation,
@@ -920,7 +928,7 @@ private fun ChapterNavigator(
                 enabled = if (rtl) canNextChapter else canPrevChapter,
                 colors = buttonColors,
             ) {
-                Icon(app.kodex.client.ui.icons.SkipPreviousIcon, if (rtl) "Next book" else "Previous book")
+                Icon(Icons.Filled.SkipPrevious, if (rtl) "Next book" else "Previous book")
             }
 
             if (pageCount > 1) {
@@ -957,7 +965,7 @@ private fun ChapterNavigator(
                 enabled = if (rtl) canPrevChapter else canNextChapter,
                 colors = buttonColors,
             ) {
-                Icon(app.kodex.client.ui.icons.SkipNextIcon, if (rtl) "Previous book" else "Next book")
+                Icon(Icons.Filled.SkipNext, if (rtl) "Previous book" else "Next book")
             }
         }
     }
@@ -1015,7 +1023,7 @@ internal fun IncognitoBadge(modifier: Modifier = Modifier) {
         modifier.padding(top = 6.dp).background(Color(0xFF4A3F8F).copy(alpha = 0.92f), RoundedCornerShape(999.dp)).padding(horizontal = 10.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(app.kodex.client.ui.icons.IncognitoIcon, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+        Icon(Icons.Filled.VisibilityOff, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
         Spacer(Modifier.width(4.dp))
         Text("Incognito", color = Color.White, style = MaterialTheme.typography.labelSmall)
     }

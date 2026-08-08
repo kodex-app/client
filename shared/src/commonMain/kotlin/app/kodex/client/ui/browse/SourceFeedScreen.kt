@@ -24,7 +24,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -251,7 +254,7 @@ fun SourceFeedScreen(
                     actions = {
                         Tip("Select all") {
                             IconButton(onClick = { selection.selectAll(items.map { it.externalId }) }) {
-                                Icon(app.kodex.client.ui.icons.SelectAllIcon, contentDescription = "Select all")
+                                Icon(Icons.Filled.SelectAll, contentDescription = "Select all")
                             }
                         }
                         Tip("Add the selected series to a library") {
@@ -297,7 +300,7 @@ fun SourceFeedScreen(
                         source.website?.takeIf { it.isNotBlank() }?.let { site ->
                             Tip("Source website") {
                                 IconButton(onClick = { openUrl(site) }) {
-                                    Icon(app.kodex.client.ui.icons.OpenInWebIcon, contentDescription = "Source website")
+                                    Icon(Icons.Filled.OpenInBrowser, contentDescription = "Source website")
                                 }
                             }
                         }
@@ -313,7 +316,7 @@ fun SourceFeedScreen(
             val filterCount = appliedFilters.filters.count { it.isActive() }
             androidx.compose.material3.ExtendedFloatingActionButton(
                 onClick = { openFilters() },
-                icon = { Icon(app.kodex.client.ui.icons.FilterIcon, contentDescription = null) },
+                icon = { Icon(Icons.Filled.FilterList, contentDescription = null) },
                 text = { Text(if (filterCount > 0) "Filter ($filterCount)" else "Filter") },
             )
         },

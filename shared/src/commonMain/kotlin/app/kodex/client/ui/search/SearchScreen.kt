@@ -24,6 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -270,7 +271,7 @@ fun SearchScreen(
             }
             androidx.compose.material3.ExtendedFloatingActionButton(
                 onClick = { if (online) sourceSheetOpen = true else sheetOpen = true },
-                icon = { Icon(app.kodex.client.ui.icons.FilterIcon, contentDescription = null) },
+                icon = { Icon(Icons.Filled.FilterList, contentDescription = null) },
                 text = { Text(label) },
             )
         },

@@ -14,16 +14,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.LibraryBooks
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -122,7 +122,7 @@ fun MoreTab(
         // Global incognito reading toggle — when on, no reader saves progress or history.
         Card(Modifier.fillMaxWidth()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(app.kodex.client.ui.icons.IncognitoIcon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Icon(Icons.Filled.VisibilityOff, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
                     Text("Incognito mode", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
@@ -134,7 +134,7 @@ fun MoreTab(
 
         Card(Modifier.fillMaxWidth()) {
             Column {
-                HubRow(app.kodex.client.ui.icons.DownloadIcon, "Downloads", "Active and finished chapter downloads", onOpenDownloads)
+                HubRow(Icons.Filled.Download, "Downloads", "Active and finished chapter downloads", onOpenDownloads)
                 HorizontalDivider(Modifier.padding(start = 56.dp))
                 HubRow(Icons.Filled.Settings, "Settings", "Series behaviour and reader defaults", onOpenSettings)
                 HorizontalDivider(Modifier.padding(start = 56.dp))

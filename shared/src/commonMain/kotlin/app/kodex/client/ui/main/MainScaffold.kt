@@ -1,32 +1,32 @@
 package app.kodex.client.ui.main
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.consumeWindowInsets
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.automirrored.filled.LibraryBooks
-import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.filled.More
+import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -57,10 +57,10 @@ import app.kodex.client.ui.search.SearchScreen
 /** The five destinations of the main bottom navigation. */
 enum class BottomTab(val label: String, val icon: ImageVector) {
     Home("Home", Icons.Filled.Home),
-    Libraries("Libraries", Icons.AutoMirrored.Filled.LibraryBooks),
+    Libraries("Libraries", Icons.Filled.CollectionsBookmark),
     Recents("Recents", Icons.Filled.History),
     Browse("Browse", Icons.Filled.Explore),
-    More("More", Icons.Filled.MoreVert),
+    More("More", Icons.AutoMirrored.Filled.More),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -236,7 +236,7 @@ private fun IncognitoBanner(onTurnOff: () -> Unit) {
         horizontalArrangement = Arrangement.Center,
     ) {
         Icon(
-            app.kodex.client.ui.icons.IncognitoIcon,
+            Icons.Filled.VisibilityOff,
             contentDescription = null,
             tint = Color.White,
             modifier = Modifier.size(16.dp),

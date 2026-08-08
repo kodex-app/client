@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FilterNone
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -19,8 +21,6 @@ import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import app.kodex.client.ui.icons.InvertSelectionIcon
-import app.kodex.client.ui.icons.SelectAllIcon
 
 /**
  * Multi-select state for long-press selection mode: a growing/shrinking set of selected item ids.
@@ -86,10 +86,10 @@ fun SelectionTopBar(
         },
         actions = {
             TooltipIconButton("Select all", onSelectAll) {
-                Icon(SelectAllIcon, contentDescription = "Select all")
+                Icon(Icons.Filled.SelectAll, contentDescription = "Select all")
             }
             TooltipIconButton("Select inverse", onSelectInverse) {
-                Icon(InvertSelectionIcon, contentDescription = "Select inverse")
+                Icon(Icons.Filled.FilterNone, contentDescription = "Select inverse")
             }
         },
     )

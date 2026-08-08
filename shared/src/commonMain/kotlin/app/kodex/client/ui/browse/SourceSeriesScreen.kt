@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -77,7 +78,6 @@ import app.kodex.client.ui.catalog.SeriesSort
 import app.kodex.client.ui.catalog.sourceCoverUrl
 import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.friendlyMessage
-import app.kodex.client.ui.icons.IncognitoIcon
 import app.kodex.client.ui.main.OpenBrowseReader
 import app.kodex.client.ui.main.SourceSeriesContext
 import kotlinx.coroutines.async
@@ -166,7 +166,7 @@ fun SourceSeriesScreen(
             readFab?.let { fab ->
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     SmallFloatingActionButton(onClick = fab.openIncognito) {
-                        Icon(IncognitoIcon, contentDescription = "Read incognito")
+                        Icon(Icons.Filled.VisibilityOff, contentDescription = "Read incognito")
                     }
                     ExtendedFloatingActionButton(
                         onClick = fab.open,
