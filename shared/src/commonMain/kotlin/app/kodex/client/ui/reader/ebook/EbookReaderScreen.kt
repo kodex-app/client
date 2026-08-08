@@ -28,22 +28,21 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ChromeReaderMode
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.filled.ViewList
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Book
-import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.OpenInBrowser
-import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material.icons.filled.ScreenRotation
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.ChromeReaderMode
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.ViewList
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Book
+import androidx.compose.material.icons.outlined.Bookmark
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.OpenInBrowser
+import androidx.compose.material.icons.outlined.Remove
+import androidx.compose.material.icons.outlined.ScreenRotation
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.SkipNext
+import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
@@ -106,6 +105,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import kotlin.math.roundToInt
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Everything the ebook reader needs, independent of whether the book is a library download or a
@@ -339,7 +339,7 @@ fun EbookReaderScreen(
     // Auto-hide the bars after 3s, as the image reader does. Any sheet being open pins them.
     LaunchedEffect(chrome, fraction, settingsOpen, tocOpen, chaptersOpen, bookmarksOpen) {
         if (chrome && !settingsOpen && !tocOpen && !chaptersOpen && !bookmarksOpen) {
-            delay(3000)
+            delay(3000.milliseconds)
             chrome = false
         }
     }
@@ -620,7 +620,7 @@ private fun EbookTopBar(
             .padding(horizontal = 4.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = content) }
+        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = content) }
         Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
             Text(title, color = content, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
             if (!subtitle.isNullOrBlank()) {
@@ -635,7 +635,7 @@ private fun EbookTopBar(
         }
         if (hasBookmarks) {
             IconButton(onClick = onOpenBookmarks) {
-                Icon(Icons.Filled.Bookmark, contentDescription = "Bookmarks", tint = content)
+                Icon(Icons.Outlined.Bookmark, contentDescription = "Bookmarks", tint = content)
             }
         }
     }
@@ -691,9 +691,9 @@ private fun EbookBottomBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             FilledIconButton(onClick = onPrevChapter, enabled = canPrevChapter, colors = buttonColors) {
-                Icon(Icons.Filled.SkipPrevious, "Previous book")
+                Icon(Icons.Outlined.SkipPrevious, "Previous book")
             }
-            IconButton(onClick = onPrevPage) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous page", tint = content) }
+            IconButton(onClick = onPrevPage) { Icon(Icons.AutoMirrored.Outlined.KeyboardArrowLeft, "Previous page", tint = content) }
             Slider(
                 value = sliderValue,
                 onValueChange = onScrub,
@@ -701,9 +701,9 @@ private fun EbookBottomBar(
                 valueRange = 0f..100f,
                 modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
             )
-            IconButton(onClick = onNextPage) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next page", tint = content) }
+            IconButton(onClick = onNextPage) { Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, "Next page", tint = content) }
             FilledIconButton(onClick = onNextChapter, enabled = canNextChapter, colors = buttonColors) {
-                Icon(Icons.Filled.SkipNext, "Next book")
+                Icon(Icons.Outlined.SkipNext, "Next book")
             }
         }
         // Toolbar row: contents · chapter list · open in web · orientation · settings.
@@ -714,17 +714,17 @@ private fun EbookBottomBar(
         ) {
             // "Book contents" = this file's own TOC; "Books" = the other books of the
             // series. The list icon means the latter in the image reader too, so it stays put here.
-            onOpenSeries?.let { open -> ToolbarButton(Icons.Filled.Book, "Series details", onClick = open) }
-            ToolbarButton(Icons.AutoMirrored.Filled.ChromeReaderMode, "Book contents", enabled = hasToc, onClick = onOpenToc)
-            ToolbarButton(Icons.AutoMirrored.Filled.ViewList, "Books", enabled = hasChapters, onClick = onOpenChapters)
-            ToolbarButton(Icons.Filled.OpenInBrowser, "Open in web", enabled = webEnabled, onClick = onOpenWeb)
+            onOpenSeries?.let { open -> ToolbarButton(Icons.Outlined.Book, "Series details", onClick = open) }
+            ToolbarButton(Icons.AutoMirrored.Outlined.ChromeReaderMode, "Book contents", enabled = hasToc, onClick = onOpenToc)
+            ToolbarButton(Icons.AutoMirrored.Outlined.ViewList, "Books", enabled = hasChapters, onClick = onOpenChapters)
+            ToolbarButton(Icons.Outlined.OpenInBrowser, "Open in web", enabled = webEnabled, onClick = onOpenWeb)
             ToolbarButton(
-                Icons.Filled.ScreenRotation,
+                Icons.Outlined.ScreenRotation,
                 "Screen orientation",
                 tint = if (orientation == app.kodex.client.platform.ScreenOrientation.AUTO) content else MaterialTheme.colorScheme.primary,
                 onClick = onCycleOrientation,
             )
-            ToolbarButton(Icons.Filled.Settings, "Settings", onClick = onOpenSettings)
+            ToolbarButton(Icons.Outlined.Settings, "Settings", onClick = onOpenSettings)
         }
     }
 }
@@ -776,7 +776,7 @@ private fun BookmarksSheet(
             Modifier.fillMaxWidth().clickable(onClick = onAdd).padding(horizontal = 20.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Filled.Add, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+            Icon(Icons.Outlined.Add, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(12.dp))
             Text("Bookmark this spot", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyLarge)
         }
@@ -794,7 +794,7 @@ private fun BookmarksSheet(
                         overflow = TextOverflow.Ellipsis,
                     )
                     IconButton(onClick = { onDelete(b.id) }) {
-                        Icon(Icons.Filled.Delete, contentDescription = "Delete bookmark", tint = MaterialTheme.colorScheme.error)
+                        Icon(Icons.Outlined.Delete, contentDescription = "Delete bookmark", tint = MaterialTheme.colorScheme.error)
                     }
                 }
             }
@@ -932,9 +932,9 @@ private fun ChipRow(label: String, value: String, options: List<Pair<String, Str
 private fun StepperRow(label: String, value: String, onDecrease: () -> Unit, onIncrease: () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
-        IconButton(onClick = onDecrease) { Icon(Icons.Filled.Remove, "Decrease $label") }
+        IconButton(onClick = onDecrease) { Icon(Icons.Outlined.Remove, "Decrease $label") }
         Text(value, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.width(56.dp), textAlign = TextAlign.Center)
-        IconButton(onClick = onIncrease) { Icon(Icons.Filled.Add, "Increase $label") }
+        IconButton(onClick = onIncrease) { Icon(Icons.Outlined.Add, "Increase $label") }
     }
 }
 

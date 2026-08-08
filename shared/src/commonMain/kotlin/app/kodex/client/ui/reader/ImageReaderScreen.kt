@@ -24,47 +24,46 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.filled.ViewList
-import androidx.compose.material.icons.filled.Book
-import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.BookmarkBorder
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.OpenInBrowser
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.ScreenRotation
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.ViewList
+import androidx.compose.material.icons.outlined.Book
+import androidx.compose.material.icons.outlined.Bookmark
+import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.OpenInBrowser
+import androidx.compose.material.icons.outlined.Pause
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.ScreenRotation
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.SkipNext
+import androidx.compose.material.icons.outlined.SkipPrevious
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ColorScheme
@@ -83,27 +82,23 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -113,12 +108,15 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import kotlin.math.roundToInt
+import androidx.compose.ui.window.Dialog
 import app.kodex.client.auth.SessionManager
 import app.kodex.client.network.KodexApi
 import app.kodex.client.platform.StatusBarIcons
@@ -131,6 +129,7 @@ import coil3.network.httpHeaders
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 /** Everything the reader needs, independent of whether pages come from a book or a streamed source. */
 class ReaderSource(
@@ -395,10 +394,10 @@ fun ImageReaderScreen(
             // Paged edge page-turn buttons (reading order), shown with the chrome.
             if (effectiveMode == MODE_PAGED) {
                 AnimatedVisibility(chrome, modifier = Modifier.align(Alignment.CenterStart), enter = leftEdgeEnter, exit = leftEdgeExit) {
-                    EdgeButton(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous page") { advance(if (p.isRtl) 1 else -1) }
+                    EdgeButton(Icons.AutoMirrored.Outlined.KeyboardArrowLeft, "Previous page") { advance(if (p.isRtl) 1 else -1) }
                 }
                 AnimatedVisibility(chrome, modifier = Modifier.align(Alignment.CenterEnd), enter = rightEdgeEnter, exit = rightEdgeExit) {
-                    EdgeButton(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next page") { advance(if (p.isRtl) -1 else 1) }
+                    EdgeButton(Icons.AutoMirrored.Outlined.KeyboardArrowRight, "Next page") { advance(if (p.isRtl) -1 else 1) }
                 }
             }
 
@@ -799,7 +798,7 @@ private fun TopBar(
         Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.readerBarColor).statusBarsPadding().padding(horizontal = 4.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = content) }
+        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = content) }
         // Series on top, this chapter beneath it — the chapter is the line that changes as you read,
         // so it gets the quieter treatment and the title keeps the top-bar weight.
         Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
@@ -817,7 +816,7 @@ private fun TopBar(
         if (bookmarked != null) {
             IconButton(onClick = onToggleBookmark) {
                 Icon(
-                    if (bookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                    if (bookmarked) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,
                     contentDescription = if (bookmarked) "Remove bookmark" else "Bookmark this page",
                     tint = if (bookmarked) MaterialTheme.colorScheme.primary else content,
                 )
@@ -872,22 +871,22 @@ private fun BottomBar(
         ) {
             if (continuous) {
                 ToolbarButton(
-                    if (autoScroll) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    if (autoScroll) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
                     "Auto-scroll",
                     tint = if (autoScroll) MaterialTheme.colorScheme.primary else content,
                     onClick = onToggleAutoScroll,
                 )
             }
-            onOpenSeries?.let { open -> ToolbarButton(Icons.Filled.Book, "Series details", onClick = open) }
-            ToolbarButton(Icons.AutoMirrored.Filled.ViewList, "Books", enabled = hasChapters, onClick = onOpenChapters)
-            ToolbarButton(Icons.Filled.OpenInBrowser, "Open in web", enabled = webEnabled, onClick = onOpenWeb)
+            onOpenSeries?.let { open -> ToolbarButton(Icons.Outlined.Book, "Series details", onClick = open) }
+            ToolbarButton(Icons.AutoMirrored.Outlined.ViewList, "Books", enabled = hasChapters, onClick = onOpenChapters)
+            ToolbarButton(Icons.Outlined.OpenInBrowser, "Open in web", enabled = webEnabled, onClick = onOpenWeb)
             ToolbarButton(
-                Icons.Filled.ScreenRotation,
+                Icons.Outlined.ScreenRotation,
                 "Screen orientation",
                 tint = if (orientation == app.kodex.client.platform.ScreenOrientation.AUTO) content else MaterialTheme.colorScheme.primary,
                 onClick = onCycleOrientation,
             )
-            ToolbarButton(Icons.Filled.Settings, "Settings", onClick = onOpenSettings)
+            ToolbarButton(Icons.Outlined.Settings, "Settings", onClick = onOpenSettings)
         }
     }
 }
@@ -929,7 +928,7 @@ private fun ChapterNavigator(
                 enabled = if (rtl) canNextChapter else canPrevChapter,
                 colors = buttonColors,
             ) {
-                Icon(Icons.Filled.SkipPrevious, if (rtl) "Next book" else "Previous book")
+                Icon(Icons.Outlined.SkipPrevious, if (rtl) "Next book" else "Previous book")
             }
 
             if (pageCount > 1) {
@@ -966,7 +965,7 @@ private fun ChapterNavigator(
                 enabled = if (rtl) canPrevChapter else canNextChapter,
                 colors = buttonColors,
             ) {
-                Icon(Icons.Filled.SkipNext, if (rtl) "Previous book" else "Next book")
+                Icon(Icons.Outlined.SkipNext, if (rtl) "Previous book" else "Next book")
             }
         }
     }
@@ -1024,7 +1023,7 @@ internal fun IncognitoBadge(modifier: Modifier = Modifier) {
         modifier.padding(top = 6.dp).background(Color(0xFF4A3F8F).copy(alpha = 0.92f), RoundedCornerShape(999.dp)).padding(horizontal = 10.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Filled.VisibilityOff, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+        Icon(Icons.Outlined.VisibilityOff, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
         Spacer(Modifier.width(4.dp))
         Text("Incognito", color = Color.White, style = MaterialTheme.typography.labelSmall)
     }

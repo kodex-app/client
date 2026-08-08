@@ -15,14 +15,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.LibraryBooks
-import androidx.compose.material.icons.automirrored.filled.More
-import androidx.compose.material.icons.filled.CollectionsBookmark
-import androidx.compose.material.icons.filled.Explore
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.outlined.CollectionsBookmark
+import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -56,11 +55,11 @@ import app.kodex.client.ui.search.SearchScreen
 
 /** The five destinations of the main bottom navigation. */
 enum class BottomTab(val label: String, val icon: ImageVector) {
-    Home("Home", Icons.Filled.Home),
-    Libraries("Libraries", Icons.Filled.CollectionsBookmark),
-    Recents("Recents", Icons.Filled.History),
-    Browse("Browse", Icons.Filled.Explore),
-    More("More", Icons.AutoMirrored.Filled.More),
+    Home("Home", Icons.Outlined.Home),
+    Libraries("Libraries", Icons.Outlined.CollectionsBookmark),
+    Recents("Recents", Icons.Outlined.History),
+    Browse("Browse", Icons.Outlined.Explore),
+    More("More", Icons.Outlined.MoreHoriz),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
