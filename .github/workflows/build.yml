@@ -74,11 +74,11 @@ jobs:
       # rather than publishing an APK nobody can install.
       - name: Decode signing keystore
         env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE: ${{ secrets.KEYSTORE }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          KEYSTORE_BASE64_DEV: ${{ secrets.KEYSTORE_BASE64_DEV }}
+          KEYSTORE_DEV: ${{ secrets.KEYSTORE_DEV }}
           KEYSTORE_PASSWORD_DEV: ${{ secrets.KEYSTORE_PASSWORD_DEV }}
           KEY_ALIAS_DEV: ${{ secrets.KEY_ALIAS_DEV }}
           KEY_PASSWORD_DEV: ${{ secrets.KEY_PASSWORD_DEV }}
@@ -89,7 +89,7 @@ jobs:
           # not a dev APK silently signed with the release key.
           [[ "${CHANNEL}" == dev ]] && s=_DEV || s=""
           missing=()
-          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+          for name in KEYSTORE KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
             ref="${name}${s}"
             [[ -n "${!ref}" ]] || missing+=("${ref}")
           done
@@ -97,7 +97,7 @@ jobs:
             echo "Missing signing secrets for the ${CHANNEL} channel: ${missing[*]}" >&2
             exit 1
           fi
-          b64_ref="KEYSTORE_BASE64${s}"
+          b64_ref="KEYSTORE${s}"
           mkdir -p keystore
           printf '%s' "${!b64_ref}" | base64 -d > keystore/release.jks
           # Re-export under the names build.gradle.kts reads (masked in logs — they are secrets).
