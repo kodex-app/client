@@ -34,6 +34,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
@@ -713,7 +714,7 @@ private fun EbookBottomBar(
         ) {
             // "Book contents" = this file's own TOC; "Books" = the other books of the
             // series. The list icon means the latter in the image reader too, so it stays put here.
-            onOpenSeries?.let { open -> ToolbarButton(Icons.Filled.Info, "Series details", onClick = open) }
+            onOpenSeries?.let { open -> ToolbarButton(Icons.Filled.Book, "Series details", onClick = open) }
             ToolbarButton(Icons.AutoMirrored.Filled.ChromeReaderMode, "Book contents", enabled = hasToc, onClick = onOpenToc)
             ToolbarButton(Icons.AutoMirrored.Filled.ViewList, "Books", enabled = hasChapters, onClick = onOpenChapters)
             ToolbarButton(Icons.Filled.OpenInBrowser, "Open in web", enabled = webEnabled, onClick = onOpenWeb)
