@@ -16,7 +16,7 @@ fun Throwable.friendlyMessage(): String = when (this) {
         401 -> "Wrong email or password."
         403 -> "This account isn't allowed to sign in."
         404 -> "That doesn't look like a Kodex server."
-        else -> message ?: "Request failed (${response.status.value})."
+        else -> message
     }
 
     else -> message ?: "Couldn't reach the server. Check the address and your connection."

@@ -34,8 +34,8 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -689,7 +689,7 @@ private fun EbookBottomBar(
             FilledIconButton(onClick = onPrevChapter, enabled = canPrevChapter, colors = buttonColors) {
                 Icon(app.kodex.client.ui.icons.SkipPreviousIcon, "Previous book")
             }
-            IconButton(onClick = onPrevPage) { Icon(Icons.Filled.KeyboardArrowLeft, "Previous page", tint = content) }
+            IconButton(onClick = onPrevPage) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous page", tint = content) }
             Slider(
                 value = sliderValue,
                 onValueChange = onScrub,
@@ -697,7 +697,7 @@ private fun EbookBottomBar(
                 valueRange = 0f..100f,
                 modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
             )
-            IconButton(onClick = onNextPage) { Icon(Icons.Filled.KeyboardArrowRight, "Next page", tint = content) }
+            IconButton(onClick = onNextPage) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next page", tint = content) }
             FilledIconButton(onClick = onNextChapter, enabled = canNextChapter, colors = buttonColors) {
                 Icon(app.kodex.client.ui.icons.SkipNextIcon, "Next book")
             }

@@ -118,9 +118,9 @@ fun UpdatesList(
                 caption = relativeTime(u.foundDate) + (if (u.bookId != null) " · downloaded" else ""),
                 onClick = {
                     when {
-                        u.bookId != null -> onOpenReader(u.bookId!!)
+                        u.bookId != null -> onOpenReader(u.bookId)
                         u.providerId != null && u.chapterId != null ->
-                            onOpenSourceReader(u.providerId!!, u.chapterId!!, u.seriesId, u.chapterName)
+                            onOpenSourceReader(u.providerId, u.chapterId, u.seriesId, u.chapterName)
                         else -> Unit
                     }
                 },
@@ -323,8 +323,8 @@ private fun HistoryRangeDialog(onDismiss: () -> Unit, onPick: (from: String, to:
 
 /** Cover for a history entry: a local book's own cover, else its series', else the source's. */
 private fun historyCover(baseUrl: String, h: HistoryEntryDto): String = when {
-    h.isBook && h.bookId != null -> bookCoverUrl(baseUrl, h.bookId!!)
-    h.seriesId != null && h.coverUrl.isNullOrBlank() -> seriesCoverUrl(baseUrl, h.seriesId!!, null)
+    h.isBook && h.bookId != null -> bookCoverUrl(baseUrl, h.bookId)
+    h.seriesId != null && h.coverUrl.isNullOrBlank() -> seriesCoverUrl(baseUrl, h.seriesId, null)
     else -> sourceCoverUrl(baseUrl, h.providerId ?: "", h.coverUrl)
 }
 
@@ -339,7 +339,7 @@ private fun openHistoryEntry(
     val chapter = h.chapterId
     val sourceSeries = h.sourceSeriesId
     when {
-        h.isBook && h.bookId != null -> onOpenReader(h.bookId!!)
+        h.isBook && h.bookId != null -> onOpenReader(h.bookId)
         provider == null || chapter == null -> Unit
         // Read while browsing (no local series): re-open with the source series' identity so the
         // reader can rebuild its chapter navigation from the source's live list.

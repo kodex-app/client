@@ -38,7 +38,7 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -348,7 +348,7 @@ fun LibrarySeriesScreen(
             val tabs = listOf("Sort", "Filter", "Group", "Display")
             val sheetPager = androidx.compose.foundation.pager.rememberPagerState(sheetTab) { tabs.size }
             // Transparent container so the tab strip blends with the sheet (no mismatched white band/seam).
-            TabRow(
+            SecondaryTabRow(
                 selectedTabIndex = sheetPager.currentPage,
                 containerColor = androidx.compose.ui.graphics.Color.Transparent,
                 contentColor = MaterialTheme.colorScheme.primary,
@@ -580,7 +580,7 @@ private fun LibrarySeriesResults(
 @Composable
 private fun GroupTabs(tabs: List<GroupTab>, activeKey: String?, onSelect: (String) -> Unit) {
     val index = tabs.indexOfFirst { it.key == activeKey }.coerceAtLeast(0)
-    androidx.compose.material3.ScrollableTabRow(selectedTabIndex = index, edgePadding = 12.dp) {
+    androidx.compose.material3.SecondaryScrollableTabRow(selectedTabIndex = index, edgePadding = 12.dp) {
         tabs.forEachIndexed { i, tab ->
             Tab(
                 selected = i == index,

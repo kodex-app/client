@@ -201,7 +201,7 @@ fun main(args: Array<String>) {
                     // so nothing after `application {}` is guaranteed to run (and its 0 would mask a
                     // failure).
                     println(verdict)
-                    if (verdict?.startsWith("PASS") != true) kotlin.system.exitProcess(1)
+                    if (!verdict.startsWith("PASS")) kotlin.system.exitProcess(1)
                     disposeWebEngine()
                     exitApplication()
                 }

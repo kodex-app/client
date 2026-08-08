@@ -247,8 +247,8 @@ fun SeriesDetailScreen(
                                         DropdownMenuItem(text = { Text("Refresh chapters") }, onClick = {
                                             menuOpen = false; runAction("Chapters refreshed") { api.refreshSeriesChapters(s!!.baseUrl, s.apiKey, seriesId) }
                                         })
-                                        val prov = detail?.sourceProviderId
-                                        val ext = detail?.sourceSeriesId
+                                        val prov = detail.sourceProviderId
+                                        val ext = detail.sourceSeriesId
                                         if (prov != null && ext != null) {
                                             DropdownMenuItem(text = { Text("Migrate to another source") }, onClick = {
                                                 menuOpen = false; onOpenMigrate(seriesId, prov, ext, detail.title)

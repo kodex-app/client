@@ -9,10 +9,10 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.InvertColors
-import androidx.compose.material.icons.filled.Label
+import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.MarkAsUnread
-import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.SkipNext
@@ -44,9 +44,9 @@ val InvertSelectionIcon: ImageVector get() = Icons.Filled.InvertColors
 
 val MarkUnreadIcon: ImageVector get() = Icons.Filled.MarkAsUnread
 
-val LabelIcon: ImageVector get() = Icons.Filled.Label
+val LabelIcon: ImageVector get() = Icons.AutoMirrored.Filled.Label
 
-val OpenInWebIcon: ImageVector get() = Icons.Filled.OpenInNew
+val OpenInWebIcon: ImageVector get() = Icons.AutoMirrored.Filled.OpenInNew
 
 /** Cycles the reader's screen orientation (auto → portrait → landscape). */
 val OrientationIcon: ImageVector get() = Icons.Filled.StayCurrentPortrait

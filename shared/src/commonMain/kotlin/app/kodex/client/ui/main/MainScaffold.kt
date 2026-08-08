@@ -16,8 +16,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.LibraryBooks
+import androidx.compose.material.icons.automirrored.filled.LibraryBooks
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
@@ -56,9 +57,9 @@ import app.kodex.client.ui.search.SearchScreen
 /** The five destinations of the main bottom navigation. */
 enum class BottomTab(val label: String, val icon: ImageVector) {
     Home("Home", Icons.Filled.Home),
-    Libraries("Libraries", Icons.Filled.LibraryBooks),
+    Libraries("Libraries", Icons.AutoMirrored.Filled.LibraryBooks),
     Recents("Recents", Icons.Filled.History),
-    Browse("Browse", Icons.Filled.Search),
+    Browse("Browse", Icons.Filled.Explore),
     More("More", Icons.Filled.MoreVert),
 }
 

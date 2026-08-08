@@ -166,7 +166,7 @@ fun LibraryFormScreen(
             val result = runCatching {
                 if (isEdit) {
                     api.updateLibrary(
-                        s.baseUrl, s.apiKey, existing!!.id,
+                        s.baseUrl, s.apiKey, existing.id,
                         UpdateLibraryRequest(
                             name = name,
                             root = root.ifBlank { null },

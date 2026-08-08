@@ -14,7 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.LibraryBooks
+import androidx.compose.material.icons.automirrored.filled.LibraryBooks
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.Palette
@@ -154,7 +154,7 @@ fun MoreTab(
             )
             Card(Modifier.fillMaxWidth()) {
                 Column {
-                    HubRow(Icons.Filled.LibraryBooks, "Libraries", "Add, edit, refresh, delete libraries", onOpenLibraries)
+                    HubRow(Icons.AutoMirrored.Filled.LibraryBooks, "Libraries", "Add, edit, refresh, delete libraries", onOpenLibraries)
                     HorizontalDivider(Modifier.padding(start = 56.dp))
                     HubRow(Icons.Filled.LocalOffer, "Labels", "Create and manage metadata labels", onOpenLabels)
                     if (isAdmin) {
