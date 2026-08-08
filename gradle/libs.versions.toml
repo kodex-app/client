@@ -16,7 +16,7 @@ materialIcons = "1.7.3"
 material3 = "1.9.0"
 composeWebview = "2.0.3"
 
-android-compileSdk = "36"
+android-compileSdk = "37"
 android-minSdk = "24"
 android-targetSdk = "35"
 
