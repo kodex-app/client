@@ -37,7 +37,7 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Book
 import androidx.compose.material.icons.outlined.Bookmark
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.OpenInBrowser
+import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material.icons.outlined.ScreenRotation
 import androidx.compose.material.icons.outlined.Settings
@@ -717,7 +717,7 @@ private fun EbookBottomBar(
             onOpenSeries?.let { open -> ToolbarButton(Icons.Outlined.Book, "Series details", onClick = open) }
             ToolbarButton(Icons.AutoMirrored.Outlined.ChromeReaderMode, "Book contents", enabled = hasToc, onClick = onOpenToc)
             ToolbarButton(Icons.AutoMirrored.Outlined.ViewList, "Books", enabled = hasChapters, onClick = onOpenChapters)
-            ToolbarButton(Icons.Outlined.OpenInBrowser, "Open in web", enabled = webEnabled, onClick = onOpenWeb)
+            ToolbarButton(Icons.Outlined.Public, "Open in web", enabled = webEnabled, onClick = onOpenWeb)
             ToolbarButton(
                 Icons.Outlined.ScreenRotation,
                 "Screen orientation",
@@ -893,7 +893,7 @@ private fun ThemeRow(value: String, onSelect: (String) -> Unit) {
                 val selected = value == id
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(
-                        Modifier.size(width = 46.dp, height = 34.dp)
+                        Modifier.size(width = 54.dp, height = 48.dp)
                             .background(ebookPageColor(id), RoundedCornerShape(8.dp))
                             .border(
                                 width = if (selected) 2.dp else 1.dp,

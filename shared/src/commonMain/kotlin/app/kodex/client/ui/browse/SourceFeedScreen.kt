@@ -21,13 +21,14 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material.icons.filled.OpenInBrowser
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.FilterList
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.SelectAll
+import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -38,9 +39,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Button
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -48,12 +49,11 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -68,13 +68,14 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
 import app.kodex.client.network.CheckBoxFilter
-import app.kodex.client.network.LibraryDto
 import app.kodex.client.network.FilterListDto
 import app.kodex.client.network.GroupFilter
 import app.kodex.client.network.HeaderFilter
 import app.kodex.client.network.KodexApi
+import app.kodex.client.network.LibraryDto
 import app.kodex.client.network.SelectFilter
 import app.kodex.client.network.SeparatorFilter
+import app.kodex.client.network.SeriesPage
 import app.kodex.client.network.SortFilter
 import app.kodex.client.network.SortSelection
 import app.kodex.client.network.SourceDescriptor
@@ -82,7 +83,6 @@ import app.kodex.client.network.SourceFilter
 import app.kodex.client.network.SourceSearchResult
 import app.kodex.client.network.TextFilterDto
 import app.kodex.client.network.TriStateFilter
-import app.kodex.client.network.SeriesPage
 import app.kodex.client.ui.EmptyMessage
 import app.kodex.client.ui.SelectionState
 import app.kodex.client.ui.Tip
@@ -249,17 +249,17 @@ fun SourceFeedScreen(
                     ),
                     title = { Text("${selection.count} selected", fontWeight = FontWeight.SemiBold) },
                     navigationIcon = {
-                        IconButton(onClick = { selection.clear() }) { Icon(Icons.Filled.Close, contentDescription = "Cancel selection") }
+                        IconButton(onClick = { selection.clear() }) { Icon(Icons.Outlined.Close, contentDescription = "Cancel selection") }
                     },
                     actions = {
                         Tip("Select all") {
                             IconButton(onClick = { selection.selectAll(items.map { it.externalId }) }) {
-                                Icon(Icons.Filled.SelectAll, contentDescription = "Select all")
+                                Icon(Icons.Outlined.SelectAll, contentDescription = "Select all")
                             }
                         }
                         Tip("Add the selected series to a library") {
                             TextButton(onClick = { onAddToLibraries() }, enabled = !addingBusy) {
-                                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Text("Add to library", modifier = Modifier.padding(start = 4.dp))
                             }
                         }
@@ -284,14 +284,14 @@ fun SourceFeedScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = { if (searchOpen) clearSearch() else onBack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
                     if (searchOpen) {
                         Tip("Clear") {
                             IconButton(onClick = { if (query.isBlank()) clearSearch() else { query = ""; } }) {
-                                Icon(Icons.Filled.Close, contentDescription = "Clear")
+                                Icon(Icons.Outlined.Close, contentDescription = "Clear")
                             }
                         }
                     } else {
@@ -300,12 +300,12 @@ fun SourceFeedScreen(
                         source.website?.takeIf { it.isNotBlank() }?.let { site ->
                             Tip("Source website") {
                                 IconButton(onClick = { openUrl(site) }) {
-                                    Icon(Icons.Filled.OpenInBrowser, contentDescription = "Source website")
+                                    Icon(Icons.Outlined.Public, contentDescription = "Source website")
                                 }
                             }
                         }
                         Tip("Search") {
-                            IconButton(onClick = { searchOpen = true }) { Icon(Icons.Filled.Search, contentDescription = "Search") }
+                            IconButton(onClick = { searchOpen = true }) { Icon(Icons.Outlined.Search, contentDescription = "Search") }
                         }
                     }
                 },
@@ -316,7 +316,7 @@ fun SourceFeedScreen(
             val filterCount = appliedFilters.filters.count { it.isActive() }
             androidx.compose.material3.ExtendedFloatingActionButton(
                 onClick = { openFilters() },
-                icon = { Icon(Icons.Filled.FilterList, contentDescription = null) },
+                icon = { Icon(Icons.Outlined.FilterList, contentDescription = null) },
                 text = { Text(if (filterCount > 0) "Filter ($filterCount)" else "Filter") },
             )
         },
@@ -427,7 +427,7 @@ private fun FilterSheet(
                 onValueChange = { query = it },
                 label = { Text("Search this source") },
                 singleLine = true,
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
                 modifier = Modifier.fillMaxWidth(),
             )
 
@@ -444,7 +444,7 @@ private fun FilterSheet(
                                 selected = true,
                                 onClick = { working[i] = f.reset() },
                                 label = { Text(f.name, maxLines = 1) },
-                                trailingIcon = { Icon(Icons.Filled.Close, contentDescription = "Remove", modifier = Modifier.size(16.dp)) },
+                                trailingIcon = { Icon(Icons.Outlined.Close, contentDescription = "Remove", modifier = Modifier.size(16.dp)) },
                             )
                         }
                     }

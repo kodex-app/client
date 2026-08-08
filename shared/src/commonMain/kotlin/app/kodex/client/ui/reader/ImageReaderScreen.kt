@@ -59,6 +59,7 @@ import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.OpenInBrowser
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.ScreenRotation
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SkipNext
@@ -866,7 +867,7 @@ private fun BottomBar(
         // Toolbar row: auto-scroll (continuous only) · chapter list · open in web · orientation · settings.
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
-            horizontalArrangement = Arrangement.SpaceAround,
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (continuous) {
@@ -879,7 +880,7 @@ private fun BottomBar(
             }
             onOpenSeries?.let { open -> ToolbarButton(Icons.Outlined.Book, "Series details", onClick = open) }
             ToolbarButton(Icons.AutoMirrored.Outlined.ViewList, "Books", enabled = hasChapters, onClick = onOpenChapters)
-            ToolbarButton(Icons.Outlined.OpenInBrowser, "Open in web", enabled = webEnabled, onClick = onOpenWeb)
+            ToolbarButton(Icons.Outlined.Public, "Open in web", enabled = webEnabled, onClick = onOpenWeb)
             ToolbarButton(
                 Icons.Outlined.ScreenRotation,
                 "Screen orientation",
