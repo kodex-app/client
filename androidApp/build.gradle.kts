@@ -26,6 +26,13 @@ android {
         // Same reason the package differs: two identically-named launcher icons are unusable.
         manifestPlaceholders["appLabel"] =
             if (appIdSuffix.isEmpty()) "Kodex" else "Kodex ${appIdSuffix.removePrefix(".").uppercase()}"
+
+        // The one native dependency (androidx.graphics.path) otherwise ships a copy per ABI. 32-bit
+        // x86 is dropped — no current device or emulator image uses it — while x86_64 stays, since
+        // that is what standard emulators (and Chromebooks) run on.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
     }
 
     compileOptions {

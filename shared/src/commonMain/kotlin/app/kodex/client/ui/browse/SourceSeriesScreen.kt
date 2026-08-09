@@ -36,6 +36,7 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -176,7 +177,18 @@ fun SourceSeriesScreen(
                     ExtendedFloatingActionButton(
                         onClick = fab.open,
                         icon = { Icon(Icons.Filled.PlayArrow, contentDescription = null) },
-                        text = { Text(fab.label) },
+                        text = {
+                            Column {
+                                Text(fab.label, style = MaterialTheme.typography.labelLarge)
+                                Text(
+                                    fab.target,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = LocalContentColor.current.copy(alpha = 0.75f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        },
                     )
                 }
             }
@@ -229,6 +241,7 @@ fun SourceSeriesScreen(
                     resume?.let { r ->
                         ReadFab(
                             label = r.label,
+                            target = r.target,
                             open = { onOpenReader(context, r.chapter.externalId, r.chapter.name) },
                             openIncognito = { onOpenReaderIncognito(context, r.chapter.externalId, r.chapter.name) },
                         )
@@ -438,11 +451,17 @@ private fun ChapterRow(
 private fun BtnSpinner() =
     CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
 
-/** The chapter the read FAB opens, and how to label it. */
-private data class Resume(val chapter: SourceChapter, val label: String)
+/** The chapter the read FAB opens, how to label the action, and how to name the chapter. */
+private data class Resume(val chapter: SourceChapter, val label: String, val target: String)
 
 /** [Resume] bound to its callbacks, lifted out of the loaded content so the Scaffold can host it. */
-private data class ReadFab(val label: String, val open: () -> Unit, val openIncognito: () -> Unit)
+private data class ReadFab(
+    val label: String,
+    /** Which chapter it opens, and where in it — see the series-detail FAB for why it's named. */
+    val target: String,
+    val open: () -> Unit,
+    val openIncognito: () -> Unit,
+)
 
 /**
  * Which chapter to continue or start with, in the web's order: the lowest-numbered chapter left
@@ -451,9 +470,17 @@ private data class ReadFab(val label: String, val open: () -> Unit, val openInco
 private fun resumeChapter(chapters: List<SourceChapter>, progress: Map<String, ReadProgressDto>): Resume? {
     if (chapters.isEmpty()) return null
     val byNumber = chapters.sortedWith(compareBy(nullsLast()) { it.number })
-    byNumber.firstOrNull { progress[it.externalId]?.completed == false }?.let { return Resume(it, "Continue") }
-    byNumber.firstOrNull { progress[it.externalId]?.completed != true }?.let { return Resume(it, "Start reading") }
-    return Resume(byNumber.first(), "Read again")
+    // Its own title if it has one, else its number; plus the page, but only when resuming part-way.
+    fun name(c: SourceChapter, withPage: Boolean): String {
+        val label = c.name.takeIf { it.isNotBlank() } ?: chapterNumber(c)
+        val page = progress[c.externalId]?.page?.takeIf { withPage && it > 0 } ?: return label
+        return "$label · page $page"
+    }
+    byNumber.firstOrNull { progress[it.externalId]?.completed == false }
+        ?.let { return Resume(it, "Continue", name(it, withPage = true)) }
+    byNumber.firstOrNull { progress[it.externalId]?.completed != true }
+        ?.let { return Resume(it, "Start reading", name(it, withPage = false)) }
+    return Resume(byNumber.first(), "Read again", name(byNumber.first(), withPage = false))
 }
 
 private fun chapterNumber(c: SourceChapter): String =

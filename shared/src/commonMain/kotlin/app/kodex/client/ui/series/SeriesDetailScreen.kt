@@ -44,6 +44,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -63,6 +64,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
 import app.kodex.client.network.BookDto
@@ -102,7 +104,17 @@ private data class SeriesContent(
     val libraries: List<app.kodex.client.network.LibraryDto> = emptyList(),
 )
 
-private data class Resume(val label: String, val open: () -> Unit, val openIncognito: () -> Unit)
+/**
+ * The resume action behind the floating button. [target] names what it will actually open (and where
+ * in it), so the button isn't a blind "Continue" — with dozens of books, which one it means is the
+ * first thing you want to know.
+ */
+private data class Resume(
+    val label: String,
+    val target: String,
+    val open: () -> Unit,
+    val openIncognito: () -> Unit,
+)
 
 /**
  * A series: cover + metadata header with a Read/Continue button, then its content — the books grid
@@ -301,7 +313,19 @@ fun SeriesDetailScreen(
                         androidx.compose.material3.ExtendedFloatingActionButton(
                             onClick = resume.open,
                             icon = { Icon(Icons.Filled.PlayArrow, contentDescription = null) },
-                            text = { Text(resume.label) },
+                            text = {
+                                Column {
+                                    Text(resume.label, style = MaterialTheme.typography.labelLarge)
+                                    Text(
+                                        resume.target,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        // Muted against the container so the action still reads first.
+                                        color = LocalContentColor.current.copy(alpha = 0.75f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            },
                         )
                     }
                 }
@@ -778,7 +802,9 @@ private fun localResume(books: List<BookDto>, onOpenReader: (String) -> Unit, on
         firstUnread != null -> "Start Reading"
         else -> "Read again"
     }
-    return Resume(label, { onOpenReader(target.id) }, { onOpenReaderIncognito(target.id) })
+    // Where in it, but only when resuming part-way — "page 1" on a fresh book is noise.
+    val at = target.readProgress?.page?.takeIf { inProgress != null && it > 0 }?.let { " · page $it" }.orEmpty()
+    return Resume(label, bookLabel(target) + at, { onOpenReader(target.id) }, { onOpenReaderIncognito(target.id) })
 }
 
 private fun webResume(
@@ -801,10 +827,15 @@ private fun webResume(
     val bookId = target.bookId
     val open = { if (bookId != null) onOpenReader(bookId) else onOpenSourceReader(providerId, target.chapterId, seriesId, target.name) }
     val openIncognito = { if (bookId != null) onOpenReaderIncognito(bookId) else onOpenSourceReaderIncognito(providerId, target.chapterId, seriesId, target.name) }
-    return Resume(label, open, openIncognito)
+    val at = target.page?.takeIf { it > 0 }?.let { " · page $it" }.orEmpty()
+    return Resume(label, chapterTargetLabel(target) + at, open, openIncognito)
 }
 
 private fun bookLabel(book: BookDto): String = book.title.ifBlank { book.numberDisplay ?: "Book" }
+
+/** What the resume button names for a source chapter: its own title, else its number. */
+private fun chapterTargetLabel(c: SeriesChapterDto): String =
+    c.name?.takeIf { it.isNotBlank() } ?: chapterNumberLabel(c)
 
 private fun chapterNumberLabel(c: SeriesChapterDto): String =
     c.number?.let { n -> if (n % 1.0 == 0.0) "Chapter ${n.toInt()}" else "Chapter $n" } ?: "Chapter"
