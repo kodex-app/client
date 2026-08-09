@@ -18,7 +18,14 @@ import app.kodex.client.ui.series.SeriesDetailScreen
 import app.kodex.client.ui.manage.LabelsScreen
 import app.kodex.client.ui.manage.LibrariesScreen
 import app.kodex.client.ui.manage.MigrateScreen
+import app.kodex.client.ui.manage.BackupScreen
+import app.kodex.client.ui.manage.LogsScreen
+import app.kodex.client.ui.manage.NetworkSettingsScreen
+import app.kodex.client.ui.manage.PluginRepositoriesScreen
 import app.kodex.client.ui.manage.PluginsScreen
+import app.kodex.client.ui.manage.ServerActionsScreen
+import app.kodex.client.ui.manage.TasksScreen
+import app.kodex.client.ui.manage.UsersScreen
 import app.kodex.client.ui.settings.AboutScreen
 import app.kodex.client.ui.settings.AppearanceScreen
 import app.kodex.client.ui.settings.SettingsScreen
@@ -52,6 +59,14 @@ sealed interface DetailRoute {
     data object Libraries : DetailRoute
     data object Labels : DetailRoute
     data object Plugins : DetailRoute
+    data object Users : DetailRoute
+    data object Tasks : DetailRoute
+    data object ServerActions : DetailRoute
+    data object Security : DetailRoute
+    data object Backup : DetailRoute
+    data object NetworkSettings : DetailRoute
+    data object Logs : DetailRoute
+    data object PluginRepositories : DetailRoute
     data class SeeAll(val kind: app.kodex.client.ui.catalog.SeeAllKind) : DetailRoute
     data class Migrate(
         val seriesId: String,
@@ -99,6 +114,7 @@ fun DetailHost(
     onOpenSourceReaderIncognito: OpenSourceReader,
     onOpenBrowseReaderIncognito: OpenBrowseReader,
     onOpenMigrate: (seriesId: String, providerId: String, sourceSeriesId: String, title: String) -> Unit,
+    onOpenPluginRepositories: () -> Unit,
     /** Swap the open reader for the series it belongs to (local series detail, or a source series). */
     onOpenSeriesFromReader: (DetailRoute) -> Unit,
     onBack: () -> Unit,
@@ -164,7 +180,31 @@ fun DetailHost(
             LabelsScreen(session, api, onBack)
 
         is DetailRoute.Plugins ->
-            PluginsScreen(session, api, onBack)
+            PluginsScreen(session, api, onBack, onOpenRepositories = onOpenPluginRepositories)
+
+        is DetailRoute.PluginRepositories ->
+            PluginRepositoriesScreen(session, api, onBack)
+
+        is DetailRoute.Users ->
+            UsersScreen(session, api, onBack)
+
+        is DetailRoute.Tasks ->
+            TasksScreen(session, api, onBack)
+
+        is DetailRoute.ServerActions ->
+            ServerActionsScreen(session, api, onBack)
+
+        is DetailRoute.Security ->
+            app.kodex.client.ui.settings.SecurityScreen(session, api, onBack)
+
+        is DetailRoute.Backup ->
+            BackupScreen(session, api, onBack)
+
+        is DetailRoute.NetworkSettings ->
+            NetworkSettingsScreen(session, api, onBack)
+
+        is DetailRoute.Logs ->
+            LogsScreen(session, api, onBack)
 
         is DetailRoute.SeeAll ->
             app.kodex.client.ui.catalog.SeeAllScreen(

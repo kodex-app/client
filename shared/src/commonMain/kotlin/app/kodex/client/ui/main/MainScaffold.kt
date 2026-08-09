@@ -37,6 +37,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,6 +52,8 @@ import app.kodex.client.data.AppSettings
 import app.kodex.client.network.KodexApi
 import app.kodex.client.platform.AppBackHandler
 import app.kodex.client.ui.collectAsStateSafe
+import app.kodex.client.ui.nav.LocalRetainedSlot
+import app.kodex.client.ui.nav.RetainedStateStore
 import app.kodex.client.ui.search.SearchScreen
 
 /** The five destinations of the main bottom navigation. */
@@ -68,6 +71,18 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
     var tab by remember { mutableStateOf(BottomTab.Home) }
     var searchOpen by remember { mutableStateOf(false) }
     val backStack = remember { mutableStateListOf<DetailRoute>() }
+    // Screens under the top of the stack are not composed, so anything they must not lose (loaded
+    // pages, scroll offsets) lives here rather than in their own `remember`. See RetainedState.kt.
+    val retained = remember { RetainedStateStore() }
+
+    /** Slot key for a detail entry — its depth plus its identity, so two of the same screen differ. */
+    fun detailSlot(index: Int) = "d$index/${backStack[index]}"
+
+    fun popDetail() {
+        val i = backStack.lastIndex
+        retained.forget(detailSlot(i))
+        backStack.removeAt(i)
+    }
     val incognito by appSettings.incognitoMode.collectAsStateSafe()
 
     val openSeries: (String) -> Unit = { backStack.add(DetailRoute.SeriesDetail(it)) }
@@ -87,7 +102,7 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
     AppBackHandler(enabled = searchOpen || backStack.isNotEmpty() || tab != BottomTab.Home) {
         when {
             searchOpen -> searchOpen = false
-            backStack.isNotEmpty() -> backStack.removeAt(backStack.lastIndex)
+            backStack.isNotEmpty() -> popDetail()
             else -> tab = BottomTab.Home
         }
     }
@@ -109,6 +124,7 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
     }
 
     if (backStack.isNotEmpty()) {
+      CompositionLocalProvider(LocalRetainedSlot provides retained.slot(detailSlot(backStack.lastIndex))) {
       WithIncognitoBanner(incognito && !immersive, turnOffIncognito) {
         DetailHost(
             route = backStack.last(),
@@ -137,12 +153,16 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
             onOpenMigrate = { seriesId, providerId, sourceSeriesId, title ->
                 backStack.add(DetailRoute.Migrate(seriesId, providerId, sourceSeriesId, title))
             },
-            onBack = { backStack.removeAt(backStack.lastIndex) },
+            onOpenPluginRepositories = { backStack.add(DetailRoute.PluginRepositories) },
+            onBack = { popDetail() },
         )
+      }
       }
         return
     }
 
+    // The tab area is likewise dropped while a detail screen is open, so each tab keeps its own slot.
+    CompositionLocalProvider(LocalRetainedSlot provides retained.slot("tab:${tab.name}")) {
     WithIncognitoBanner(incognito, turnOffIncognito) {
     Scaffold(
         topBar = {
@@ -201,9 +221,17 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
                     onOpenLibraries = { backStack.add(DetailRoute.Libraries) },
                     onOpenLabels = { backStack.add(DetailRoute.Labels) },
                     onOpenPlugins = { backStack.add(DetailRoute.Plugins) },
+                    onOpenUsers = { backStack.add(DetailRoute.Users) },
+                    onOpenTasks = { backStack.add(DetailRoute.Tasks) },
+                    onOpenServerActions = { backStack.add(DetailRoute.ServerActions) },
+                    onOpenSecurity = { backStack.add(DetailRoute.Security) },
+                    onOpenBackup = { backStack.add(DetailRoute.Backup) },
+                    onOpenNetwork = { backStack.add(DetailRoute.NetworkSettings) },
+                    onOpenLogs = { backStack.add(DetailRoute.Logs) },
                 )
             }
         }
+    }
     }
     }
 }

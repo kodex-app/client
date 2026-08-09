@@ -54,6 +54,16 @@ class SessionManager(
         }
     }
 
+    /**
+     * Re-read the signed-in user. Screens that change something stored on the user record (the
+     * second-factor flag, limits) call this so the cached [currentUser] stops disagreeing with the
+     * server. Throws on failure so the caller can report it rather than silently showing stale state.
+     */
+    suspend fun refreshCurrentUser() {
+        val server = _activeServer.value ?: return
+        _currentUser.value = api.getMe(server.baseUrl, server.apiKey)
+    }
+
     /** Add a brand-new server: mint an API key with the given credentials, validate it, persist. */
     @OptIn(ExperimentalUuidApi::class)
     suspend fun addServer(

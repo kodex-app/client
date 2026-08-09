@@ -20,12 +20,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -46,6 +48,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,6 +56,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
 import app.kodex.client.data.model.ServerConnection
+import app.kodex.client.network.AuthorDto
 import app.kodex.client.network.BookDto
 import app.kodex.client.network.KodexApi
 import app.kodex.client.network.UpdateBookMetadataRequest
@@ -213,6 +217,22 @@ fun BookDetailScreen(
     }
 }
 
+/** Book fields that can be pinned against metadata providers; keys are the server's field names. */
+private val BOOK_LOCKABLE = listOf(
+    "title" to "Title",
+    "number" to "Number",
+    "summary" to "Summary",
+    "tags" to "Tags",
+    "authors" to "Authors",
+    "releaseDate" to "Release date",
+    "isbn" to "ISBN",
+)
+
+@Composable
+private fun EditSectionTitle(text: String) {
+    Text(text, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EditMetadataSheet(
@@ -225,6 +245,9 @@ private fun EditMetadataSheet(
     var number by remember { mutableStateOf(book.numberDisplay ?: "") }
     var summary by remember { mutableStateOf(book.summary) }
     var tags by remember { mutableStateOf(book.tags.joinToString(", ")) }
+    // Authors are an ordered list of name+role pairs, so they get rows rather than a comma field.
+    val authors = remember { book.authors.toMutableStateList() }
+    var locked by remember { mutableStateOf(book.lockedFields) }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(16.dp)) {
@@ -237,6 +260,52 @@ private fun EditMetadataSheet(
             OutlinedTextField(summary, { summary = it }, label = { Text("Summary") }, minLines = 3, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(tags, { tags = it }, label = { Text("Tags (comma-separated)") }, modifier = Modifier.fillMaxWidth())
+
+            Spacer(Modifier.height(16.dp))
+            EditSectionTitle("Authors")
+            authors.forEachIndexed { i, author ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = author.name,
+                        onValueChange = { authors[i] = author.copy(name = it) },
+                        label = { Text("Name") },
+                        singleLine = true,
+                        modifier = Modifier.weight(2f),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedTextField(
+                        value = author.role,
+                        onValueChange = { authors[i] = author.copy(role = it) },
+                        label = { Text("Role") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(onClick = { authors.removeAt(i) }) {
+                        Icon(Icons.Filled.Close, contentDescription = "Remove author")
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+            }
+            TextButton(onClick = { authors.add(AuthorDto(name = "", role = "writer")) }) { Text("Add author") }
+
+            Spacer(Modifier.height(12.dp))
+            EditSectionTitle("Locked fields")
+            Text(
+                "A locked field is left alone when metadata is refreshed from a provider.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                BOOK_LOCKABLE.forEach { (key, label) ->
+                    FilterChip(
+                        selected = key in locked,
+                        onClick = { locked = if (key in locked) locked - key else locked + key },
+                        label = { Text(label) },
+                    )
+                }
+            }
+
             Spacer(Modifier.height(16.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
@@ -248,6 +317,9 @@ private fun EditMetadataSheet(
                                 number = number.ifBlank { null },
                                 summary = summary,
                                 tags = tags.split(",").map { it.trim() }.filter { it.isNotBlank() },
+                                // Blank rows are the ones the user added and left empty; drop them.
+                                authors = authors.filter { it.name.isNotBlank() },
+                                lockedFields = locked.toList(),
                             ),
                         )
                     },

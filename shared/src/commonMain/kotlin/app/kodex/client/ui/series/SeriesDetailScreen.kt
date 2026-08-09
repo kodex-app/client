@@ -348,9 +348,18 @@ fun SeriesDetailScreen(
         )
     }
 
+    // Fetched only once the sheet opens: the label list is only ever needed by the editor.
+    var allLabels by remember { mutableStateOf<List<app.kodex.client.network.LabelDto>>(emptyList()) }
+    LaunchedEffect(editOpen, s?.id) {
+        if (!editOpen) return@LaunchedEffect
+        val srv = s ?: return@LaunchedEffect
+        allLabels = runCatching { api.labels(srv.baseUrl, srv.apiKey) }.getOrDefault(emptyList())
+    }
+
     if (editOpen && content != null && s != null) {
         SeriesMetadataSheet(
             detail = content.detail,
+            labels = allLabels,
             onDismiss = { editOpen = false },
             onSave = { patch ->
                 editOpen = false

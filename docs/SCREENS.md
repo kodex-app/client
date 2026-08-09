@@ -49,31 +49,42 @@ Legend: `[x]` done · `[~]` partial (built, gaps listed) · `[ ]` not started
 
 ## Phase 2 — enrich existing screens
 
-- [~] Library series list: **full sort** (title/name A–Z/Z–A · added · updated · total chapters · unread · last read) · reading-status filter · grid/list toggle · refresh · **Group by** None/Status/Source/Category (WEB) w/ chips · **long-press multi-select** → bulk mark read/unread — **done**; Mihon import still pending (blocked)
+- [~] Library series list: **full sort** (title/name A–Z/Z–A · added · updated · total chapters · unread · last read) · reading-status filter · grid/list toggle · refresh · **Group by** None/Status/Source (WEB) as swipeable tabs · **category chips** as the category filter (WEB), combinable with grouping — matching the web, which moved categories out of grouping · **long-press multi-select** → bulk mark read/unread — **done**; Mihon import still pending (blocked)
 - [x] Series detail: header (author/artist/library/source · genres/tags · **3-line summary + Read more**) · **Start Reading/Continue** button + **Read incognito** · chapter-sort · refresh-chapters · mark read/unread · multi-select bulk · edit-metadata · re-analyze · bookmarks (page-jump) · sub-series rail · migrate
 - [x] Book detail: re-analyze · delete · edit-metadata sheet · bookmarks (page-jump) · **identifiers + external links** (tap to open)
-- [~] Browse: **kind filter** chips · language grouping — **done**; favorites + recents quick-access still pending
-- [~] Source catalogue (WebBrowse): Search · source `FilterList` filters (polymorphic) — **done** (live data blocked — no source plugins); multi-select add-to-library still pending
+- [x] Browse: **kind filter** chips · language grouping · favorites + recents quick-access (with language badges) · swipeable tabs
+- [x] Source catalogue (WebBrowse): Search · source `FilterList` filters (polymorphic) · multi-select add-to-library · "in library" marks — live data still unverified (no source plugins on the test server)
 - [x] **Read straight from a source while browsing** (no follow, no download): tap a chapter (long-press = incognito) · **Continue/Start reading** button off `/series-progress` · read dots + "Page N" markers · volume group headers · prev/next chapter + chapter menu inside the reader (swaps in place, back exits to the series) · progress recorded with the source series' name/cover so History resumes it with navigation intact · BOOK-kind (novel) sources open in the ebook reader via the core's ephemeral single-chapter EPUB
 - [x] Search: library search + **facet-filter sheet** (genre/status/readingStatus/language/tag/label via `/series` + `/series/{genres,tags,languages}` + `/labels`) — facets can browse with empty query
 
 ## Phase 3 — content management
 
-- [~] Libraries CRUD — **done**: create (LOCAL server-side folder picker via `/filesystem` · WEB source+kind), edit, delete, refresh/deep-scan/analyze (More → Libraries); nav hide+reorder still pending
-- [~] Metadata edit sheets — **done**: series (title/summary/publisher/status/language/genres/tags, partial PATCH) + book (title/number/summary/tags) + book identifiers/links shown; authors/labels multi-select · field-locks still pending
+- [x] Libraries CRUD — create (LOCAL server-side folder picker via `/filesystem` · WEB source+kind), edit, delete, refresh/deep-scan/analyze, reorder, hide, hide-from-homepage (More → Libraries)
+- [x] Metadata edit sheets — series (title/summary/publisher/status/language/genres/tags · **labels multi-select** · **locked fields**, partial PATCH) + book (title/number/summary/tags · **authors name+role rows** · **locked fields**) + book identifiers/links shown
 - [x] Labels — create / rename / delete (More → Labels, admin-gated)
-- [~] Plugins — **done**: Installed (enable/disable/update/uninstall) · Browse & install from repository · check-updates (More → Plugins, admin); per-plugin config schema · repository CRUD still pending
+- [x] Plugins — Installed (enable/disable/update/uninstall · **schema-driven per-plugin settings sheet**: STRING/SECRET/BOOLEAN/INTEGER/ENUM) · Browse & install from repository · check-updates · **repository CRUD** (add/edit/enable/remove, write-only tokens) — More → Plugins, admin
 - [x] Migration: MigrateSeries — pick target source, find matches, choose carry-over (read/metadata/downloads), migrate (Series detail → Migrate)
 
 ## Phase 4 — server admin
 
-- [ ] Users (list/create/edit-limits/delete)
-- [ ] Admin actions (refresh-all / deep-scan / cancel-tasks / shutdown)
-- [ ] Tasks queue (SSE)
-- [ ] Backup/restore + scheduled auto-backups
-- [ ] Network settings (proxy / DoH)
-- [ ] Logs viewer (SSE)
-- [ ] TOTP / 2FA account setup (optional)
+All under **More → Server**, gated on the ADMIN role (Security sits under Account, since it is the
+signed-in user's own).
+
+- [x] **Users** — list with roles/limits/2FA badges · create (email + password + roles) · edit WEB
+  limits and adult-content flag · reset password · clear another user's second factor · delete
+  (never yourself — the server rejects it, so the row omits the action)
+- [x] **Server actions** — refresh-all · deep-scan-all · cancel-all-tasks · shutdown, each confirmed
+- [x] **Tasks queue** — live off `TaskStatusChanged` SSE (no polling) · running/queued counts ·
+  cancel-all (the server has no per-task cancel, so none is offered)
+- [~] **Backup** — stored archives (list/restore/delete) + the auto-backup schedule (frequency,
+  custom interval, keep-count, thumbnails, encryption password). Uploading an archive to restore and
+  downloading one to the device stay on the web UI: both need a file picker the app doesn't have
+- [x] **Network settings** — proxy (HTTP/SOCKS4/SOCKS5 + credentials) · DNS-over-HTTPS · Cloudflare
+  solver; write-only password fields (blank keeps the stored one)
+- [x] **Logs viewer** — recent buffer with a level filter + the server-side debug-logging toggle.
+  Reads `/server/logs` on demand rather than holding the `/stream` SSE open beside the event bus
+- [x] **TOTP / 2FA** (More → Security) — enroll (secret + "open in authenticator app" rather than a
+  QR, since the authenticator is on the same device) · activate · disable · change own password
 - [ ] ~~ClaimPage first-run~~ — skipped on mobile
 
 ---

@@ -16,14 +16,21 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.LibraryBooks
+import androidx.compose.material.icons.automirrored.outlined.Article
+import androidx.compose.material.icons.outlined.Backup
+import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Extension
+import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.LocalOffer
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -58,6 +65,13 @@ fun MoreTab(
     onOpenLibraries: () -> Unit = {},
     onOpenLabels: () -> Unit = {},
     onOpenPlugins: () -> Unit = {},
+    onOpenUsers: () -> Unit = {},
+    onOpenTasks: () -> Unit = {},
+    onOpenServerActions: () -> Unit = {},
+    onOpenSecurity: () -> Unit = {},
+    onOpenBackup: () -> Unit = {},
+    onOpenNetwork: () -> Unit = {},
+    onOpenLogs: () -> Unit = {},
 ) {
     val server by session.activeServer.collectAsStateSafe()
     val user by session.currentUser.collectAsStateSafe()
@@ -138,6 +152,8 @@ fun MoreTab(
                 HorizontalDivider(Modifier.padding(start = 56.dp))
                 HubRow(Icons.Outlined.Settings, "Settings", "Series behaviour and reader defaults", onOpenSettings)
                 HorizontalDivider(Modifier.padding(start = 56.dp))
+                HubRow(Icons.Outlined.Lock, "Security", "Password and two-factor authentication", onOpenSecurity)
+                HorizontalDivider(Modifier.padding(start = 56.dp))
                 HubRow(Icons.Outlined.Palette, "Appearance", "Theme, colours, dark mode", onOpenAppearance)
                 HorizontalDivider(Modifier.padding(start = 56.dp))
                 HubRow(Icons.Outlined.Info, "About", "Version and licence", onOpenAbout)
@@ -161,6 +177,32 @@ fun MoreTab(
                         HorizontalDivider(Modifier.padding(start = 56.dp))
                         HubRow(Icons.Outlined.Extension, "Plugins", "Install and manage content sources", onOpenPlugins)
                     }
+                }
+            }
+        }
+
+        // Server administration, admin-only: everything here affects the whole server, not this account.
+        if (isAdmin) {
+            Text(
+                "Server",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 4.dp),
+            )
+            Card(Modifier.fillMaxWidth()) {
+                Column {
+                    HubRow(Icons.Outlined.Group, "Users", "Accounts, roles, limits and passwords", onOpenUsers)
+                    HorizontalDivider(Modifier.padding(start = 56.dp))
+                    HubRow(Icons.Outlined.Schedule, "Tasks", "The background queue", onOpenTasks)
+                    HorizontalDivider(Modifier.padding(start = 56.dp))
+                    HubRow(Icons.Outlined.Backup, "Backup", "Stored archives and the auto-backup schedule", onOpenBackup)
+                    HorizontalDivider(Modifier.padding(start = 56.dp))
+                    HubRow(Icons.Outlined.Wifi, "Network", "Proxy, DNS over HTTPS, Cloudflare solver", onOpenNetwork)
+                    HorizontalDivider(Modifier.padding(start = 56.dp))
+                    HubRow(Icons.AutoMirrored.Outlined.Article, "Logs", "Recent server log output", onOpenLogs)
+                    HorizontalDivider(Modifier.padding(start = 56.dp))
+                    HubRow(Icons.Outlined.Build, "Server actions", "Refresh all, deep scan, shut down", onOpenServerActions)
                 }
             }
         }

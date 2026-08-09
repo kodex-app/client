@@ -63,10 +63,11 @@ class AppSettings(private val settings: Settings = Settings()) {
     }
 
     /**
-     * Per-library grouping dimension (none | status | source | category) and the group tab last open
-     * within it. Device-local rather than a server setting, matching the web UI, which keeps these two
-     * in localStorage while sort lives server-side — grouping is about how *this* screen is laid out
-     * on *this* device, not a preference worth syncing.
+     * Per-library grouping dimension (none | status | source) and the group tab last open within it.
+     * Device-local rather than a server setting, matching the web UI, which keeps these two in
+     * localStorage while sort lives server-side — grouping is about how *this* screen is laid out on
+     * *this* device, not a preference worth syncing. Callers coerce the stored value against the
+     * dimensions the library actually offers, so an entry written by an older build reads as "none".
      */
     fun libraryGroupBy(libraryId: String): String =
         settings.getStringOrNull("$KEY_LIBRARY_GROUP.$libraryId") ?: "none"

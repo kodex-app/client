@@ -50,7 +50,7 @@ import kotlinx.coroutines.launch
 /** Manage plugins: Installed (enable/disable/uninstall) and Browse (install from repository). Admin-only. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PluginsScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) {
+fun PluginsScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit, onOpenRepositories: () -> Unit = {}) {
     val server by session.activeServer.collectAsStateSafe()
     val snackbar = rememberSnackbar()
     val scope = rememberCoroutineScope()
@@ -62,6 +62,8 @@ fun PluginsScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) {
     var available by remember { mutableStateOf<List<AvailablePluginDto>?>(null) }
     var reload by remember { mutableIntStateOf(0) }
     var menuOpen by remember { mutableStateOf(false) }
+    // The provider whose settings sheet is open; its schema is fetched by the sheet itself.
+    var configuring by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(server?.id, reload) {
         val s = server ?: return@LaunchedEffect
@@ -97,6 +99,7 @@ fun PluginsScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) {
                         DropdownMenuItem(text = { Text("Refresh catalogue") }, onClick = {
                             menuOpen = false; act("Catalogue refreshed") { val s = server!!; api.refreshAvailablePlugins(s.baseUrl, s.apiKey) }
                         })
+                        DropdownMenuItem(text = { Text("Repositories") }, onClick = { menuOpen = false; onOpenRepositories() })
                     }
                 },
             )
@@ -116,10 +119,23 @@ fun PluginsScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) {
                 if (page == 0) InstalledList(installed, onEnable = { id -> act("Enabled") { val s = server!!; api.pluginAction(s.baseUrl, s.apiKey, id, "enable") } },
                     onDisable = { id -> act("Disabled") { val s = server!!; api.pluginAction(s.baseUrl, s.apiKey, id, "disable") } },
                     onUpdate = { id -> act("Updating…") { val s = server!!; api.pluginAction(s.baseUrl, s.apiKey, id, "update") } },
-                    onUninstall = { id -> act("Uninstalled") { val s = server!!; api.uninstallPlugin(s.baseUrl, s.apiKey, id) } })
+                    onUninstall = { id -> act("Uninstalled") { val s = server!!; api.uninstallPlugin(s.baseUrl, s.apiKey, id) } },
+                    onConfigure = { id -> configuring = id })
                 else BrowseList(available, installed, onInstall = { p -> act("Installing ${p.name}…") { val s = server!!; api.installPlugin(s.baseUrl, s.apiKey, p.id, p.latestVersion) } })
             }
         }
+    }
+
+    val s = server
+    if (configuring != null && s != null) {
+        SourceConfigSheet(
+            api = api,
+            baseUrl = s.baseUrl,
+            apiKey = s.apiKey,
+            providerId = configuring!!,
+            onDismiss = { configuring = null },
+            onSaved = { message -> configuring = null; snackbar?.show(message) },
+        )
     }
 }
 
@@ -130,6 +146,7 @@ private fun InstalledList(
     onDisable: (String) -> Unit,
     onUpdate: (String) -> Unit,
     onUninstall: (String) -> Unit,
+    onConfigure: (String) -> Unit,
 ) {
     when (installed) {
         null -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
@@ -149,6 +166,7 @@ private fun InstalledList(
                             if (disabled) DropdownMenuItem(text = { Text("Enable") }, onClick = { menu = false; onEnable(p.id) })
                             else DropdownMenuItem(text = { Text("Disable") }, onClick = { menu = false; onDisable(p.id) })
                             DropdownMenuItem(text = { Text("Update") }, onClick = { menu = false; onUpdate(p.id) })
+                            DropdownMenuItem(text = { Text("Settings") }, onClick = { menu = false; onConfigure(p.id) })
                             DropdownMenuItem(text = { Text("Uninstall") }, onClick = { menu = false; onUninstall(p.id) })
                         }
                     }

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -58,7 +59,6 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.toMutableStateList
@@ -93,6 +93,7 @@ import app.kodex.client.ui.catalog.sourceCoverUrl
 import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.friendlyMessage
 import app.kodex.client.ui.rememberSelection
+import app.kodex.client.ui.nav.retain
 import app.kodex.client.ui.rememberSnackbar
 import kotlinx.coroutines.launch
 
@@ -115,29 +116,32 @@ fun SourceFeedScreen(
     val snackbar = rememberSnackbar()
     val openUrl = app.kodex.client.platform.rememberUrlOpener()
 
-    var feed by remember(source.id) { mutableStateOf(initialFeed) }
-    var searchOpen by remember(source.id) { mutableStateOf(false) }
-    var query by remember(source.id) { mutableStateOf("") }
-    var searching by remember(source.id) { mutableStateOf(false) }
-    var appliedFilters by remember(source.id) { mutableStateOf(FilterListDto()) }
-    var searchToken by remember(source.id) { mutableIntStateOf(0) }
+    // Retained, not remembered: opening a series unmounts this screen, and losing the loaded pages
+    // here meant coming back re-fetched page 1 and dropped the scroll position. What mode is being
+    // shown has to be retained with them, or the restored results would belong to a different feed.
+    val st = retain("feed") { FeedState(initialFeed) }
+    var feed by st.feed
+    var searchOpen by st.searchOpen
+    var query by st.query
+    var searching by st.searching
+    var appliedFilters by st.appliedFilters
+    var searchToken by st.searchToken
+    val items = st.items
+    var page by st.page
+    var hasNext by st.hasNext
+    var loading by st.loading
+    var error by st.error
+    var reloadKey by st.reloadKey
+
     var filterSheetOpen by remember(source.id) { mutableStateOf(false) }
     var loadedFilters by remember(source.id) { mutableStateOf<List<SourceFilter>?>(null) }
 
-    val items = remember(source.id) { mutableStateListOf<SourceSearchResult>() }
-    var page by remember(source.id) { mutableStateOf(0) }
-    var hasNext by remember(source.id) { mutableStateOf(true) }
-    var loading by remember(source.id) { mutableStateOf(false) }
-    var error by remember(source.id) { mutableStateOf<String?>(null) }
-    var reloadKey by remember(source.id) { mutableIntStateOf(0) }
-    // A fresh scroll state per mode, so switching feed (or submitting a search) starts at the top
-    // instead of restoring the previous feed's offset. Keyed rather than scrolled imperatively:
-    // the grid only exists while the list is non-empty, so a scrollToItem() during a reload would
-    // suspend waiting for a layout that never happens and never hand back control.
-    val gridState = rememberSaveable(
-        source.id, feed, searching, searchToken,
-        saver = androidx.compose.foundation.lazy.grid.LazyGridState.Saver,
-    ) { androidx.compose.foundation.lazy.grid.LazyGridState() }
+    // One scroll state per mode, so switching feed (or submitting a search) starts at the top instead
+    // of restoring the previous feed's offset, while returning to a mode restores where you were.
+    // Held rather than scrolled imperatively: the grid only exists while the list is non-empty, so a
+    // scrollToItem() during a reload would suspend waiting for a layout that never happens.
+    val mode = "$feed|$searching|$searchToken|$reloadKey"
+    val gridState = st.grid(mode)
 
     // Multi-select (long-press) + "Add to libraries". Selection is keyed by the item's external id.
     val selection = rememberSelection<String>()
@@ -207,13 +211,16 @@ fun SourceFeedScreen(
         loading = false
     }
 
-    // Reload from scratch when the mode changes (feed / search submit / filter apply / retry).
-    LaunchedEffect(source.id, feed, searching, searchToken, reloadKey) {
+    // Reload from scratch when the mode changes (feed / search submit / filter apply / retry). The
+    // guard is what makes coming back free: the same mode is already loaded, so it is left alone.
+    LaunchedEffect(source.id, mode) {
+        if (st.loadedMode == mode) return@LaunchedEffect
+        st.loadedMode = mode
         items.clear(); page = 0; hasNext = true; error = null
         loadNext()
     }
 
-    LaunchedEffect(gridState, feed, searching, searchToken) {
+    LaunchedEffect(gridState, mode) {
         snapshotFlow { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
             .collect { last -> if (items.isNotEmpty() && hasNext && !loading && last >= items.size - 8) loadNext() }
     }
@@ -614,7 +621,7 @@ private fun FeedGrid(
     apiKey: String,
     sourceId: String,
     items: List<SourceSearchResult>,
-    gridState: androidx.compose.foundation.lazy.grid.LazyGridState,
+    gridState: LazyGridState,
     loadingMore: Boolean,
     selection: SelectionState<String>,
     followedIds: Set<String>,
@@ -649,5 +656,37 @@ private fun FeedGrid(
                 }
             }
         }
+    }
+}
+
+/**
+ * The part of the feed that must outlive the screen — the loaded pages, which mode produced them, and
+ * a scroll position per mode. Exposed as [MutableState]s so the screen can keep using plain `by`.
+ */
+private class FeedState(initialFeed: String) {
+    val feed = mutableStateOf(initialFeed)
+    val searchOpen = mutableStateOf(false)
+    val query = mutableStateOf("")
+    val searching = mutableStateOf(false)
+    val appliedFilters = mutableStateOf(FilterListDto())
+    val searchToken = mutableIntStateOf(0)
+    val items = mutableStateListOf<SourceSearchResult>()
+    val page = mutableIntStateOf(0)
+    val hasNext = mutableStateOf(true)
+    val loading = mutableStateOf(false)
+    val error = mutableStateOf<String?>(null)
+    val reloadKey = mutableIntStateOf(0)
+
+    /** Which mode the loaded [items] belong to; null until the first load starts. */
+    var loadedMode: String? = null
+
+    // Each search and each retry mints a new mode, so this is capped rather than unbounded; the few
+    // most recent are enough to cover switching between Popular/Latest and back out of a search.
+    private val grids = mutableMapOf<String, LazyGridState>()
+
+    fun grid(mode: String): LazyGridState {
+        val state = grids.getOrPut(mode) { LazyGridState() }
+        while (grids.size > 4) grids.remove(grids.keys.first { it != mode })
+        return state
     }
 }

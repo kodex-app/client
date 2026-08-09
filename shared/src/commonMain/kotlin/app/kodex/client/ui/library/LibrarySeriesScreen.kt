@@ -1,9 +1,11 @@
 package app.kodex.client.ui.library
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -31,6 +33,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -142,10 +145,24 @@ fun LibrarySeriesScreen(
     var reloadTick by remember { mutableIntStateOf(0) }
     var sheetOpen by remember { mutableStateOf(false) }
     var sheetTab by remember { mutableStateOf(0) }
-    // Seeded from the per-library store rather than defaulting to "none", so reopening a library
-    // comes back grouped the way it was left (the web keeps the same two values in localStorage).
-    var groupBy by remember(library.id) { mutableStateOf(appSettings.libraryGroupBy(library.id)) } // none | status | source | category
-    var selectedGroup by remember(library.id) { mutableStateOf(appSettings.libraryGroupTab(library.id, appSettings.libraryGroupBy(library.id))) }
+    // The dimensions series can be split into, matching the web: status always, source only where
+    // series have one. Category is deliberately absent — it is the chip filter below, not a grouping.
+    val groupOptions = buildList {
+        add("none" to "None")
+        add("status" to "Status")
+        if (library.isWeb) add("source" to "Source")
+    }
+    // Seeded from the per-library store rather than defaulting to "none", so reopening a library comes
+    // back grouped the way it was left. Coerced against the options first, so a value stored before
+    // this list changed (or by a library of another type) falls back to "none" instead of grouping by
+    // a dimension that is no longer offered.
+    var groupBy by remember(library.id) {
+        val stored = appSettings.libraryGroupBy(library.id)
+        mutableStateOf(if (groupOptions.any { it.first == stored }) stored else "none")
+    }
+    var selectedGroup by remember(library.id) { mutableStateOf(appSettings.libraryGroupTab(library.id, groupBy)) }
+    // The category chip filter (WEB libraries): narrows the whole view, and combines with grouping.
+    var categoryId by remember(library.id) { mutableStateOf<String?>(null) }
     var groups by remember { mutableStateOf<List<SeriesGroupCount>>(emptyList()) }
     var groupNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) } // key → friendly label (source/category)
     var allSeriesIds by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -198,14 +215,15 @@ fun LibrarySeriesScreen(
     }
 
     // Live per-group counts for the current grouping dimension.
-    LaunchedEffect(library.id, server?.id, reloadTick, groupBy) {
+    LaunchedEffect(library.id, server?.id, reloadTick, groupBy, categoryId) {
         val s = server ?: return@LaunchedEffect
         groups = if (groupBy == "none") emptyList()
-        else runCatching { api.seriesGroups(s.baseUrl, s.apiKey, groupBy, library.id) }.getOrDefault(emptyList()).filter { it.count > 0 }
-        groupNames = when (groupBy) {
-            "source" -> runCatching { api.contentSources(s.baseUrl, s.apiKey).associate { it.id to it.displayName } }.getOrDefault(emptyMap())
-            "category" -> runCatching { api.categories(s.baseUrl, s.apiKey).associate { it.id to it.name } }.getOrDefault(emptyMap())
-            else -> emptyMap()
+        else runCatching { api.seriesGroups(s.baseUrl, s.apiKey, groupBy, library.id, categoryId) }
+            .getOrDefault(emptyList()).filter { it.count > 0 }
+        groupNames = if (groupBy == "source") {
+            runCatching { api.contentSources(s.baseUrl, s.apiKey).associate { it.id to it.displayName } }.getOrDefault(emptyMap())
+        } else {
+            emptyMap()
         }
     }
 
@@ -250,10 +268,8 @@ fun LibrarySeriesScreen(
 
     // Group strip: when a dimension is active, series split into tabs (one per group), sorted for display.
     val tabGroups: List<GroupTab> = groups.map { g ->
-        val label = when (groupBy) {
-            "source", "category" -> groupNames[g.key] ?: g.key
-            else -> g.key.lowercase().replace('_', ' ').replaceFirstChar { it.uppercase() }
-        }
+        val label = if (groupBy == "source") groupNames[g.key] ?: g.key
+        else g.key.lowercase().replace('_', ' ').replaceFirstChar { it.uppercase() }
         GroupTab(g.key, label, g.count.toInt())
     }.let { list ->
         if (groupBy == "status") list.sortedBy { STATUS_ORDER.indexOf(it.key).let { i -> if (i < 0) Int.MAX_VALUE else i } }
@@ -308,11 +324,20 @@ fun LibrarySeriesScreen(
         },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
+            // Category chips (WEB): pick *which* category, while grouping subdivides within it.
+            if (library.isWeb && categories.isNotEmpty()) {
+                CategoryChips(
+                    categories = categories,
+                    selected = categoryId,
+                    onSelect = { categoryId = it },
+                )
+            }
             val filters = SeriesFilterArgs(
                 libraryId = library.id, sortExpr = sortExpr,
                 readingInclude = readingInclude, readingExclude = readingExclude,
                 statusInclude = statusTri == Tri.INCLUDE, statusExclude = statusTri == Tri.EXCLUDE,
                 downloaded = downloadedTri?.let { it == Tri.INCLUDE }, groupBy = groupBy,
+                categoryId = categoryId,
             )
             if (groupBy != "none" && tabGroups.isNotEmpty()) {
                 // Grouped: a tab per group, and the content is a pager so groups can be swiped between.
@@ -422,11 +447,7 @@ fun LibrarySeriesScreen(
 
                     2 -> {
                         SheetLabel("Group by")
-                        val opts = buildList {
-                            add("none" to "None"); add("status" to "Status"); add("source" to "Source")
-                            if (library.isWeb) add("category" to "Category")
-                        }
-                        opts.forEach { (value, label) ->
+                        groupOptions.forEach { (value, label) ->
                             CheckRow(label, groupBy == value) {
                                 groupBy = value
                                 appSettings.setLibraryGroupBy(library.id, value)
@@ -519,6 +540,31 @@ private fun SelectionBottomBar(
 }
 
 
+/** The category filter as a scrolling chip row: "All" plus one chip per category. */
+@Composable
+private fun CategoryChips(
+    categories: List<CategoryDto>,
+    selected: String?,
+    onSelect: (String?) -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FilterChip(selected = selected == null, onClick = { onSelect(null) }, label = { Text("All") })
+        categories.forEach { c ->
+            FilterChip(
+                selected = selected == c.id,
+                onClick = { onSelect(if (selected == c.id) null else c.id) },
+                label = { Text(c.name) },
+            )
+        }
+    }
+}
+
 /** The shared query facets (everything except the group key), passed to each pager page / the flat list. */
 private data class SeriesFilterArgs(
     val libraryId: String,
@@ -529,6 +575,7 @@ private data class SeriesFilterArgs(
     val statusExclude: Boolean,
     val downloaded: Boolean?,
     val groupBy: String,
+    val categoryId: String?,
 )
 
 /**
@@ -549,7 +596,7 @@ private fun LibrarySeriesResults(
     onIdsLoaded: (List<String>) -> Unit,
 ) {
     LoadedContent(
-        key = listOf(filters.libraryId, server?.id, filters.sortExpr, filters.readingInclude, filters.readingExclude, filters.downloaded, filters.statusInclude, filters.statusExclude, filters.groupBy, groupKey, reloadTick),
+        key = listOf(filters.libraryId, server?.id, filters.sortExpr, filters.readingInclude, filters.readingExclude, filters.downloaded, filters.statusInclude, filters.statusExclude, filters.groupBy, filters.categoryId, groupKey, reloadTick),
         load = {
             val s = server!!
             val statuses = buildList {
@@ -566,7 +613,7 @@ private fun LibrarySeriesResults(
                 statusExcludes = if (filters.statusExclude) listOf("COMPLETED") else emptyList(),
                 downloaded = filters.downloaded,
                 sources = if (filters.groupBy == "source") groupKey?.let { listOf(it) } ?: emptyList() else emptyList(),
-                categoryIds = if (filters.groupBy == "category") groupKey?.let { listOf(it) } ?: emptyList() else emptyList(),
+                categoryIds = listOfNotNull(filters.categoryId),
             )
         },
     ) { series ->

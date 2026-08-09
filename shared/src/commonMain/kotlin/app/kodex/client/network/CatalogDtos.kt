@@ -61,6 +61,8 @@ data class BookDto(
     val isbn: String? = null,
     val identifiers: Map<String, String> = emptyMap(),
     val externalLinks: List<WebLinkDto> = emptyList(),
+    /** Fields the user pinned; metadata providers skip these on refresh so manual edits survive. */
+    val lockedFields: Set<String> = emptySet(),
 ) {
     val isReady: Boolean get() = mediaStatus == null || mediaStatus == "READY"
 }
@@ -106,6 +108,9 @@ data class SeriesDetailDto(
     /** Non-null for WEB (followed) series — switches the detail list from books to source chapters. */
     val sourceProviderId: String? = null,
     val sourceSeriesId: String? = null,
+    val labels: List<LabelDto> = emptyList(),
+    /** Fields the user pinned; metadata providers skip these on refresh so manual edits survive. */
+    val lockedFields: Set<String> = emptySet(),
 ) {
     val isWeb: Boolean get() = sourceProviderId != null
 }
@@ -124,6 +129,8 @@ data class UpdateBookMetadataRequest(
     val isbn: String? = null,
     val authors: List<AuthorDto>? = null,
     val tags: List<String>? = null,
+    /** Non-null replaces the whole locked set. */
+    val lockedFields: List<String>? = null,
     val identifiers: Map<String, String>? = null,
 )
 

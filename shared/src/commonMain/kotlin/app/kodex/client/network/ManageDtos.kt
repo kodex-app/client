@@ -67,6 +67,8 @@ data class UpdateSeriesMetadataRequest(
     val genres: List<String>? = null,
     val tags: List<String>? = null,
     val labelIds: List<String>? = null,
+    /** Non-null replaces the whole locked set. */
+    val lockedFields: List<String>? = null,
     val identifiers: Map<String, String>? = null,
 )
 

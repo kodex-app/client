@@ -16,6 +16,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import io.ktor.http.encodeURLPathPart
 import io.ktor.http.encodeURLQueryComponent
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -203,12 +204,24 @@ class KodexApi(private val client: HttpClient) {
             parameter("size", 1)
         }.body<PageResponse<SeriesDto>>().totalElements
 
-    /** Live per-group counts for the Library grouping tabs. [groupBy] is status | source | category. */
-    suspend fun seriesGroups(baseUrl: String, apiKey: String, groupBy: String, libraryId: String? = null): List<SeriesGroupCount> =
+    /**
+     * Live per-group counts for the Library grouping tabs. [groupBy] is status | source.
+     *
+     * [categoryId] scopes the counts to one category, so the tabs agree with the grid when the
+     * category chip filter is narrowing it (grouping and the category filter combine).
+     */
+    suspend fun seriesGroups(
+        baseUrl: String,
+        apiKey: String,
+        groupBy: String,
+        libraryId: String? = null,
+        categoryId: String? = null,
+    ): List<SeriesGroupCount> =
         client.get("$baseUrl/api/v1/series/groups") {
             header(HEADER_API_KEY, apiKey)
             parameter("groupBy", groupBy)
             if (libraryId != null) parameter("libraryId", libraryId)
+            if (categoryId != null) parameter("categoryId", categoryId)
         }.body()
 
     /** Sub-series of a parent series (LOCAL nested libraries). */
@@ -798,6 +811,207 @@ class KodexApi(private val client: HttpClient) {
             setBody(value)
         }
     }
+
+    // ── Server administration ────────────────────────────────────────────────────────────────────
+    // Admin-only endpoints behind More → Server. Every one of these 403s for a non-admin, so the UI
+    // gates the section on the role rather than relying on the failure.
+
+    suspend fun users(baseUrl: String, apiKey: String): List<UserDto> =
+        client.get("$baseUrl/api/v1/users") { header(HEADER_API_KEY, apiKey) }.body()
+
+    suspend fun createUser(baseUrl: String, apiKey: String, request: CreateUserRequest): UserDto =
+        client.post("$baseUrl/api/v1/users") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+
+    suspend fun deleteUser(baseUrl: String, apiKey: String, id: String) {
+        client.delete("$baseUrl/api/v1/users/$id") { header(HEADER_API_KEY, apiKey) }
+    }
+
+    suspend fun updateUserLimits(baseUrl: String, apiKey: String, id: String, request: UpdateUserLimitsRequest): UserDto =
+        client.patch("$baseUrl/api/v1/users/$id/limits") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+
+    /** Admin reset of another user's password — no current password needed. */
+    suspend fun resetUserPassword(baseUrl: String, apiKey: String, id: String, newPassword: String) {
+        client.put("$baseUrl/api/v1/users/$id/password") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(ResetPasswordRequest(newPassword))
+        }
+    }
+
+    /** Clears another user's second factor, so they can enroll again (e.g. lost authenticator). */
+    suspend fun resetUserTotp(baseUrl: String, apiKey: String, id: String) {
+        client.delete("$baseUrl/api/v1/users/$id/totp") { header(HEADER_API_KEY, apiKey) }
+    }
+
+    /** The signed-in user changing their own password; verifies [currentPassword]. */
+    suspend fun changeOwnPassword(baseUrl: String, apiKey: String, currentPassword: String, newPassword: String) {
+        client.post("$baseUrl/api/v1/users/me/password") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(ChangePasswordRequest(currentPassword, newPassword))
+        }
+    }
+
+    // ── Second factor (own account) ──────────────────────────────────────────────────────────────
+
+    /** Starts enrollment: returns the secret to show as a QR/otpauth URI. Not active until confirmed. */
+    suspend fun totpEnroll(baseUrl: String, apiKey: String): TotpEnrollmentDto =
+        client.post("$baseUrl/api/v1/users/me/totp/enroll") { header(HEADER_API_KEY, apiKey) }.body()
+
+    suspend fun totpActivate(baseUrl: String, apiKey: String, code: String) {
+        client.post("$baseUrl/api/v1/users/me/totp/activate") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(TotpCodeRequest(code))
+        }
+    }
+
+    suspend fun totpDisable(baseUrl: String, apiKey: String, code: String) {
+        client.post("$baseUrl/api/v1/users/me/totp/disable") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(TotpCodeRequest(code))
+        }
+    }
+
+    // ── Server-wide actions and the task queue ───────────────────────────────────────────────────
+
+    /** Rescans every library; [deep] re-reads files already known. Returns { libraries: n }. */
+    suspend fun refreshAllLibraries(baseUrl: String, apiKey: String, deep: Boolean): Int =
+        client.post("$baseUrl/api/v1/admin/refresh-all") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("deep", deep)
+        }.body<Map<String, Int>>().values.firstOrNull() ?: 0
+
+    /** Cancels every queued/running task. Returns how many were cancelled. */
+    suspend fun cancelAllTasks(baseUrl: String, apiKey: String): Int =
+        client.post("$baseUrl/api/v1/admin/tasks/cancel-all") {
+            header(HEADER_API_KEY, apiKey)
+        }.body<Map<String, Int>>().values.firstOrNull() ?: 0
+
+    suspend fun shutdownServer(baseUrl: String, apiKey: String) {
+        client.post("$baseUrl/api/v1/admin/shutdown") { header(HEADER_API_KEY, apiKey) }
+    }
+
+    suspend fun tasks(baseUrl: String, apiKey: String, page: Int = 0, size: Int = PAGE_SIZE): List<TaskDto> =
+        client.get("$baseUrl/api/v1/tasks") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("page", page)
+            parameter("size", size)
+        }.body<PageResponse<TaskDto>>().content
+
+    // ── Backup ───────────────────────────────────────────────────────────────────────────────────
+    // The client works with backups the server already holds. Uploading an archive to restore, and
+    // downloading one to the device, both need a file picker this app does not have — the stored-file
+    // routes cover the same ground without one.
+
+    suspend fun backupFiles(baseUrl: String, apiKey: String): List<BackupFileDto> =
+        client.get("$baseUrl/api/v1/admin/backup/files") { header(HEADER_API_KEY, apiKey) }.body()
+
+    suspend fun deleteBackupFile(baseUrl: String, apiKey: String, name: String) {
+        client.delete("$baseUrl/api/v1/admin/backup/files/${name.encodeURLPathPart()}") {
+            header(HEADER_API_KEY, apiKey)
+        }
+    }
+
+    /** Stages a restore from a backup the server holds. The server needs a restart to apply it. */
+    suspend fun restoreStoredBackup(baseUrl: String, apiKey: String, name: String, password: String?): RestoreResultDto =
+        client.post("$baseUrl/api/v1/admin/backup/files/${name.encodeURLPathPart()}/restore") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(RestoreStoredRequest(password?.takeIf { it.isNotBlank() }))
+        }.body()
+
+    suspend fun backupSettings(baseUrl: String, apiKey: String): BackupSettingsDto =
+        client.get("$baseUrl/api/v1/admin/backup/settings") { header(HEADER_API_KEY, apiKey) }.body()
+
+    suspend fun saveBackupSettings(baseUrl: String, apiKey: String, request: BackupSettingsRequest): BackupSettingsDto =
+        client.put("$baseUrl/api/v1/admin/backup/settings") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+
+    // ── Network ──────────────────────────────────────────────────────────────────────────────────
+
+    suspend fun networkSettings(baseUrl: String, apiKey: String): NetworkSettingsDto =
+        client.get("$baseUrl/api/v1/server/network") { header(HEADER_API_KEY, apiKey) }.body()
+
+    suspend fun saveNetworkSettings(baseUrl: String, apiKey: String, request: NetworkSettingsRequest): NetworkSettingsDto =
+        client.put("$baseUrl/api/v1/server/network") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+
+    // ── Logs ─────────────────────────────────────────────────────────────────────────────────────
+
+    /** The recent in-memory buffer. The live `/stream` SSE route is a separate connection. */
+    suspend fun recentLogs(baseUrl: String, apiKey: String): List<LogEntryDto> =
+        client.get("$baseUrl/api/v1/server/logs") { header(HEADER_API_KEY, apiKey) }.body()
+
+    suspend fun debugMode(baseUrl: String, apiKey: String): Boolean =
+        client.get("$baseUrl/api/v1/server/logs/debug") { header(HEADER_API_KEY, apiKey) }.body<DebugModeDto>().enabled
+
+    suspend fun setDebugMode(baseUrl: String, apiKey: String, enabled: Boolean): Boolean =
+        client.put("$baseUrl/api/v1/server/logs/debug") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(DebugModeDto(enabled))
+        }.body<DebugModeDto>().enabled
+
+    // ── Plugin repositories and source configuration ─────────────────────────────────────────────
+
+    suspend fun pluginRepositories(baseUrl: String, apiKey: String): List<PluginRepositoryDto> =
+        client.get("$baseUrl/api/v1/plugin-repositories") { header(HEADER_API_KEY, apiKey) }.body()
+
+    suspend fun addPluginRepository(baseUrl: String, apiKey: String, request: CreateRepositoryRequest): PluginRepositoryDto =
+        client.post("$baseUrl/api/v1/plugin-repositories") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+
+    suspend fun updatePluginRepository(
+        baseUrl: String,
+        apiKey: String,
+        id: String,
+        request: UpdateRepositoryRequest,
+    ): PluginRepositoryDto =
+        client.patch("$baseUrl/api/v1/plugin-repositories/$id") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+
+    suspend fun deletePluginRepository(baseUrl: String, apiKey: String, id: String) {
+        client.delete("$baseUrl/api/v1/plugin-repositories/$id") { header(HEADER_API_KEY, apiKey) }
+    }
+
+    /** A content source's admin-level configuration schema plus the values currently stored. */
+    suspend fun sourceConfig(baseUrl: String, apiKey: String, providerId: String): SourceConfigDto =
+        client.get("$baseUrl/api/v1/content-sources/$providerId/config") { header(HEADER_API_KEY, apiKey) }.body()
+
+    /** Values keyed by field. Omit a SECRET's key to keep the stored secret; send "" to clear it. */
+    suspend fun saveSourceConfig(
+        baseUrl: String,
+        apiKey: String,
+        providerId: String,
+        values: Map<String, String>,
+    ): SourceConfigDto =
+        client.put("$baseUrl/api/v1/content-sources/$providerId/config") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(values)
+        }.body()
 
     private companion object {
         const val HEADER_API_KEY = "X-API-Key"
