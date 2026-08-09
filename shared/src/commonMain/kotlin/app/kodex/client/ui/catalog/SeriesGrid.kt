@@ -4,9 +4,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -23,9 +27,12 @@ fun SeriesGrid(
     modifier: Modifier = Modifier,
     selection: app.kodex.client.ui.SelectionState<String>? = null,
     titleOf: (SeriesDto) -> String = { it.title },
+    /** Pass a retained state to keep the scroll position across navigating away and back. */
+    state: LazyGridState = rememberLazyGridState(),
 ) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(112.dp),
+        state = state,
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -57,8 +64,11 @@ fun SeriesListView(
     modifier: Modifier = Modifier,
     selection: app.kodex.client.ui.SelectionState<String>? = null,
     titleOf: (SeriesDto) -> String = { it.title },
+    /** Pass a retained state to keep the scroll position across navigating away and back. */
+    state: LazyListState = rememberLazyListState(),
 ) {
     LazyColumn(
+        state = state,
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(vertical = 8.dp),
     ) {

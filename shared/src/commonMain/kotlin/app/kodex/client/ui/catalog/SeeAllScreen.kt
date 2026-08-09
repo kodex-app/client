@@ -62,6 +62,7 @@ fun SeeAllScreen(
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             LoadedContent(
+                retainKey = "items",
                 key = kind to server?.id,
                 load = {
                     val s = server!!

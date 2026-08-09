@@ -64,6 +64,7 @@ import app.kodex.client.ui.MetaChip
 import app.kodex.client.ui.catalog.CoverImage
 import app.kodex.client.ui.catalog.bookCoverUrl
 import app.kodex.client.ui.collectAsStateSafe
+import app.kodex.client.ui.nav.retain
 import app.kodex.client.ui.friendlyMessage
 import app.kodex.client.ui.rememberSnackbar
 import kotlinx.coroutines.launch
@@ -83,7 +84,9 @@ fun BookDetailScreen(
     val snackbar = rememberSnackbar()
     val scope = rememberCoroutineScope()
 
-    var book by remember { mutableStateOf<BookDto?>(null) }
+    // Retained: opening the reader unmounts this screen, and the book would otherwise be re-fetched
+    // from a spinner on the way back. Held state means the refresh happens underneath what's shown.
+    var book by retain("book") { mutableStateOf<BookDto?>(null) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
     var reloadTick by remember { mutableIntStateOf(0) }
     var busy by remember { mutableStateOf(false) }

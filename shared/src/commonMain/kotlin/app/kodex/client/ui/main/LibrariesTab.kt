@@ -51,6 +51,7 @@ fun LibrariesTab(session: SessionManager, api: KodexApi, onOpenLibrary: (Library
     // Loaded together so the list is ordered and filtered from its first frame — fetching the prefs
     // separately would show the server order for a beat and then reshuffle.
     LoadedContent(
+        retainKey = "libraries",
         key = server?.id,
         load = {
             val s = server!!

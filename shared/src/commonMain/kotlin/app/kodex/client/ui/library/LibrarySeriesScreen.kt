@@ -74,6 +74,7 @@ import app.kodex.client.ui.EmptyMessage
 import app.kodex.client.ui.LoadedContent
 import app.kodex.client.ui.OnServerEvent
 import app.kodex.client.ui.SelectionActionBar
+import app.kodex.client.ui.nav.retain
 import app.kodex.client.ui.SelectionTopBar
 import app.kodex.client.ui.TooltipIconButton
 import app.kodex.client.ui.catalog.SeriesGrid
@@ -596,6 +597,8 @@ private fun LibrarySeriesResults(
     onIdsLoaded: (List<String>) -> Unit,
 ) {
     LoadedContent(
+        // One holder per group tab, so swiping between them keeps each tab's loaded page.
+        retainKey = "series:${groupKey.orEmpty()}",
         key = listOf(filters.libraryId, server?.id, filters.sortExpr, filters.readingInclude, filters.readingExclude, filters.downloaded, filters.statusInclude, filters.statusExclude, filters.groupBy, filters.categoryId, groupKey, reloadTick),
         load = {
             val s = server!!
@@ -619,10 +622,14 @@ private fun LibrarySeriesResults(
     ) { series ->
         onIdsLoaded(series.map { it.id })
         val titleOf: (SeriesDto) -> String = { if (displayBy == "name") it.name.ifBlank { it.title } else it.title.ifBlank { it.name } }
+        // Retained alongside the loaded page, so opening a series and coming back lands where you were.
+        val scroll = retain("scroll:${groupKey.orEmpty()}") { GridScrollState() }
         when {
             series.isEmpty() -> EmptyMessage("No series match this filter.")
-            server != null && gridView -> SeriesGrid(server.baseUrl, server.apiKey, series, onOpenSeries, selection = selection, titleOf = titleOf)
-            server != null -> SeriesListView(server.baseUrl, server.apiKey, series, onOpenSeries, selection = selection, titleOf = titleOf)
+            server != null && gridView ->
+                SeriesGrid(server.baseUrl, server.apiKey, series, onOpenSeries, selection = selection, titleOf = titleOf, state = scroll.grid)
+            server != null ->
+                SeriesListView(server.baseUrl, server.apiKey, series, onOpenSeries, selection = selection, titleOf = titleOf, state = scroll.list)
         }
     }
 }
@@ -752,4 +759,10 @@ private fun SheetLabel(text: String) {
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp),
     )
+}
+
+/** Scroll offsets for one group tab; grid and list keep their own, since the toggle swaps between them. */
+private class GridScrollState {
+    val grid = androidx.compose.foundation.lazy.grid.LazyGridState()
+    val list = androidx.compose.foundation.lazy.LazyListState()
 }

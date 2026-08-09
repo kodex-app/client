@@ -71,6 +71,7 @@ fun BrowseTab(
     val server by session.activeServer.collectAsStateSafe()
 
     LoadedContent(
+        retainKey = "sources",
         key = server?.id,
         load = { val s = server!!; api.contentSources(s.baseUrl, s.apiKey) },
     ) { sources ->

@@ -32,13 +32,14 @@ val LocalRetainedSlot = staticCompositionLocalOf<MutableMap<String, Any>?> { nul
 
 /**
  * Like `remember`, but the value outlives this screen being covered by another; it is recreated only
- * once the screen is left for good. [key] only has to be unique within the screen.
+ * once the screen is left for good. [key] only has to be unique within the screen; a null key opts
+ * out entirely and makes this plain `remember`, which is how callers expose retention as a choice.
  */
 @Composable
-fun <T : Any> retain(key: String, factory: () -> T): T {
-    val slot = LocalRetainedSlot.current
+fun <T : Any> retain(key: String?, factory: () -> T): T {
+    val slot = LocalRetainedSlot.current.takeIf { key != null }
     return remember(slot, key) {
         @Suppress("UNCHECKED_CAST")
-        if (slot == null) factory() else slot.getOrPut(key) { factory() } as T
+        if (slot == null) factory() else slot.getOrPut(key!!) { factory() } as T
     }
 }

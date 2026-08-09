@@ -77,6 +77,7 @@ import app.kodex.client.ui.TooltipIconButton
 import app.kodex.client.ui.catalog.CoverCard
 import app.kodex.client.ui.catalog.CoverImage
 import app.kodex.client.ui.catalog.SeriesBackdrop
+import app.kodex.client.ui.nav.retain
 import app.kodex.client.ui.catalog.SeriesDetailList
 import app.kodex.client.ui.catalog.SeriesEntryRow
 import app.kodex.client.ui.catalog.SeriesHeader
@@ -129,9 +130,12 @@ fun SeriesDetailScreen(
     val scope = rememberCoroutineScope()
     val selection = rememberSelection<String>()
     var reloadTick by remember { mutableIntStateOf(0) }
-    var sortDesc by remember { mutableStateOf(true) }
-    var sortKey by remember { mutableStateOf(SeriesSort.NUMBER) }
-    var translator by remember { mutableStateOf<String?>(null) } // scanlator filter; null = all
+    // Retained: opening the reader unmounts this screen, and losing the loaded series here meant
+    // coming back re-fetched everything from a spinner and threw away the scroll position.
+    val st = retain("seriesDetail") { SeriesDetailState() }
+    var sortDesc by st.sortDesc
+    var sortKey by st.sortKey
+    var translator by st.translator // scanlator filter; null = all
     var menuOpen by remember { mutableStateOf(false) }
     var bookmarksOpen by remember { mutableStateOf(false) }
     var editOpen by remember { mutableStateOf(false) }
@@ -149,10 +153,13 @@ fun SeriesDetailScreen(
         }
     }
 
-    var phase by remember { mutableStateOf<SeriesPhase>(SeriesPhase.Loading) }
+    var phase by st.phase
     LaunchedEffect(seriesId, server?.id, reloadTick) {
         val s0 = server ?: return@LaunchedEffect
-        phase = SeriesPhase.Loading
+        // Only fall back to the spinner when there is nothing on screen yet. Returning from the reader
+        // (or reloading after a bulk action) refreshes in place, so read state updates without the list
+        // flashing away — which is also what keeps the scroll position meaningful.
+        if (phase !is SeriesPhase.Ready) phase = SeriesPhase.Loading
         phase = runCatching {
             val detail = api.seriesDetail(s0.baseUrl, s0.apiKey, seriesId)
             val subs = runCatching { api.subSeries(s0.baseUrl, s0.apiKey, seriesId) }.getOrDefault(emptyList())
@@ -201,7 +208,7 @@ fun SeriesDetailScreen(
     // Scroll state drives the collapsing toolbar: the title fades in (and the bar turns opaque, masking
     // content behind the status bar) once the header has scrolled up past the toolbar. Both layouts
     // (chapter list and book list) are LazyColumns, so they share one list state.
-    val listState = rememberLazyListState()
+    val listState = st.list
     val titleVisible by remember {
         derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 280 }
     }
@@ -801,3 +808,15 @@ private fun bookLabel(book: BookDto): String = book.title.ifBlank { book.numberD
 
 private fun chapterNumberLabel(c: SeriesChapterDto): String =
     c.number?.let { n -> if (n % 1.0 == 0.0) "Chapter ${n.toInt()}" else "Chapter $n" } ?: "Chapter"
+
+/**
+ * The parts of the screen that must outlive it being covered by the reader: the loaded series, how the
+ * list is sorted and filtered, and where it was scrolled to.
+ */
+private class SeriesDetailState {
+    val phase = mutableStateOf<SeriesPhase>(SeriesPhase.Loading)
+    val sortDesc = mutableStateOf(true)
+    val sortKey = mutableStateOf(SeriesSort.NUMBER)
+    val translator = mutableStateOf<String?>(null)
+    val list = LazyListState()
+}

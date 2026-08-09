@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -70,6 +71,7 @@ import app.kodex.client.network.SourceDescriptor
 import app.kodex.client.network.SourceSearchResult
 import app.kodex.client.ui.LoadedContent
 import app.kodex.client.ui.catalog.SeriesBackdrop
+import app.kodex.client.ui.nav.retain
 import app.kodex.client.ui.catalog.SeriesDetailList
 import app.kodex.client.ui.catalog.SeriesEntryRow
 import app.kodex.client.ui.catalog.SeriesHeader
@@ -114,9 +116,12 @@ fun SourceSeriesScreen(
     var reload by remember { mutableStateOf(0) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
-    var sortDesc by remember { mutableStateOf(true) }
-    var sortKey by remember { mutableStateOf(SeriesSort.NUMBER) }
-    var translator by remember { mutableStateOf<String?>(null) }
+    // Retained: opening a chapter in the reader unmounts this screen, and losing the sort/filter and
+    // scroll position here meant coming back landed at the top of a freshly loaded list.
+    val st = retain("sourceSeries") { SourceSeriesState() }
+    var sortDesc by st.sortDesc
+    var sortKey by st.sortKey
+    var translator by st.translator
     // The read actions live in the Scaffold's FAB slot, but only the loaded chapter list knows which
     // chapter to resume — so the content publishes it up here (and clears it while reloading).
     var readFab by remember { mutableStateOf<ReadFab?>(null) }
@@ -133,7 +138,7 @@ fun SourceSeriesScreen(
     }
 
     // Collapsing toolbar: the title fades in and the bar turns opaque once the header scrolls past it.
-    val listState = rememberLazyListState()
+    val listState = st.list
     val titleVisible by remember {
         derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 280 }
     }
@@ -183,6 +188,7 @@ fun SourceSeriesScreen(
         Box(Modifier.fillMaxSize()) {
             server?.let { srv -> SourceBackdrop(srv.baseUrl, srv.apiKey, source.id, seed.coverUrl, topInset + 210.dp) }
             LoadedContent(
+                retainKey = "chapters",
                 key = listOf(source.id, seed.externalId, reload, server?.id),
                 load = {
                     val s = server!!
@@ -458,3 +464,11 @@ private fun prettyStatus(status: String): String =
 
 /** [SourceDescriptor.kind] of a novel source — its chapters are text, not page images. */
 private const val KIND_BOOK = "BOOK"
+
+/** Sort, filter and scroll position that must survive the reader being opened on top of this screen. */
+private class SourceSeriesState {
+    val sortDesc = mutableStateOf(true)
+    val sortKey = mutableStateOf(SeriesSort.NUMBER)
+    val translator = mutableStateOf<String?>(null)
+    val list = LazyListState()
+}
