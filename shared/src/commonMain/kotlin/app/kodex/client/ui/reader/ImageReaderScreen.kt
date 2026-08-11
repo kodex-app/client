@@ -56,7 +56,6 @@ import androidx.compose.material.icons.automirrored.outlined.ViewList
 import androidx.compose.material.icons.outlined.Book
 import androidx.compose.material.icons.outlined.Bookmark
 import androidx.compose.material.icons.outlined.BookmarkBorder
-import androidx.compose.material.icons.outlined.OpenInBrowser
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Public
@@ -183,7 +182,7 @@ class ReaderChapterNav(
     val chapters: List<ReaderChapterItem> = emptyList(),
 )
 
-/** Which boundary the between-chapters transition overlay is showing. */
+/** Which end of the chapter the between-chapters page is showing. */
 private enum class Boundary { START, END }
 
 private fun bgColor(bg: String): Color = when (bg) {
@@ -303,30 +302,44 @@ fun ImageReaderScreen(
         scope.launch { runCatching { savePreloadCount(api, s.baseUrl, s.apiKey, preload) } }
     }
 
-    // Central page-turn: in paged mode, turning past either end raises the between-chapters overlay
-    // (when a sibling exists); otherwise it just moves the page. Continuous mode simply scrolls.
+    fun confirmBoundary(boundary: Boundary) {
+        when (boundary) {
+            Boundary.END -> source.nav?.next?.open(ReaderEdge.FIRST)
+            Boundary.START -> source.nav?.prev?.open(ReaderEdge.LAST)
+        }
+        transition = null
+    }
+
+    fun confirmTransition() {
+        transition?.let { confirmBoundary(it) }
+    }
+
+    // Central page-turn for the arrow buttons, tap zones and keys. In paged mode, turning past either
+    // end moves onto the between-chapters screen (when a sibling exists) and turning again from there
+    // commits — the same two steps a swipe takes. Continuous mode simply scrolls.
     fun advance(delta: Int) {
         val pp = p ?: return
+        transition?.let { b ->
+            val sameWay = (b == Boundary.END && delta > 0) || (b == Boundary.START && delta < 0)
+            if (sameWay) {
+                confirmBoundary(b)
+                return
+            }
+            // Turning the other way steps back off the boundary screen onto the pages.
+            transition = null
+            return
+        }
         val step = if (effectiveMode == MODE_PAGED && pp.isDouble) 2 else 1
         val target = page + delta * step
         if (effectiveMode == MODE_PAGED) {
             when {
                 source.pageCount > 0 && target > source.pageCount -> if (source.nav?.next != null) transition = Boundary.END
                 target < 1 -> if (source.nav?.prev != null) transition = Boundary.START
-                else -> { transition = null; page = target.coerceIn(1, source.pageCount) }
+                else -> page = target.coerceIn(1, source.pageCount)
             }
         } else {
             page = target.coerceIn(1, source.pageCount)
         }
-    }
-
-    fun confirmTransition() {
-        when (transition) {
-            Boundary.END -> source.nav?.next?.open(ReaderEdge.FIRST)
-            Boundary.START -> source.nav?.prev?.open(ReaderEdge.LAST)
-            null -> {}
-        }
-        transition = null
     }
 
     var chrome by remember { mutableStateOf(true) }
@@ -393,7 +406,15 @@ fun ImageReaderScreen(
             if (effectiveMode == MODE_CONTINUOUS) {
                 ContinuousReader(source, p, page, autoScroll, onPage = { page = it }, onToggleChrome = { chrome = !chrome }, onAutoScrollEnd = { autoScroll = false })
             } else {
-                PagedReader(source, p, page, onJump = { page = it }, onToggleChrome = { chrome = !chrome }, onTurnPage = { forward -> advance(if (forward) 1 else -1) })
+                PagedReader(
+                    source, p, page,
+                    transition = transition,
+                    onJump = { page = it },
+                    onTransition = { transition = it },
+                    onConfirmBoundary = ::confirmBoundary,
+                    onToggleChrome = { chrome = !chrome },
+                    onTurnPage = { forward -> advance(if (forward) 1 else -1) },
+                )
             }
 
             // Paged edge page-turn buttons (reading order), shown with the chrome.
@@ -445,18 +466,6 @@ fun ImageReaderScreen(
             // Persistent incognito badge (always visible, above the auto-hiding chrome).
             if (source.incognito) IncognitoBadge(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 6.dp))
 
-            // Between-chapters overlay (paged): confirm to open the sibling, dismiss to keep reading.
-            transition?.let { b ->
-                val ref = if (b == Boundary.END) source.nav?.next else source.nav?.prev
-                if (ref != null) {
-                    ChapterTransitionOverlay(
-                        isNext = b == Boundary.END,
-                        title = ref.title,
-                        onConfirm = { confirmTransition() },
-                        onDismiss = { transition = null },
-                    )
-                }
-            }
         }
     }
 
@@ -505,36 +514,60 @@ private fun PagedReader(
     source: ReaderSource,
     prefs: ReaderPrefs,
     page: Int,
+    transition: Boundary?,
     onJump: (Int) -> Unit,
+    onTransition: (Boundary?) -> Unit,
+    onConfirmBoundary: (Boundary) -> Unit,
     onToggleChrome: () -> Unit,
     onTurnPage: (forward: Boolean) -> Unit,
 ) {
-    val scope = rememberCoroutineScope()
     val double = prefs.isDouble
-    val slotCount = if (double) (source.pageCount + 1) / 2 else source.pageCount
-    val initialSlot = (if (double) (page - 1) / 2 else page - 1).coerceIn(0, (slotCount - 1).coerceAtLeast(0))
-    val pagerState = rememberPagerState(initialPage = initialSlot, pageCount = { slotCount })
+    val contentSlots = if (double) (source.pageCount + 1) / 2 else source.pageCount
+    // The between-chapters screens are pages of the pager, not an overlay: you swipe onto one and
+    // swipe again to commit, which is what makes the whole reader swipe-driven. They exist only when
+    // there is actually a sibling chapter, so otherwise the pager still ends where the content does.
+    val leading = if (source.nav?.prev != null) 1 else 0
+    val trailing = if (source.nav?.next != null) 1 else 0
+    val slotCount = (leading + contentSlots + trailing).coerceAtLeast(1)
+    val lastSlot = slotCount - 1
+
+    fun slotOf(p: Int) = leading + (if (double) (p - 1) / 2 else p - 1)
+    fun pageOf(slot: Int) = (slot - leading).let { if (double) it * 2 + 1 else it + 1 }
+
+    val pagerState = rememberPagerState(
+        initialPage = slotOf(page).coerceIn(0, lastSlot),
+        pageCount = { slotCount },
+    )
     var zoomedIn by remember { mutableStateOf(false) }
 
-    // Pager settle → current page.
-    LaunchedEffect(pagerState) {
+    // Pager settle -> either a page, or one of the boundary screens.
+    LaunchedEffect(pagerState, leading, contentSlots) {
         androidx.compose.runtime.snapshotFlow { pagerState.settledPage }.collect { slot ->
-            onJump(if (double) slot * 2 + 1 else slot + 1)
+            when {
+                slot < leading -> onTransition(Boundary.START)
+                slot >= leading + contentSlots -> onTransition(Boundary.END)
+                else -> {
+                    onTransition(null)
+                    onJump(pageOf(slot))
+                }
+            }
         }
     }
-    // External jump (slider) → scroll pager.
-    val targetSlot = if (double) (page - 1) / 2 else page - 1
+    // External move (slider, keys, edge buttons) -> scroll the pager to match.
+    val targetSlot = when (transition) {
+        Boundary.START -> 0
+        Boundary.END -> lastSlot
+        null -> slotOf(page).coerceIn(0, lastSlot)
+    }
     LaunchedEffect(targetSlot) {
-        if (targetSlot != pagerState.currentPage) pagerState.scrollToPage(targetSlot.coerceIn(0, (slotCount - 1).coerceAtLeast(0)))
+        if (targetSlot != pagerState.currentPage) pagerState.scrollToPage(targetSlot)
     }
 
-    // Swiping past either end of the chapter. The pager stops at its own bounds, so that drag arrives
-    // here unconsumed — without this, the last page could only be left with the arrow button or a tap,
-    // which is not what a swipe-driven reader should feel like. Released past the threshold it calls
-    // the same page-turn as everything else, so the between-chapters overlay behaves identically.
+    // Swiping *past* a boundary screen commits to the sibling chapter. The pager sits at its own edge
+    // there, so that drag arrives here unconsumed; released past the threshold it opens the chapter.
     val density = LocalDensity.current
     val edgeThreshold = with(density) { 72.dp.toPx() }
-    val edgeTurn = remember(prefs.isRtl, zoomedIn, edgeThreshold) {
+    val edgeCommit = remember(prefs.isRtl, zoomedIn, edgeThreshold, leading, trailing, lastSlot) {
         object : NestedScrollConnection {
             /** Positive is "towards the next page", which is a leftward drag unless the pager is RTL. */
             private val forwardSign = if (prefs.isRtl) 1f else -1f
@@ -556,8 +589,12 @@ private fun PagedReader(
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
                 val drag = edgeDrag
                 edgeDrag = 0f
-                if (drag >= edgeThreshold) onTurnPage(true)
-                else if (drag <= -edgeThreshold) onTurnPage(false)
+                val slot = pagerState.settledPage
+                if (drag >= edgeThreshold && trailing > 0 && slot == lastSlot) {
+                    onConfirmBoundary(Boundary.END)
+                } else if (drag <= -edgeThreshold && leading > 0 && slot == 0) {
+                    onConfirmBoundary(Boundary.START)
+                }
                 return Velocity.Zero
             }
         }
@@ -567,27 +604,44 @@ private fun PagedReader(
         state = pagerState,
         reverseLayout = prefs.isRtl,
         userScrollEnabled = !zoomedIn,
-        modifier = Modifier.fillMaxSize().nestedScroll(edgeTurn),
+        modifier = Modifier.fillMaxSize().nestedScroll(edgeCommit),
     ) { slot ->
-        if (double) {
-            val left = slot * 2 + 1
-            val right = left + 1
-            val pages = listOfNotNull(left, right.takeIf { it <= source.pageCount })
-            val ordered = if (prefs.isRtl) pages.reversed() else pages
-            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.Center) {
-                ordered.forEach { n ->
-                    PageImage(
-                        url = source.pageUrlFor(n),
-                        apiKey = source.apiKey,
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier.fillMaxHeight().weight(1f),
-                    )
+        when {
+            slot < leading -> ChapterTransitionPage(
+                isNext = false,
+                currentTitle = source.subtitle ?: source.title,
+                siblingTitle = source.nav?.prev?.title.orEmpty(),
+                seriesTitle = source.title,
+                onContinue = { onConfirmBoundary(Boundary.START) },
+            )
+
+            slot >= leading + contentSlots -> ChapterTransitionPage(
+                isNext = true,
+                currentTitle = source.subtitle ?: source.title,
+                siblingTitle = source.nav?.next?.title.orEmpty(),
+                seriesTitle = source.title,
+                onContinue = { onConfirmBoundary(Boundary.END) },
+            )
+
+            double -> {
+                val left = pageOf(slot)
+                val right = left + 1
+                val pages = listOfNotNull(left, right.takeIf { it <= source.pageCount })
+                val ordered = if (prefs.isRtl) pages.reversed() else pages
+                Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.Center) {
+                    ordered.forEach { n ->
+                        PageImage(
+                            url = source.pageUrlFor(n),
+                            apiKey = source.apiKey,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxHeight().weight(1f),
+                        )
+                    }
                 }
             }
-        } else {
-            val n = slot + 1
-            ZoomablePage(
-                url = source.pageUrlFor(n),
+
+            else -> ZoomablePage(
+                url = source.pageUrlFor(pageOf(slot)),
                 apiKey = source.apiKey,
                 zoom = prefs.zoom,
                 tapToTurn = prefs.tapToTurn,
@@ -597,6 +651,76 @@ private fun PagedReader(
                 onTurn = onTurnPage,
             )
         }
+    }
+}
+
+/**
+ * The screen between two chapters, as a page of the pager (Mihon's model): what you just finished and
+ * what comes next. Swiping past it commits to the sibling; swiping back returns to the pages. Tapping
+ * commits too, so the screen is not a dead end for anyone who reads by tapping.
+ */
+@Composable
+private fun ChapterTransitionPage(
+    isNext: Boolean,
+    currentTitle: String,
+    siblingTitle: String,
+    seriesTitle: String,
+    onContinue: () -> Unit,
+) {
+    // The sibling's pages are fetched by the screen that replaces this one, so the spinner runs from
+    // the moment the jump is committed until that screen takes over.
+    var committing by remember { mutableStateOf(false) }
+    Column(
+        Modifier.fillMaxSize()
+            .clickable(enabled = !committing) { committing = true; onContinue() }
+            .padding(horizontal = 32.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        if (isNext) {
+            TransitionEntry("Finished:", currentTitle, seriesTitle)
+            Spacer(Modifier.height(40.dp))
+            TransitionEntry("Next:", siblingTitle, seriesTitle)
+        } else {
+            TransitionEntry("Previous:", siblingTitle, seriesTitle)
+            Spacer(Modifier.height(40.dp))
+            TransitionEntry("Current:", currentTitle, seriesTitle)
+        }
+        if (committing) {
+            Spacer(Modifier.height(32.dp))
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator(Modifier.size(32.dp), strokeWidth = 3.dp)
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Loading pages\u2026",
+                    color = Color.White.copy(alpha = 0.7f),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+    }
+}
+
+/** One "label / title / series" block of the between-chapters screen. */
+@Composable
+private fun TransitionEntry(label: String, title: String, subtitle: String) {
+    Text(label, color = Color.White, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+    Spacer(Modifier.height(6.dp))
+    Text(
+        title.ifBlank { "\u2014" },
+        color = Color.White,
+        style = MaterialTheme.typography.headlineSmall,
+        maxLines = 3,
+        overflow = TextOverflow.Ellipsis,
+    )
+    if (subtitle.isNotBlank() && subtitle != title) {
+        Spacer(Modifier.height(2.dp))
+        Text(
+            subtitle,
+            color = Color.White.copy(alpha = 0.55f),
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

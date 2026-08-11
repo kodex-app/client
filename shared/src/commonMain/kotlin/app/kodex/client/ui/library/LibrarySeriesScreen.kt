@@ -54,6 +54,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -138,14 +139,6 @@ fun LibrarySeriesScreen(
     val snackbar = rememberSnackbar()
     val scope = rememberCoroutineScope()
 
-    var sortKey by remember { mutableStateOf(SortKey.TITLE) }
-    var sortAsc by remember { mutableStateOf(SortKey.TITLE.defaultAsc) }
-    var downloadedTri by remember { mutableStateOf<Tri?>(null) }
-    val readingTri = remember { androidx.compose.runtime.mutableStateMapOf<String, Tri>() }
-    var statusTri by remember { mutableStateOf<Tri?>(null) } // COMPLETED series status
-    var reloadTick by remember { mutableIntStateOf(0) }
-    var sheetOpen by remember { mutableStateOf(false) }
-    var sheetTab by remember { mutableStateOf(0) }
     // The dimensions series can be split into, matching the web: status always, source only where
     // series have one. Category is deliberately absent — it is the chip filter below, not a grouping.
     val groupOptions = buildList {
@@ -153,19 +146,30 @@ fun LibrarySeriesScreen(
         add("status" to "Status")
         if (library.isWeb) add("source" to "Source")
     }
+    // Retained: opening a series unmounts this screen, so without this the sort, filters, grouping and
+    // the loaded group counts would all be rebuilt on the way back. The counts especially: they arrive
+    // asynchronously, and a screen that comes back with no groups yet cannot restore its group tab.
+    val st = retain("library:${library.id}") {
+        LibraryScreenState(library.id, appSettings, groupOptions.map { it.first }.toSet())
+    }
+    var sortKey by st.sortKey
+    var sortAsc by st.sortAsc
+    var downloadedTri by st.downloadedTri
+    val readingTri = st.readingTri
+    var statusTri by st.statusTri // COMPLETED series status
+    var reloadTick by remember { mutableIntStateOf(0) }
+    var sheetOpen by remember { mutableStateOf(false) }
+    var sheetTab by remember { mutableStateOf(0) }
     // Seeded from the per-library store rather than defaulting to "none", so reopening a library comes
     // back grouped the way it was left. Coerced against the options first, so a value stored before
     // this list changed (or by a library of another type) falls back to "none" instead of grouping by
     // a dimension that is no longer offered.
-    var groupBy by remember(library.id) {
-        val stored = appSettings.libraryGroupBy(library.id)
-        mutableStateOf(if (groupOptions.any { it.first == stored }) stored else "none")
-    }
-    var selectedGroup by remember(library.id) { mutableStateOf(appSettings.libraryGroupTab(library.id, groupBy)) }
+    var groupBy by st.groupBy
+    var selectedGroup by st.selectedGroup
     // The category chip filter (WEB libraries): narrows the whole view, and combines with grouping.
-    var categoryId by remember(library.id) { mutableStateOf<String?>(null) }
-    var groups by remember { mutableStateOf<List<SeriesGroupCount>>(emptyList()) }
-    var groupNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) } // key → friendly label (source/category)
+    var categoryId by st.categoryId
+    var groups by st.groups
+    var groupNames by st.groupNames // key → friendly label (source)
     var allSeriesIds by remember { mutableStateOf<List<String>>(emptyList()) }
     var categories by remember { mutableStateOf<List<app.kodex.client.network.CategoryDto>>(emptyList()) }
     var categoriesDialog by remember { mutableStateOf(false) }
@@ -218,14 +222,19 @@ fun LibrarySeriesScreen(
     // Live per-group counts for the current grouping dimension.
     LaunchedEffect(library.id, server?.id, reloadTick, groupBy, categoryId) {
         val s = server ?: return@LaunchedEffect
-        groups = if (groupBy == "none") emptyList()
+        val counts = if (groupBy == "none") emptyList()
         else runCatching { api.seriesGroups(s.baseUrl, s.apiKey, groupBy, library.id, categoryId) }
             .getOrDefault(emptyList()).filter { it.count > 0 }
-        groupNames = if (groupBy == "source") {
+        val names = if (groupBy == "source") {
             runCatching { api.contentSources(s.baseUrl, s.apiKey).associate { it.id to it.displayName } }.getOrDefault(emptyMap())
         } else {
             emptyMap()
         }
+        // Published together, names first. Tabs are sorted by their label, so a list built while the
+        // names were still in flight would be ordered by raw source id — the pager would keep its index
+        // through the reorder and silently land on a different group, then persist that as your choice.
+        groupNames = names
+        groups = counts
     }
 
     // Categories available for the bulk-assign action (WEB libraries).
@@ -344,12 +353,18 @@ fun LibrarySeriesScreen(
                 // Grouped: a tab per group, and the content is a pager so groups can be swiped between.
                 val initialPage = tabGroups.indexOfFirst { it.key == selectedGroup }.coerceAtLeast(0)
                 val pagerState = androidx.compose.foundation.pager.rememberPagerState(initialPage) { tabGroups.size }
+                // Should the tabs change under the pager (a group emptying out, a refresh), follow the
+                // chosen group by key rather than letting the index decide which group that now is.
+                val activeIndex = tabGroups.indexOfFirst { it.key == selectedGroup }.coerceAtLeast(0)
+                LaunchedEffect(activeIndex) {
+                    if (activeIndex != pagerState.currentPage) pagerState.scrollToPage(activeIndex)
+                }
                 // Keep the persisted/active group in sync with the page the user swiped or tapped to.
-                LaunchedEffect(pagerState.currentPage, tabGroups) {
-                    tabGroups.getOrNull(pagerState.currentPage)?.let {
-                        selectedGroup = it.key
-                        appSettings.setLibraryGroupTab(library.id, groupBy, it.key)
-                    }
+                LaunchedEffect(pagerState.settledPage, tabGroups) {
+                    val key = tabGroups.getOrNull(pagerState.settledPage)?.key ?: return@LaunchedEffect
+                    if (key == selectedGroup) return@LaunchedEffect
+                    selectedGroup = key
+                    appSettings.setLibraryGroupTab(library.id, groupBy, key)
                 }
                 GroupTabs(tabGroups, tabGroups.getOrNull(pagerState.currentPage)?.key, onSelect = { key ->
                     val idx = tabGroups.indexOfFirst { it.key == key }
@@ -765,4 +780,29 @@ private fun SheetLabel(text: String) {
 private class GridScrollState {
     val grid = androidx.compose.foundation.lazy.grid.LazyGridState()
     val list = androidx.compose.foundation.lazy.LazyListState()
+}
+
+/**
+ * Everything about how this library is being viewed that must outlive opening a series on top of it:
+ * sort, filters, the grouping dimension and which group tab, the category chip, and the loaded group
+ * counts. [GridScrollState] holds where each tab was scrolled to.
+ */
+private class LibraryScreenState(
+    libraryId: String,
+    appSettings: AppSettings,
+    /** The grouping dimensions this library actually offers; anything else stored reads as "none". */
+    allowedGroups: Set<String>,
+) {
+    val sortKey = mutableStateOf(SortKey.TITLE)
+    val sortAsc = mutableStateOf(SortKey.TITLE.defaultAsc)
+    val downloadedTri = mutableStateOf<Tri?>(null)
+    val readingTri = mutableStateMapOf<String, Tri>()
+    val statusTri = mutableStateOf<Tri?>(null)
+    val groupBy = mutableStateOf(
+        appSettings.libraryGroupBy(libraryId).takeIf { it in allowedGroups } ?: "none",
+    )
+    val selectedGroup = mutableStateOf(appSettings.libraryGroupTab(libraryId, groupBy.value))
+    val categoryId = mutableStateOf<String?>(null)
+    val groups = mutableStateOf<List<SeriesGroupCount>>(emptyList())
+    val groupNames = mutableStateOf<Map<String, String>>(emptyMap())
 }
