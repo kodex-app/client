@@ -105,6 +105,9 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
@@ -116,6 +119,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import app.kodex.client.auth.SessionManager
@@ -524,11 +528,46 @@ private fun PagedReader(
         if (targetSlot != pagerState.currentPage) pagerState.scrollToPage(targetSlot.coerceIn(0, (slotCount - 1).coerceAtLeast(0)))
     }
 
+    // Swiping past either end of the chapter. The pager stops at its own bounds, so that drag arrives
+    // here unconsumed — without this, the last page could only be left with the arrow button or a tap,
+    // which is not what a swipe-driven reader should feel like. Released past the threshold it calls
+    // the same page-turn as everything else, so the between-chapters overlay behaves identically.
+    val density = LocalDensity.current
+    val edgeThreshold = with(density) { 72.dp.toPx() }
+    val edgeTurn = remember(prefs.isRtl, zoomedIn, edgeThreshold) {
+        object : NestedScrollConnection {
+            /** Positive is "towards the next page", which is a leftward drag unless the pager is RTL. */
+            private val forwardSign = if (prefs.isRtl) 1f else -1f
+
+            /** Plain field, not snapshot state: it changes every frame and nothing composes off it. */
+            private var edgeDrag = 0f
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource,
+            ): Offset {
+                // While zoomed the pager consumes nothing, so every pan would look like an edge drag.
+                if (zoomedIn || source != NestedScrollSource.UserInput) return Offset.Zero
+                edgeDrag += available.x * forwardSign
+                return Offset.Zero
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                val drag = edgeDrag
+                edgeDrag = 0f
+                if (drag >= edgeThreshold) onTurnPage(true)
+                else if (drag <= -edgeThreshold) onTurnPage(false)
+                return Velocity.Zero
+            }
+        }
+    }
+
     HorizontalPager(
         state = pagerState,
         reverseLayout = prefs.isRtl,
         userScrollEnabled = !zoomedIn,
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().nestedScroll(edgeTurn),
     ) { slot ->
         if (double) {
             val left = slot * 2 + 1
