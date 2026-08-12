@@ -20,13 +20,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Label
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MarkAsUnread
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
@@ -88,15 +88,22 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
 /** Mihon-style sort keys — one row each, with a direction toggled by tapping the selected key. */
+/**
+ * The sortable columns, in the web's order and wording — the choice is stored server-side under
+ * `ui.librarySort` and shared with it, so a library must not come up ordered differently here.
+ */
 private enum class SortKey(val label: String, val field: String, val defaultAsc: Boolean) {
     TITLE("Title", "title", true),
     NAME("Name", "name", true),
-    DATE_ADDED("Date added", "createdDate", false),
-    DATE_UPDATED("Date updated", "lastModifiedDate", false),
+    DATE_ADDED("Recently added", "createdDate", false),
+    DATE_UPDATED("Recently updated", "lastModifiedDate", false),
     TOTAL_CHAPTERS("Total chapters", "totalChapters", false),
     UNREAD("Unread count", "unreadCount", false),
     LAST_READ("Last read", "lastRead", false),
 }
+
+/** What a library sorts by until the user picks something — the web's `DEFAULT_SERIES_SORT`. */
+private val DEFAULT_SORT = SortKey.NAME
 
 // Mihon/web-style tri-state filter: a facet cycles neutral → include → exclude.
 private enum class Tri { INCLUDE, EXCLUDE }
@@ -420,30 +427,38 @@ fun LibrarySeriesScreen(
                 Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(top = 8.dp, bottom = 24.dp),
               ) {
                 when (sheetTab) {
-                    0 -> SortKey.entries.forEach { key ->
-                        val selected = key == sortKey
-                        androidx.compose.foundation.layout.Row(
-                            Modifier.fillMaxWidth()
-                                .selectable(selected = selected, onClick = {
-                                    if (selected) sortAsc = !sortAsc else { sortKey = key; sortAsc = key.defaultAsc }
-                                    persistSort()
-                                })
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            androidx.compose.foundation.layout.Box(Modifier.size(24.dp), Alignment.Center) {
-                                if (selected) Icon(Icons.Filled.Check, contentDescription = "Selected", tint = MaterialTheme.colorScheme.primary)
+                    0 -> {
+                        SheetLabel("Sort by")
+                        SortKey.entries.forEach { key ->
+                            val selected = key == sortKey
+                            androidx.compose.foundation.layout.Row(
+                                Modifier.fillMaxWidth()
+                                    // Tapping the active column flips the direction; tapping another
+                                    // switches to it in whichever direction reads naturally for it.
+                                    .selectable(selected = selected, onClick = {
+                                        if (selected) sortAsc = !sortAsc else { sortKey = key; sortAsc = key.defaultAsc }
+                                        persistSort()
+                                    })
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                // Only the active column carries an icon, and it is the direction —
+                                // there is no separate tick, matching the web's menu.
+                                androidx.compose.foundation.layout.Box(Modifier.size(24.dp), Alignment.Center) {
+                                    if (selected) {
+                                        Icon(
+                                            if (sortAsc) Icons.Filled.ArrowUpward else Icons.Filled.ArrowDownward,
+                                            contentDescription = if (sortAsc) "Ascending" else "Descending",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                }
+                                Text(
+                                    key.label, Modifier.padding(start = 12.dp).weight(1f),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                )
                             }
-                            Text(
-                                key.label, Modifier.padding(start = 12.dp).weight(1f),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                            )
-                            if (selected) Icon(
-                                if (sortAsc) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                                contentDescription = if (sortAsc) "Ascending" else "Descending",
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
                         }
                     }
 
@@ -793,8 +808,8 @@ private class LibraryScreenState(
     /** The grouping dimensions this library actually offers; anything else stored reads as "none". */
     allowedGroups: Set<String>,
 ) {
-    val sortKey = mutableStateOf(SortKey.TITLE)
-    val sortAsc = mutableStateOf(SortKey.TITLE.defaultAsc)
+    val sortKey = mutableStateOf(DEFAULT_SORT)
+    val sortAsc = mutableStateOf(DEFAULT_SORT.defaultAsc)
     val downloadedTri = mutableStateOf<Tri?>(null)
     val readingTri = mutableStateMapOf<String, Tri>()
     val statusTri = mutableStateOf<Tri?>(null)
