@@ -8,6 +8,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -68,6 +69,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -76,9 +80,10 @@ import app.kodex.client.auth.SessionManager
 import app.kodex.client.network.BookmarkDto
 import app.kodex.client.network.CustomFontDto
 import app.kodex.client.network.KodexApi
+import app.kodex.client.platform.StatusBarIcons
 import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.reader.ChapterListSheet
-import app.kodex.client.ui.reader.ChapterTransitionOverlay
+import app.kodex.client.ui.reader.ChapterTransitionPage
 import app.kodex.client.ui.reader.IncognitoBadge
 import app.kodex.client.ui.reader.ReaderChapterNav
 import app.kodex.client.ui.reader.ReaderEdge
@@ -368,6 +373,17 @@ fun EbookReaderScreen(
     val theme = prefs?.theme ?: THEME_LIGHT
     val pageBg = ebookPageColor(theme)
 
+    // Same rule as the image reader: the toolbar is what sits behind the status bar while the chrome
+    // is up, and it follows the app's theme; with the chrome hidden it is the reader page, which has
+    // a theme of its own. Neither one alone gets the icon colour right in both states.
+    StatusBarIcons(
+        darkIcons = if (chrome) {
+            MaterialTheme.colorScheme.readerBarColor.luminance() > 0.5f
+        } else {
+            pageBg.luminance() > 0.5f
+        },
+    )
+
     Box(Modifier.fillMaxSize().background(pageBg)) {
         val url = handle?.readerUrl
         if (url != null) {
@@ -527,11 +543,29 @@ fun EbookReaderScreen(
             val isNext = boundary == Boundary.END
             val target = if (isNext) source.nav?.next else source.nav?.prev
             if (target != null) {
-                ChapterTransitionOverlay(
+                // The same screen the image reader shows, driven the same way. There is no pager to
+                // put it in here, so it lays over the page and reads the drag itself: carrying on in
+                // the direction that got you here commits, dragging back returns to the text.
+                val commitThreshold = with(LocalDensity.current) { 72.dp.toPx() }
+                ChapterTransitionPage(
                     isNext = isNext,
-                    title = target.title,
-                    onConfirm = { confirmTransition() },
-                    onDismiss = { transition = null },
+                    currentTitle = source.subtitle ?: source.title,
+                    siblingTitle = target.title,
+                    seriesTitle = source.title,
+                    onContinue = { confirmTransition() },
+                    modifier = Modifier.pointerInput(boundary, commitThreshold) {
+                        var drag = 0f
+                        detectHorizontalDragGestures(
+                            onDragStart = { drag = 0f },
+                            onDragEnd = {
+                                // Forward is a leftward drag, the same as turning a page.
+                                val forward = -drag
+                                if (isNext && forward >= commitThreshold) confirmTransition()
+                                else if (!isNext && forward <= -commitThreshold) confirmTransition()
+                                else if (kotlin.math.abs(drag) >= commitThreshold) transition = null
+                            },
+                        ) { _, amount -> drag += amount }
+                    },
                 )
             }
         }

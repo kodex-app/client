@@ -64,7 +64,6 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.VisibilityOff
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -353,8 +352,11 @@ fun ImageReaderScreen(
         }
     }
 
-    // Reader background is dark (gray/black) except for the White option → light status-bar icons.
-    StatusBarIcons(darkIcons = p?.bg == BG_WHITE)
+    // What sits behind the status bar changes with the chrome: the toolbar when it's up, the page
+    // background when it isn't. The toolbar follows the app's theme, not the reader background, so
+    // deciding from the background alone left white icons on a near-white bar in a light theme.
+    val barIsLight = MaterialTheme.colorScheme.readerBarColor.luminance() > 0.5f
+    StatusBarIcons(darkIcons = if (chrome) barIsLight else p?.bg == BG_WHITE)
 
     // Physical keyboard navigation (desktop + hardware keyboards). Arrows/space turn pages, Esc exits.
     val focusRequester = remember { FocusRequester() }
@@ -651,76 +653,6 @@ private fun PagedReader(
                 onTurn = onTurnPage,
             )
         }
-    }
-}
-
-/**
- * The screen between two chapters, as a page of the pager (Mihon's model): what you just finished and
- * what comes next. Swiping past it commits to the sibling; swiping back returns to the pages. Tapping
- * commits too, so the screen is not a dead end for anyone who reads by tapping.
- */
-@Composable
-private fun ChapterTransitionPage(
-    isNext: Boolean,
-    currentTitle: String,
-    siblingTitle: String,
-    seriesTitle: String,
-    onContinue: () -> Unit,
-) {
-    // The sibling's pages are fetched by the screen that replaces this one, so the spinner runs from
-    // the moment the jump is committed until that screen takes over.
-    var committing by remember { mutableStateOf(false) }
-    Column(
-        Modifier.fillMaxSize()
-            .clickable(enabled = !committing) { committing = true; onContinue() }
-            .padding(horizontal = 32.dp),
-        verticalArrangement = Arrangement.Center,
-    ) {
-        if (isNext) {
-            TransitionEntry("Finished:", currentTitle, seriesTitle)
-            Spacer(Modifier.height(40.dp))
-            TransitionEntry("Next:", siblingTitle, seriesTitle)
-        } else {
-            TransitionEntry("Previous:", siblingTitle, seriesTitle)
-            Spacer(Modifier.height(40.dp))
-            TransitionEntry("Current:", currentTitle, seriesTitle)
-        }
-        if (committing) {
-            Spacer(Modifier.height(32.dp))
-            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                CircularProgressIndicator(Modifier.size(32.dp), strokeWidth = 3.dp)
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    "Loading pages\u2026",
-                    color = Color.White.copy(alpha = 0.7f),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-        }
-    }
-}
-
-/** One "label / title / series" block of the between-chapters screen. */
-@Composable
-private fun TransitionEntry(label: String, title: String, subtitle: String) {
-    Text(label, color = Color.White, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-    Spacer(Modifier.height(6.dp))
-    Text(
-        title.ifBlank { "\u2014" },
-        color = Color.White,
-        style = MaterialTheme.typography.headlineSmall,
-        maxLines = 3,
-        overflow = TextOverflow.Ellipsis,
-    )
-    if (subtitle.isNotBlank() && subtitle != title) {
-        Spacer(Modifier.height(2.dp))
-        Text(
-            subtitle,
-            color = Color.White.copy(alpha = 0.55f),
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
     }
 }
 
@@ -1193,25 +1125,6 @@ internal fun IncognitoBadge(modifier: Modifier = Modifier) {
     }
 }
 
-/** Full-screen between-chapters overlay: confirm to open the sibling, tap elsewhere to keep reading. */
-@Composable
-internal fun ChapterTransitionOverlay(isNext: Boolean, title: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    Box(
-        Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.88f)).clickable(onClick = onDismiss),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            Modifier.padding(32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(if (isNext) "Next book" else "Previous book", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelLarge)
-            Text(title, color = Color.White, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center, maxLines = 3)
-            Button(onClick = onConfirm) { Text(if (isNext) "Continue" else "Go back") }
-            TextButton(onClick = onDismiss) { Text("Keep reading", color = Color.White) }
-        }
-    }
-}
 
 /** Chapter/book list in a bottom sheet; tapping a row jumps to that chapter. */
 @Composable
