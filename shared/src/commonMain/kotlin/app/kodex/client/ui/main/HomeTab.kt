@@ -30,9 +30,11 @@ import app.kodex.client.ui.catalog.CoverCard
 import app.kodex.client.ui.catalog.CoverSection
 import app.kodex.client.ui.catalog.bookCoverUrl
 import app.kodex.client.ui.catalog.bookSubtitle
+import app.kodex.client.ui.catalog.rememberSourceNames
 import app.kodex.client.ui.catalog.seriesCoverUrl
 import app.kodex.client.ui.catalog.seriesSubtitle
 import app.kodex.client.ui.catalog.seriesUnreadBadge
+import app.kodex.client.ui.catalog.sourceLabel
 import app.kodex.client.ui.collectAsStateSafe
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -76,6 +78,8 @@ fun HomeTab(
     onSeeAll: (app.kodex.client.ui.catalog.SeeAllKind) -> Unit = {},
 ) {
     val server by session.activeServer.collectAsStateSafe()
+    // Source labels for the cover cards; cached per server, so this is a lookup after the first load.
+    val sourceNames = rememberSourceNames(session, api)
     var reloadKey by remember { mutableStateOf(0) }
     var state by remember { mutableStateOf<HomeUiState>(HomeUiState.Loading) }
     // Distinct from the cold-load spinner: a pull keeps the current rails on screen and shows the
@@ -157,12 +161,12 @@ fun HomeTab(
                     }
                     if (s.data.recentSeries.isNotEmpty()) item {
                         CoverSection("Recent series", s.data.recentSeries, key = { it.id }, onSeeAll = { onSeeAll(app.kodex.client.ui.catalog.SeeAllKind.RECENT_SERIES) }) { series ->
-                            SeriesCard(baseUrl, apiKey, series, onOpenSeries)
+                            SeriesCard(baseUrl, apiKey, series, sourceNames, onOpenSeries)
                         }
                     }
                     if (s.data.updatedSeries.isNotEmpty()) item {
                         CoverSection("Recently updated", s.data.updatedSeries, key = { it.id }, onSeeAll = { onSeeAll(app.kodex.client.ui.catalog.SeeAllKind.UPDATED_SERIES) }) { series ->
-                            SeriesCard(baseUrl, apiKey, series, onOpenSeries)
+                            SeriesCard(baseUrl, apiKey, series, sourceNames, onOpenSeries)
                         }
                     }
                     if (s.data.recentBooks.isNotEmpty()) item {
@@ -185,7 +189,13 @@ fun HomeTab(
 }
 
 @Composable
-private fun SeriesCard(baseUrl: String, apiKey: String, series: SeriesDto, onOpen: (SeriesDto) -> Unit) {
+private fun SeriesCard(
+    baseUrl: String,
+    apiKey: String,
+    series: SeriesDto,
+    sourceNames: Map<String, String>,
+    onOpen: (SeriesDto) -> Unit,
+) {
     CoverCard(
         coverUrl = seriesCoverUrl(baseUrl, series),
         apiKey = apiKey,
@@ -193,6 +203,7 @@ private fun SeriesCard(baseUrl: String, apiKey: String, series: SeriesDto, onOpe
         subtitle = seriesSubtitle(series),
         unread = seriesUnreadBadge(series),
         onClick = { onOpen(series) },
+        source = sourceLabel(series, sourceNames),
     )
 }
 

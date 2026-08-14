@@ -46,6 +46,7 @@ fun SeeAllScreen(
     onOpenBook: (BookDto) -> Unit,
 ) {
     val server by session.activeServer.collectAsStateSafe()
+    val sourceNames = rememberSourceNames(session, api)
     val isBooks = kind == SeeAllKind.KEEP_READING || kind == SeeAllKind.RECENT_BOOKS
     val title = when (kind) {
         SeeAllKind.KEEP_READING -> "Continue reading"
@@ -120,6 +121,7 @@ fun SeeAllScreen(
                                 unread = seriesUnreadBadge(sd),
                                 onClick = { onOpenSeries(sd) },
                                 width = null,
+                                source = sourceLabel(sd, sourceNames),
                             )
                         }
                     }

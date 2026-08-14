@@ -29,6 +29,8 @@ fun SeriesGrid(
     titleOf: (SeriesDto) -> String = { it.title },
     /** Pass a retained state to keep the scroll position across navigating away and back. */
     state: LazyGridState = rememberLazyGridState(),
+    /** Provider id → display name, for the source label on WEB covers. See `rememberSourceNames`. */
+    sourceNames: Map<String, String> = emptyMap(),
 ) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(112.dp),
@@ -49,6 +51,7 @@ fun SeriesGrid(
                 width = null,
                 onLongClick = if (selection != null) ({ selection.toggle(s.id) }) else null,
                 selected = selection?.isSelected(s.id) == true,
+                source = sourceLabel(s, sourceNames),
             )
         }
     }

@@ -81,6 +81,7 @@ import app.kodex.client.ui.EmptyMessage
 import app.kodex.client.ui.LoadedContent
 import app.kodex.client.ui.OnServerEvent
 import app.kodex.client.ui.SelectionActionBar
+import app.kodex.client.ui.catalog.rememberSourceNames
 import app.kodex.client.ui.nav.retain
 import app.kodex.client.ui.SelectionTopBar
 import app.kodex.client.ui.TooltipIconButton
@@ -181,6 +182,9 @@ fun LibrarySeriesScreen(
     var selectedGroup by st.selectedGroup
     // The category chip filter (WEB libraries): narrows the whole view, and combines with grouping.
     var categoryId by st.categoryId
+    // Source display names for the cover labels; cached per server, so this is a map lookup after
+    // the first grid on the first screen that asks for it.
+    val sourceNames = rememberSourceNames(session, api)
     var searchOpen by st.searchOpen
     var searchQuery by st.searchQuery
     // Debounced: the field drives the query, but a request per keystroke would be a request per
@@ -440,6 +444,7 @@ fun LibrarySeriesScreen(
                         server, api, filters, groupKey = tabGroups.getOrNull(page)?.key, reloadTick = reloadTick,
                         gridView = gridView, displayBy = displayBy, selection = selection, onOpenSeries = onOpenSeries,
                         onIdsLoaded = { if (page == pagerState.currentPage) allSeriesIds = it },
+                        sourceNames = sourceNames,
                     )
                 }
             } else {
@@ -447,6 +452,7 @@ fun LibrarySeriesScreen(
                     server, api, filters, groupKey = null, reloadTick = reloadTick,
                     gridView = gridView, displayBy = displayBy, selection = selection, onOpenSeries = onOpenSeries,
                     onIdsLoaded = { allSeriesIds = it },
+                    sourceNames = sourceNames,
                 )
             }
         }
@@ -684,6 +690,7 @@ private fun LibrarySeriesResults(
     selection: app.kodex.client.ui.SelectionState<String>,
     onOpenSeries: (SeriesDto) -> Unit,
     onIdsLoaded: (List<String>) -> Unit,
+    sourceNames: Map<String, String>,
 ) {
     LoadedContent(
         // One holder per group tab, so swiping between them keeps each tab's loaded page.
@@ -719,7 +726,10 @@ private fun LibrarySeriesResults(
                 if (filters.search != null) "No series match \u201c${filters.search}\u201d." else "No series match this filter.",
             )
             server != null && gridView ->
-                SeriesGrid(server.baseUrl, server.apiKey, series, onOpenSeries, selection = selection, titleOf = titleOf, state = scroll.grid)
+                SeriesGrid(
+                    server.baseUrl, server.apiKey, series, onOpenSeries,
+                    selection = selection, titleOf = titleOf, state = scroll.grid, sourceNames = sourceNames,
+                )
             server != null ->
                 SeriesListView(server.baseUrl, server.apiKey, series, onOpenSeries, selection = selection, titleOf = titleOf, state = scroll.list)
         }

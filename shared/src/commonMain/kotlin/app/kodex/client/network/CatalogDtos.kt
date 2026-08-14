@@ -83,6 +83,8 @@ data class SeriesDto(
     val unreadCount: Int = 0,
     val coverUrl: String? = null,
     val totalChapters: Int? = null,
+    /** Non-null for a WEB (followed) series — which content source it is tracked from. */
+    val sourceProviderId: String? = null,
 )
 
 /** Full series metadata for the detail screen (server `SeriesDetailDto`). */

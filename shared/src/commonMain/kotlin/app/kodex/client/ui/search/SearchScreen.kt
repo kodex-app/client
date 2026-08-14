@@ -61,6 +61,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
+import app.kodex.client.ui.catalog.rememberSourceNames
+import app.kodex.client.ui.catalog.sourceLabel
 import kotlinx.coroutines.launch
 import app.kodex.client.network.BookDto
 import app.kodex.client.network.KodexApi
@@ -136,6 +138,7 @@ fun SearchScreen(
     onOpenSourceSeries: (SourceDescriptor, SourceSearchResult) -> Unit = { _, _ -> },
 ) {
     val server by session.activeServer.collectAsStateSafe()
+    val sourceNames = rememberSourceNames(session, api)
     var query by remember { mutableStateOf("") }
     // Library/Online is a two-page pager so the modes can be swiped between as well as tapped;
     // `online` stays derived from it, keeping one source of truth for the search effect below.
@@ -300,7 +303,7 @@ fun SearchScreen(
                         is SearchUiState.Error -> Hint(s.message)
                         is SearchUiState.Ready ->
                             if (s.series.isEmpty() && s.books.isEmpty()) Hint("No results.")
-                            else Results(server?.baseUrl ?: "", server?.apiKey ?: "", s, onOpenSeries, onOpenBook)
+                            else Results(server?.baseUrl ?: "", server?.apiKey ?: "", s, sourceNames, onOpenSeries, onOpenBook)
                     }
                 }
             }
@@ -405,6 +408,7 @@ private fun Results(
     baseUrl: String,
     apiKey: String,
     ready: SearchUiState.Ready,
+    sourceNames: Map<String, String>,
     onOpenSeries: (SeriesDto) -> Unit,
     onOpenBook: (BookDto) -> Unit,
 ) {
@@ -426,6 +430,7 @@ private fun Results(
                     unread = seriesUnreadBadge(series),
                     onClick = { onOpenSeries(series) },
                     width = null,
+                    source = sourceLabel(series, sourceNames),
                 )
             }
         }

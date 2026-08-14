@@ -64,6 +64,27 @@ fun CoverImage(url: String, apiKey: String, modifier: Modifier = Modifier) {
 }
 
 /**
+ * Which content source a WEB series came from, on the cover itself rather than in the subtitle: the
+ * subtitle already carries the count, and on a grid the source is what tells two copies of the same
+ * series apart. Dark plate rather than a themed chip, since it sits over arbitrary artwork.
+ */
+@Composable
+private fun SourceLabel(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text,
+        modifier = modifier
+            .clip(RoundedCornerShape(5.dp))
+            .background(Color.Black.copy(alpha = 0.62f))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        color = Color.White,
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.Medium,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+/**
  * Poster-style card: cover (2:3), optional unread badge, title (2 lines), subtitle. Pass a non-null
  * [width] for horizontal rails; pass null to fill the width the parent gives (e.g. a grid cell).
  */
@@ -81,6 +102,8 @@ fun CoverCard(
     onLongClick: (() -> Unit)? = null,
     selected: Boolean = false,
     inLibrary: Boolean = false,
+    /** Content source this came from, labelled on the cover (WEB series). Null hides the label. */
+    source: String? = null,
 ) {
     val sizing = if (width != null) Modifier.width(width) else Modifier.fillMaxWidth()
     val clickModifier = if (onLongClick != null) {
@@ -99,6 +122,9 @@ fun CoverCard(
             CoverImage(coverUrl, apiKey, Modifier.fillMaxSize())
             if (unread != null && unread > 0) {
                 UnreadBadge(unread, Modifier.align(Alignment.TopEnd).padding(6.dp))
+            }
+            if (!source.isNullOrBlank()) {
+                SourceLabel(source, Modifier.align(Alignment.BottomStart).padding(6.dp))
             }
             if (selected) {
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)))
