@@ -38,6 +38,14 @@ class AppSettings(private val settings: Settings = Settings()) {
     private val _incognito = MutableStateFlow(settings.getBoolean(KEY_INCOGNITO, false))
     val incognitoMode: StateFlow<Boolean> = _incognito.asStateFlow()
 
+    /**
+     * Bumped whenever an "Updates seen" mark is written, so the Recents badge recomputes the moment
+     * the tab is opened. The marks themselves are per-server and read on demand rather than held
+     * here, since only one server is active at a time.
+     */
+    private val _updatesSeenMark = MutableStateFlow(0)
+    val updatesSeenMark: StateFlow<Int> = _updatesSeenMark.asStateFlow()
+
     fun setThemeMode(value: ThemeMode) {
         settings.putString(KEY_MODE, value.name); _themeMode.value = value
     }
@@ -83,6 +91,19 @@ class AppSettings(private val settings: Settings = Settings()) {
         settings.putString("$KEY_LIBRARY_GROUP_TAB.$libraryId.$groupBy", key)
     }
 
+    /**
+     * When the user last looked at this server's Updates feed, as epoch millis. Device-local by
+     * design: the badge answers "new since *you* last looked here", which is a property of this
+     * device, not of the account.
+     */
+    fun updatesSeenAt(serverId: String): Long =
+        settings.getLong("$KEY_UPDATES_SEEN.$serverId", 0L)
+
+    fun markUpdatesSeen(serverId: String, millis: Long) {
+        settings.putLong("$KEY_UPDATES_SEEN.$serverId", millis)
+        _updatesSeenMark.value += 1
+    }
+
     fun setLibraryDisplayBy(value: String) {
         settings.putString(KEY_LIBRARY_DISPLAY, value); _libraryDisplayBy.value = value
     }
@@ -102,5 +123,6 @@ class AppSettings(private val settings: Settings = Settings()) {
         const val KEY_LIBRARY_GROUP = "library.groupBy"
         const val KEY_LIBRARY_GROUP_TAB = "library.groupTab"
         const val KEY_INCOGNITO = "reader.incognito"
+        const val KEY_UPDATES_SEEN = "recents.updatesSeenAt"
     }
 }

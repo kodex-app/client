@@ -48,6 +48,18 @@ private val prefsJson = Json {
     encodeDefaults = true
 }
 
+/**
+ * Drops items belonging to a library the user hid from Home. An item with no library id is kept:
+ * better to show something unattributed than to silently swallow it.
+ *
+ * Shared by the Home rows and each row's "See all", which is the whole point — the two screens show
+ * the same lists, so a library hidden from one has to be hidden from the other.
+ */
+fun <T> List<T>.visibleOnHome(prefs: LibraryNavPrefs, libraryIdOf: (T) -> String?): List<T> {
+    val hidden = prefs.hiddenFromHome.toSet()
+    return if (hidden.isEmpty()) this else filterNot { libraryIdOf(it) in hidden }
+}
+
 /** Sorts by the saved order; anything not in it keeps server order at the end. */
 fun List<LibraryDto>.orderedBy(prefs: LibraryNavPrefs): List<LibraryDto> {
     val rank = prefs.order.withIndex().associate { (i, id) -> id to i }

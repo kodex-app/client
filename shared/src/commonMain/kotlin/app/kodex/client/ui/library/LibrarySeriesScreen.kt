@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.MarkAsUnread
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -48,6 +49,8 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -61,6 +64,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
@@ -175,6 +181,21 @@ fun LibrarySeriesScreen(
     var selectedGroup by st.selectedGroup
     // The category chip filter (WEB libraries): narrows the whole view, and combines with grouping.
     var categoryId by st.categoryId
+    var searchOpen by st.searchOpen
+    var searchQuery by st.searchQuery
+    // Debounced: the field drives the query, but a request per keystroke would be a request per
+    // keystroke. Blank searches skip the wait so clearing the box restores the list at once.
+    var searchTerm by remember { mutableStateOf(searchQuery) }
+    LaunchedEffect(searchQuery) {
+        if (searchQuery.isBlank()) searchTerm = "" else {
+            kotlinx.coroutines.delay(300)
+            searchTerm = searchQuery
+        }
+    }
+    // Group counts can't be scoped to a search (the server's /series/groups takes no query), so tabs
+    // would disagree with the results. Searching therefore shows one flat list, which is what you
+    // want from a search anyway.
+    val searching = searchTerm.isNotBlank()
     var groups by st.groups
     var groupNames by st.groupNames // key → friendly label (source)
     var allSeriesIds by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -250,8 +271,10 @@ fun LibrarySeriesScreen(
         categories = if (library.isWeb) runCatching { api.categories(s.baseUrl, s.apiKey) }.getOrDefault(emptyList()) else emptyList()
     }
 
-    // System back exits selection mode first (before leaving the screen).
-    app.kodex.client.platform.AppBackHandler(enabled = selection.active) { selection.clear() }
+    // System back peels off one layer at a time: selection, then the search, then the screen.
+    app.kodex.client.platform.AppBackHandler(enabled = selection.active || searchOpen) {
+        if (selection.active) selection.clear() else { searchOpen = false; searchQuery = "" }
+    }
 
     // A finished scan of THIS library means the series list changed → reload.
     OnServerEvent(ServerEvent.LIBRARY_SCAN_COMPLETED) { e ->
@@ -304,13 +327,46 @@ fun LibrarySeriesScreen(
                 )
             } else {
                 TopAppBar(
-                    title = { Text(library.name, fontWeight = FontWeight.SemiBold) },
+                    title = {
+                        if (searchOpen) {
+                            val focus = remember { FocusRequester() }
+                            LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+                            TextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                singleLine = true,
+                                placeholder = { Text("Search ${library.name}") },
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedContainerColor = Color.Transparent,
+                                    focusedIndicatorColor = Color.Transparent,
+                                    unfocusedIndicatorColor = Color.Transparent,
+                                ),
+                                modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                            )
+                        } else {
+                            Text(library.name, fontWeight = FontWeight.SemiBold)
+                        }
+                    },
                     navigationIcon = {
-                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                        // While searching, back closes the search rather than leaving the library —
+                        // the same step the system back button takes.
+                        IconButton(onClick = { if (searchOpen) { searchOpen = false; searchQuery = "" } else onBack() }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
                     },
                     actions = {
-                        IconButton(onClick = { refresh() }) { Icon(Icons.Filled.Refresh, contentDescription = "Refresh") }
-                        IconButton(onClick = { sheetTab = 0; sheetOpen = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "View options") }
+                        if (searchOpen) {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(Icons.Filled.Close, contentDescription = "Clear search")
+                                }
+                            }
+                        } else {
+                            IconButton(onClick = { searchOpen = true }) { Icon(Icons.Filled.Search, contentDescription = "Search") }
+                            IconButton(onClick = { refresh() }) { Icon(Icons.Filled.Refresh, contentDescription = "Refresh") }
+                            IconButton(onClick = { sheetTab = 0; sheetOpen = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "View options") }
+                        }
                     },
                 )
             }
@@ -353,10 +409,12 @@ fun LibrarySeriesScreen(
                 libraryId = library.id, sortExpr = sortExpr,
                 readingInclude = readingInclude, readingExclude = readingExclude,
                 statusInclude = statusTri == Tri.INCLUDE, statusExclude = statusTri == Tri.EXCLUDE,
-                downloaded = downloadedTri?.let { it == Tri.INCLUDE }, groupBy = groupBy,
+                downloaded = downloadedTri?.let { it == Tri.INCLUDE },
+                groupBy = if (searching) "none" else groupBy,
                 categoryId = categoryId,
+                search = searchTerm.takeIf { searching },
             )
-            if (groupBy != "none" && tabGroups.isNotEmpty()) {
+            if (!searching && groupBy != "none" && tabGroups.isNotEmpty()) {
                 // Grouped: a tab per group, and the content is a pager so groups can be swiped between.
                 val initialPage = tabGroups.indexOfFirst { it.key == selectedGroup }.coerceAtLeast(0)
                 val pagerState = androidx.compose.foundation.pager.rememberPagerState(initialPage) { tabGroups.size }
@@ -607,6 +665,7 @@ private data class SeriesFilterArgs(
     val downloaded: Boolean?,
     val groupBy: String,
     val categoryId: String?,
+    val search: String?,
 )
 
 /**
@@ -629,7 +688,7 @@ private fun LibrarySeriesResults(
     LoadedContent(
         // One holder per group tab, so swiping between them keeps each tab's loaded page.
         retainKey = "series:${groupKey.orEmpty()}",
-        key = listOf(filters.libraryId, server?.id, filters.sortExpr, filters.readingInclude, filters.readingExclude, filters.downloaded, filters.statusInclude, filters.statusExclude, filters.groupBy, filters.categoryId, groupKey, reloadTick),
+        key = listOf(filters.libraryId, server?.id, filters.sortExpr, filters.readingInclude, filters.readingExclude, filters.downloaded, filters.statusInclude, filters.statusExclude, filters.groupBy, filters.categoryId, filters.search, groupKey, reloadTick),
         load = {
             val s = server!!
             val statuses = buildList {
@@ -639,6 +698,7 @@ private fun LibrarySeriesResults(
             api.querySeries(
                 s.baseUrl, s.apiKey,
                 libraryId = filters.libraryId,
+                search = filters.search,
                 sort = filters.sortExpr,
                 readingStatuses = filters.readingInclude,
                 readingStatusExcludes = filters.readingExclude,
@@ -655,7 +715,9 @@ private fun LibrarySeriesResults(
         // Retained alongside the loaded page, so opening a series and coming back lands where you were.
         val scroll = retain("scroll:${groupKey.orEmpty()}") { GridScrollState() }
         when {
-            series.isEmpty() -> EmptyMessage("No series match this filter.")
+            series.isEmpty() -> EmptyMessage(
+                if (filters.search != null) "No series match \u201c${filters.search}\u201d." else "No series match this filter.",
+            )
             server != null && gridView ->
                 SeriesGrid(server.baseUrl, server.apiKey, series, onOpenSeries, selection = selection, titleOf = titleOf, state = scroll.grid)
             server != null ->
@@ -818,6 +880,8 @@ private class LibraryScreenState(
     )
     val selectedGroup = mutableStateOf(appSettings.libraryGroupTab(libraryId, groupBy.value))
     val categoryId = mutableStateOf<String?>(null)
+    val searchOpen = mutableStateOf(false)
+    val searchQuery = mutableStateOf("")
     val groups = mutableStateOf<List<SeriesGroupCount>>(emptyList())
     val groupNames = mutableStateOf<Map<String, String>>(emptyMap())
 }

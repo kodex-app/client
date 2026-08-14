@@ -22,6 +22,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
+import app.kodex.client.data.loadLibraryNavPrefs
+import app.kodex.client.data.visibleOnHome
 import app.kodex.client.network.BookDto
 import app.kodex.client.network.KodexApi
 import app.kodex.client.network.SeriesDto
@@ -66,11 +68,19 @@ fun SeeAllScreen(
                 key = kind to server?.id,
                 load = {
                     val s = server!!
+                    // This screen is one Home row expanded, so it hides the same libraries Home does.
+                    val navPrefs = loadLibraryNavPrefs(api, s.baseUrl, s.apiKey)
                     when (kind) {
-                        SeeAllKind.KEEP_READING -> api.keepReading(s.baseUrl, s.apiKey)
-                        SeeAllKind.RECENT_BOOKS -> api.booksList(s.baseUrl, s.apiKey, "createdDate,desc")
-                        SeeAllKind.RECENT_SERIES -> api.querySeries(s.baseUrl, s.apiKey, sort = "createdDate,desc", size = 300)
-                        SeeAllKind.UPDATED_SERIES -> api.querySeries(s.baseUrl, s.apiKey, sort = "lastModifiedDate,desc", size = 300)
+                        SeeAllKind.KEEP_READING ->
+                            api.keepReading(s.baseUrl, s.apiKey).visibleOnHome(navPrefs) { it.libraryId }
+                        SeeAllKind.RECENT_BOOKS ->
+                            api.booksList(s.baseUrl, s.apiKey, "createdDate,desc").visibleOnHome(navPrefs) { it.libraryId }
+                        SeeAllKind.RECENT_SERIES ->
+                            api.querySeries(s.baseUrl, s.apiKey, sort = "createdDate,desc", size = 300)
+                                .visibleOnHome(navPrefs) { it.libraryId }
+                        SeeAllKind.UPDATED_SERIES ->
+                            api.querySeries(s.baseUrl, s.apiKey, sort = "lastModifiedDate,desc", size = 300)
+                                .visibleOnHome(navPrefs) { it.libraryId }
                     }
                 },
             ) { list ->

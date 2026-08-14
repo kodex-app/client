@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
+import app.kodex.client.data.visibleOnHome
 import app.kodex.client.network.BookDto
 import app.kodex.client.network.KodexApi
 import app.kodex.client.network.SeriesDto
@@ -93,21 +94,16 @@ fun HomeTab(
             HomeResults(kr.await(), rs.await(), us.await(), rb.await())
         }
         val all = listOf(keepReading, recentSeries, updatedSeries, recentBooks)
-        // Drop anything from a library the user hid from Home. An item with no library id is kept:
-        // better to show something unattributed than to silently swallow it.
-        val hiddenHere = navPrefs.hiddenFromHome.toSet()
-        fun <T> List<T>.visible(libraryIdOf: (T) -> String?) =
-            if (hiddenHere.isEmpty()) this else filterNot { libraryIdOf(it) in hiddenHere }
 
         state = if (all.all { it.isFailure }) {
             HomeUiState.Error("Couldn't reach ${current.label}. Tap retry.")
         } else {
             HomeUiState.Ready(
                 HomeData(
-                    continueReading = keepReading.getOrDefault(emptyList()).visible { it.libraryId },
-                    recentSeries = recentSeries.getOrDefault(emptyList()).visible { it.libraryId },
-                    updatedSeries = updatedSeries.getOrDefault(emptyList()).visible { it.libraryId },
-                    recentBooks = recentBooks.getOrDefault(emptyList()).visible { it.libraryId },
+                    continueReading = keepReading.getOrDefault(emptyList()).visibleOnHome(navPrefs) { it.libraryId },
+                    recentSeries = recentSeries.getOrDefault(emptyList()).visibleOnHome(navPrefs) { it.libraryId },
+                    updatedSeries = updatedSeries.getOrDefault(emptyList()).visibleOnHome(navPrefs) { it.libraryId },
+                    recentBooks = recentBooks.getOrDefault(emptyList()).visibleOnHome(navPrefs) { it.libraryId },
                 ),
             )
         }
