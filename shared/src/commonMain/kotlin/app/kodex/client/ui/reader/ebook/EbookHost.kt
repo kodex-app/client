@@ -7,6 +7,7 @@ import io.ktor.client.statement.bodyAsBytes
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import io.ktor.http.encodeURLParameter
 import io.ktor.http.encodeURLQueryComponent
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.EmbeddedServer
@@ -232,15 +233,15 @@ private fun EbookHostSession.manifestUrl(): String = when (origin) {
     is EbookOrigin.Book -> "$baseUrl/api/v1/books/${origin.bookId}/manifest"
     is EbookOrigin.SourceChapter ->
         "$baseUrl/api/v1/content-sources/${origin.providerId.encodeURLQueryComponent()}/chapter-manifest" +
-            "?chapterId=${origin.chapterId.encodeURLQueryComponent()}"
+            "?chapterId=${origin.chapterId.encodeURLParameter()}"
 }
 
 private fun EbookHostSession.resourceUrl(href: String): String = when (origin) {
     is EbookOrigin.Book ->
-        "$baseUrl/api/v1/books/${origin.bookId}/resource?href=${href.encodeURLQueryComponent()}"
+        "$baseUrl/api/v1/books/${origin.bookId}/resource?href=${href.encodeURLParameter()}"
     is EbookOrigin.SourceChapter ->
         "$baseUrl/api/v1/content-sources/${origin.providerId.encodeURLQueryComponent()}/chapter-resource" +
-            "?chapterId=${origin.chapterId.encodeURLQueryComponent()}&href=${href.encodeURLQueryComponent()}"
+            "?chapterId=${origin.chapterId.encodeURLParameter()}&href=${href.encodeURLParameter()}"
 }
 
 /** Whole-file reads (MOBI/KF8/FB2) only exist for library books; source chapters are always EPUB. */

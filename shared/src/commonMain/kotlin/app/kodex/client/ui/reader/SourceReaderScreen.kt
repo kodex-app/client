@@ -18,7 +18,7 @@ import app.kodex.client.ui.main.SourceSeriesContext
 import app.kodex.client.ui.reader.ebook.EbookOrigin
 import app.kodex.client.ui.reader.ebook.EbookReaderScreen
 import app.kodex.client.ui.reader.ebook.EbookSource
-import io.ktor.http.encodeURLQueryComponent
+import io.ktor.http.encodeURLParameter
 import kotlin.math.roundToInt
 
 /** [app.kodex.client.network.SourceDescriptor.kind] of a novel source — its chapters are text, not page images. */
@@ -34,10 +34,10 @@ private sealed interface SourceReaderState {
 private fun sourceReadUrl(baseUrl: String, providerId: String, chapterId: String, chapterName: String?, seriesId: String?): String =
     buildString {
         append(baseUrl.trimEnd('/'))
-        append("/source-read?provider=").append(providerId.encodeURLQueryComponent())
-        append("&chapter=").append(chapterId.encodeURLQueryComponent())
-        chapterName?.takeIf { it.isNotBlank() }?.let { append("&title=").append(it.encodeURLQueryComponent()) }
-        seriesId?.let { append("&series=").append(it.encodeURLQueryComponent()) }
+        append("/source-read?provider=").append(providerId.encodeURLParameter())
+        append("&chapter=").append(chapterId.encodeURLParameter())
+        chapterName?.takeIf { it.isNotBlank() }?.let { append("&title=").append(it.encodeURLParameter()) }
+        seriesId?.let { append("&series=").append(it.encodeURLParameter()) }
     }
 
 /** The chapter currently open; [edge] is set when arriving from a sibling (start of it / end of it). */

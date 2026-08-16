@@ -2,7 +2,7 @@ package app.kodex.client.ui.catalog
 
 import app.kodex.client.network.BookDto
 import app.kodex.client.network.SeriesDto
-import io.ktor.http.encodeURLQueryComponent
+import io.ktor.http.encodeURLParameter
 
 /** Book thumbnail endpoint. */
 fun bookCoverUrl(baseUrl: String, bookId: String): String =
@@ -12,9 +12,17 @@ fun bookCoverUrl(baseUrl: String, bookId: String): String =
 fun bookPageUrl(baseUrl: String, bookId: String, page: Int): String =
     "$baseUrl/api/v1/books/$bookId/pages/$page"
 
-/** Page image streamed live from a content source. [index] is 0-based (unlike book pages). */
+/**
+ * Page image streamed live from a content source. [index] is 0-based (unlike book pages).
+ *
+ * [chapterId] goes through [encodeURLParameter], not `encodeURLQueryComponent`: the latter leaves
+ * RFC 3986's reserved characters (`/`, `:`, …) literal, which is legal in a query but trips
+ * path-traversal rules in reverse proxies sitting in front of a server. nhentai chapter ids are
+ * `/g/<id>/`, so every page request carried bare slashes and came back 403 — while the same URL
+ * worked against a directly-exposed server, which is what hid this.
+ */
 fun sourcePageUrl(baseUrl: String, providerId: String, chapterId: String, index: Int): String =
-    "$baseUrl/api/v1/content-sources/$providerId/page?chapterId=${chapterId.encodeURLQueryComponent()}&index=$index"
+    "$baseUrl/api/v1/content-sources/$providerId/page?chapterId=${chapterId.encodeURLParameter()}&index=$index"
 
 /**
  * Series cover, mirroring the web `coverSrc`: a custom [SeriesDto.coverUrl] wins (absolute URLs are
@@ -35,7 +43,7 @@ fun seriesCoverUrl(baseUrl: String, seriesId: String, coverUrl: String?): String
  */
 fun sourceCoverUrl(baseUrl: String, providerId: String, coverUrl: String?): String {
     if (coverUrl.isNullOrBlank()) return ""
-    return "$baseUrl/api/v1/content-sources/$providerId/cover?url=${coverUrl.encodeURLQueryComponent()}"
+    return "$baseUrl/api/v1/content-sources/$providerId/cover?url=${coverUrl.encodeURLParameter()}"
 }
 
 /** Subtitle under a book cover, e.g. "24 pages". */
