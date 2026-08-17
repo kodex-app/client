@@ -221,7 +221,10 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
                     onOpenSeries = { openSeries(it.id) },
                     onSeeAll = { kind -> backStack.add(DetailRoute.SeeAll(kind)) },
                 )
-                BottomTab.Libraries -> LibrariesTab(session, api, onOpenLibrary = { backStack.add(DetailRoute.LibrarySeries(it)) })
+                BottomTab.Libraries -> LibrariesTab(
+                    session, api, appSettings,
+                    onOpenLibrary = { backStack.add(DetailRoute.LibrarySeries(it)) },
+                )
                 BottomTab.Recents -> RecentsTab(
                     session, api,
                     onOpenReader = { backStack.add(DetailRoute.Reader(it, incognito = incognito)) },

@@ -45,12 +45,13 @@ fun dayLabel(dayKey: String): String {
     }
 }
 
-/** A coarse relative label like "just now", "5m ago", "3h ago", "2d ago" (falls back to the day). */
+/** A coarse relative label like "Just now", "5m ago", "3h ago", "2d ago" (falls back to the day). */
 fun relativeTime(iso: String?): String {
     val millis = isoEpochMillis(iso) ?: return isoDayKey(iso)
     val diff = nowMillis() - millis
     return when {
-        diff < 60_000L -> "just now"
+        // Sentence case: every caller puts this first in its line, next to labels like "Finished".
+        diff < 60_000L -> "Just now"
         diff < 3_600_000L -> "${diff / 60_000L}m ago"
         diff < 86_400_000L -> "${diff / 3_600_000L}h ago"
         diff < 7 * 86_400_000L -> "${diff / 86_400_000L}d ago"

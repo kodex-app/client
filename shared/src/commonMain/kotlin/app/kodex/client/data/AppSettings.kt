@@ -34,6 +34,14 @@ class AppSettings(private val settings: Settings = Settings()) {
     private val _libraryDisplayBy = MutableStateFlow(settings.getStringOrNull(KEY_LIBRARY_DISPLAY) ?: "title")
     val libraryDisplayBy: StateFlow<String> = _libraryDisplayBy.asStateFlow()
 
+    /**
+     * How the Libraries tab orders its tiles, as `"<key>,<asc|desc>"` (the keys live with the tab).
+     * Device-local, like the other view preferences: the web has no libraries-list ordering to stay in
+     * step with, and the server order it starts from is already a synced setting of its own.
+     */
+    private val _librariesSort = MutableStateFlow(settings.getStringOrNull(KEY_LIBRARIES_SORT).orEmpty())
+    val librariesSort: StateFlow<String> = _librariesSort.asStateFlow()
+
     /** Global incognito reading: when on, no reader saves progress/history. */
     private val _incognito = MutableStateFlow(settings.getBoolean(KEY_INCOGNITO, false))
     val incognitoMode: StateFlow<Boolean> = _incognito.asStateFlow()
@@ -104,6 +112,10 @@ class AppSettings(private val settings: Settings = Settings()) {
         _updatesSeenMark.value += 1
     }
 
+    fun setLibrariesSort(value: String) {
+        settings.putString(KEY_LIBRARIES_SORT, value); _librariesSort.value = value
+    }
+
     fun setLibraryDisplayBy(value: String) {
         settings.putString(KEY_LIBRARY_DISPLAY, value); _libraryDisplayBy.value = value
     }
@@ -122,6 +134,7 @@ class AppSettings(private val settings: Settings = Settings()) {
         const val KEY_LIBRARY_DISPLAY = "library.displayBy"
         const val KEY_LIBRARY_GROUP = "library.groupBy"
         const val KEY_LIBRARY_GROUP_TAB = "library.groupTab"
+        const val KEY_LIBRARIES_SORT = "libraries.sort"
         const val KEY_INCOGNITO = "reader.incognito"
         const val KEY_UPDATES_SEEN = "recents.updatesSeenAt"
     }
