@@ -154,7 +154,7 @@ fun SeriesDetailScreen(
     var editOpen by remember { mutableStateOf(false) }
     var moveOpen by remember { mutableStateOf(false) }
 
-    fun reload() { selection.clear(); reloadTick++ }
+    fun reload() { selection.clear(); st.forceFull = true; reloadTick++ }
 
     fun runAction(message: String?, block: suspend () -> Unit) {
         server ?: return
@@ -175,10 +175,22 @@ fun SeriesDetailScreen(
         if (phase !is SeriesPhase.Ready) phase = SeriesPhase.Loading
         phase = runCatching {
             val detail = api.seriesDetail(s0.baseUrl, s0.apiKey, seriesId)
-            val subs = runCatching { api.subSeries(s0.baseUrl, s0.apiKey, seriesId) }.getOrDefault(emptyList())
-            val libs = runCatching { api.libraries(s0.baseUrl, s0.apiKey) }.getOrDefault(emptyList())
+            // Only on a first load of this series or an explicit reload — see SeriesDetailState.
+            if (st.ancillaryFor != seriesId || st.forceFull) {
+                st.subSeries = runCatching { api.subSeries(s0.baseUrl, s0.apiKey, seriesId) }.getOrDefault(emptyList())
+                st.libraries = runCatching { api.libraries(s0.baseUrl, s0.apiKey) }.getOrDefault(emptyList())
+                st.sourceName = detail.sourceProviderId?.let { pid ->
+                    runCatching { api.contentSources(s0.baseUrl, s0.apiKey).firstOrNull { it.id == pid }?.displayName }.getOrNull()
+                }
+                st.ancillaryFor = seriesId
+                st.forceFull = false
+            }
+            val subs = st.subSeries
+            val libs = st.libraries
+            // Looked up fresh from the cached list: a move changes the series' libraryId, not the
+            // set of libraries, so the name still resolves without re-fetching them.
             val libName = detail.libraryId?.let { lid -> libs.firstOrNull { it.id == lid }?.name }
-            val srcName = detail.sourceProviderId?.let { pid -> runCatching { api.contentSources(s0.baseUrl, s0.apiKey).firstOrNull { it.id == pid }?.displayName }.getOrNull() }
+            val srcName = st.sourceName
             if (detail.isWeb) SeriesContent(detail, emptyList(), api.seriesChapters(s0.baseUrl, s0.apiKey, seriesId), subs, libName, srcName, libs)
             else SeriesContent(detail, api.seriesBooks(s0.baseUrl, s0.apiKey, seriesId), emptyList(), subs, libName, srcName, libs)
         }.fold({ SeriesPhase.Ready(it) }, { SeriesPhase.Error(it.friendlyMessage()) })
@@ -348,7 +360,7 @@ fun SeriesDetailScreen(
                     SeriesBackdrop(s.baseUrl, s.apiKey, content.detail, topInset + 210.dp)
                 }
                 when {
-                    errorMsg != null && content == null -> Box(Modifier.fillMaxSize().padding(padding)) { ErrorRetry(errorMsg) { reloadTick++ } }
+                    errorMsg != null && content == null -> Box(Modifier.fillMaxSize().padding(padding)) { ErrorRetry(errorMsg) { reload() } }
                     content == null -> Box(Modifier.fillMaxSize().padding(padding), Alignment.Center) { CircularProgressIndicator() }
                     s != null && isWeb -> ChaptersLayout(
                         s.baseUrl, s.apiKey, content, visibleChapters,
@@ -862,4 +874,19 @@ private class SeriesDetailState {
     val sortKey = mutableStateOf(SeriesSort.NUMBER)
     val translator = mutableStateOf<String?>(null)
     val list = LazyListState()
+
+    // ── Ancillary data, cached across re-entry ───────────────────────────────────────────────────
+    // Returning from the reader re-runs the load effect (the screen was unmounted while covered), and
+    // that is wanted: reading changes read state, which this screen displays. But only the series
+    // itself and its books/chapters carry read state. The library list, the source's display name and
+    // the sub-series cannot change while a chapter is open, so re-fetching them turned every back
+    // press into five sequential round trips — the visible "reload". Fetched once per series instead.
+    /** Which series [libraries]/[subSeries]/[sourceName] belong to; null means not fetched yet. */
+    var ancillaryFor: String? = null
+    var libraries: List<app.kodex.client.network.LibraryDto> = emptyList()
+    var subSeries: List<app.kodex.client.network.SeriesDto> = emptyList()
+    var sourceName: String? = null
+
+    /** Set by an explicit reload (pull, bulk action, retry), which refreshes the ancillary data too. */
+    var forceFull = false
 }

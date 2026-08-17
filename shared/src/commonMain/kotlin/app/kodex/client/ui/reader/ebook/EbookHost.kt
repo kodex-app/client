@@ -63,8 +63,8 @@ class EbookHostHandle internal constructor(
     /**
      * Queues a command for the page (`{"cmd":"next"}` and friends — see `reader.js`), which is
      * long-polling for them. Deliberately not the WebView's evaluateJavaScript: that is a different
-     * implementation on each platform and simply never arrived on desktop's Chromium backend, so the
-     * reader would have rendered but refused to turn a page. Routing commands over the same loopback
+     * implementation on each platform and on some was missing outright, so the reader would have
+     * rendered but refused to turn a page. Routing commands over the same loopback
      * connection the page already uses for everything else makes one transport to get right.
      */
     fun send(command: String) {

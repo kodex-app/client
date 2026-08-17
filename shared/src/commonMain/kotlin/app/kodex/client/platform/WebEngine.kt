@@ -1,6 +1,13 @@
 package app.kodex.client.platform
 
-/** How far along [ensureWebEngine] is. Only desktop ever reports anything but [Ready]. */
+/**
+ * How far along [ensureWebEngine] is.
+ *
+ * Both surviving platforms report [Ready] at once, so the other states are currently unreachable —
+ * they existed for the dropped desktop target, which downloaded Chromium on first use. Kept because
+ * an embedded-engine platform is the normal reason to need this gate at all, and because the states
+ * cost nothing while the reader is already written against them.
+ */
 sealed interface WebEngineState {
     data object Ready : WebEngineState
 
@@ -16,8 +23,8 @@ sealed interface WebEngineState {
 /**
  * Makes the platform's web engine usable, which the ebook reader needs before it can render.
  *
- * Android and iOS have a system WebView and return [WebEngineState.Ready] immediately. Desktop
- * embeds Chromium (KCEF), which downloads a bundle on first use — hence the progress reporting, so
- * that download is something the reader can show rather than a silent stall.
+ * Android and iOS both have a system WebView, so both actuals return [WebEngineState.Ready] without
+ * doing any work. The suspend-and-report shape is what an embedded engine needs (the dropped desktop
+ * target fetched Chromium here), and it keeps the reader from mounting a WebView before asking.
  */
 expect suspend fun ensureWebEngine(onState: (WebEngineState) -> Unit)

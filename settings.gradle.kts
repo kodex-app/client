@@ -31,14 +31,8 @@ dependencyResolutionManagement {
             }
         }
         mavenCentral()
-        // Desktop only: the reader's WebView is Chromium (KCEF) there, and JogAmp hosts its native
-        // GL bindings. Android and iOS use the system WebView and never pull from here.
-        maven("https://jogamp.org/deployment/maven") {
-            mavenContent { includeGroupAndSubgroups("org.jogamp") }
-        }
     }
 }
 
 include(":shared")
 include(":androidApp")
-include(":desktopApp")

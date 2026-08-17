@@ -89,8 +89,8 @@ fun LibrariesTab(session: SessionManager, api: KodexApi, onOpenLibrary: (Library
         if (libraries.isEmpty()) {
             EmptyMessage("No libraries yet.\nCreate one on your server to see it here.")
         } else {
-            // Adaptive rather than two fixed columns: a phone lands on two, a tablet or the desktop
-            // window widens into more instead of stretching two tiles across the screen.
+            // Adaptive rather than two fixed columns: a phone lands on two, a tablet widens into
+            // more instead of stretching two tiles across the screen.
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(168.dp),
                 contentPadding = PaddingValues(16.dp),

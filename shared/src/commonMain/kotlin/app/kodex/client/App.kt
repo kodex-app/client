@@ -28,7 +28,7 @@ import coil3.network.ktor3.KtorNetworkFetcherFactory
 import coil3.request.crossfade
 
 /**
- * Root of the shared UI, hosted identically by Android, iOS, and desktop entry points. A non-null
+ * Root of the shared UI, hosted identically by the Android and iOS entry points. A non-null
  * active server means the user is signed in → show the main app; otherwise → the login/server picker.
  */
 @Composable

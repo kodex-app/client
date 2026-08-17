@@ -361,7 +361,7 @@ fun ImageReaderScreen(
     val barIsLight = MaterialTheme.colorScheme.readerBarColor.luminance() > 0.5f
     StatusBarIcons(darkIcons = if (chrome) barIsLight else p?.bg == BG_WHITE)
 
-    // Physical keyboard navigation (desktop + hardware keyboards). Arrows/space turn pages, Esc exits.
+    // Physical keyboard navigation (hardware keyboards, Chromebooks). Arrows/space turn pages, Esc exits.
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(effectiveMode) { if (effectiveMode != null) runCatching { focusRequester.requestFocus() } }
 

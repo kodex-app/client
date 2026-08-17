@@ -183,8 +183,8 @@ fun EbookReaderScreen(
     var fonts by remember { mutableStateOf<List<CustomFontDto>>(emptyList()) }
     var handle by remember { mutableStateOf<EbookHostHandle?>(null) }
     var failure by remember { mutableStateOf<String?>(null) }
-    // Desktop fetches Chromium on first use; mobile is Ready immediately. Gate the host on it so the
-    // WebView is never mounted before there's an engine to mount it in.
+    // Both platforms report Ready immediately, but the gate stays: it is what guarantees the WebView
+    // is never mounted before there is an engine to mount it in.
     var engine by remember { mutableStateOf<app.kodex.client.platform.WebEngineState>(app.kodex.client.platform.WebEngineState.Preparing(null)) }
     LaunchedEffect(Unit) { app.kodex.client.platform.ensureWebEngine { engine = it } }
 
@@ -418,7 +418,8 @@ fun EbookReaderScreen(
                 }
             }
         } else if (failure == null) {
-            // Desktop's first ebook pulls down Chromium; say so rather than spin indefinitely.
+            // Unreachable on Android/iOS (both are Ready at once), but a platform that has to fetch
+            // an engine should say so rather than spin indefinitely.
             when (val e = engine) {
                 is app.kodex.client.platform.WebEngineState.Preparing ->
                     Column(

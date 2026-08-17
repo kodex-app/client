@@ -1,12 +1,12 @@
 # kodex-client
 
-Compose Multiplatform mobile client for [Kodex](https://github.com/kodex-app) — Android, iOS
-(iPhone/iPad), with a desktop target used as a fast dev harness.
+Compose Multiplatform mobile client for [Kodex](https://github.com/kodex-app) — Android and iOS
+(iPhone/iPad).
 
 ## Stack
 
 - Kotlin 2.2 · Compose Multiplatform 1.10.3 · AGP 9.3.1 (Gradle 9.6.1)
-- Ktor 3 client (OkHttp / Darwin / CIO engines) · kotlinx.serialization
+- Ktor 3 client (OkHttp / Darwin engines) · kotlinx.serialization
 - multiplatform-settings for persistence
 
 ## Structure
@@ -28,9 +28,7 @@ shared/src/       Kotlin Multiplatform library — all shared UI + logic
     reader/         reader.js — the page that drives foliate
   androidMain/      Android actuals (HTTP engine, orientation, system bars)
   iosMain/          iOS actuals + MainViewController
-  desktopMain/      desktop actuals (KCEF bootstrap, orientation no-op)
 androidApp/       Android application — MainActivity, manifest, res, signing/packaging
-desktopApp/       Desktop application — window entry point + the live-server verify harnesses
 iosApp/           SwiftUI shell (Xcode project must be generated on a Mac — see iosApp/README.md)
 ```
 
@@ -53,14 +51,12 @@ server** (`ui/reader/ebook/EbookHost.kt`):
 Both directions of the bridge go over that same connection: the page POSTs events (`ready`,
 `relocate`, `tap`) to `./event` and long-polls `./commands` for page turns, seeks and settings
 changes. It deliberately does **not** use the WebView's `evaluateJavaScript` — that is a different
-implementation per platform and never arrived at all on desktop's Chromium backend, which left the
-book rendered but impossible to page through.
+implementation per platform and was outright missing on some of them, which left the book rendered
+but impossible to page through. The long-poll works everywhere, so it stayed after the desktop
+target (where the gap was worst) was dropped.
 
 Progress persists as a foliate **CFI** plus a fraction (`locator`/`fraction` on read-progress), with a
 coarse page proxy so existing progress bars and "continue reading" keep working.
-
-Desktop has no system WebView, so it downloads Chromium (KCEF, ~100 MB) the first time an ebook is
-opened; the reader shows that as progress. Android and iOS use the system WebView.
 
 ## Auth model (verified against the server openapi.json)
 
@@ -76,21 +72,14 @@ auto-selects the most recently used one.
 
 ```bash
 ./gradlew :androidApp:assembleDebug           # Android APK
-./gradlew :desktopApp:run                     # desktop dev harness
 # iOS: open iosApp in Xcode on a Mac (see iosApp/README.md)
 ```
 
 `local.properties` needs `sdk.dir=<Android SDK path>` (auto-created here; gitignored).
 
-Live checks against a running server (host/key read from `../test.env`):
-
-```bash
-./gradlew :desktopApp:verifyApi           # KodexApi deserializes real responses
-./gradlew :desktopApp:verifyEbookHost      # reader host: assets, proxy routes, token/traversal guards
-./gradlew :desktopApp:verifyEbookRender    # drives a real WebView: renders a book, then pages/seeks it
-```
-
-`verifyEbookRender` needs an EPUB in the library and downloads Chromium on first run.
+The live-server verify harnesses (`verifyApi`, `verifyEbookHost`, `verifyEbookRender`) lived in the
+desktop module and went with it. They needed a JVM target of `:shared` and, for the render check, a
+desktop Chromium WebView — neither exists now. Check against a live server on a device or emulator.
 
 ## Status
 
