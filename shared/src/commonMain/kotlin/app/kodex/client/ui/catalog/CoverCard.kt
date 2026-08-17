@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -23,9 +24,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.outlined.BrokenImage
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,10 +37,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import coil3.compose.SubcomposeAsyncImage
+import coil3.network.HttpException
 import coil3.compose.LocalPlatformContext
 import coil3.network.NetworkHeaders
 import coil3.network.httpHeaders
@@ -46,9 +52,37 @@ import coil3.request.crossfade
 
 private val CardWidth = 132.dp
 
-/** A cover image fetched from Kodex with the per-server `X-API-Key` header attached. */
+/**
+ * A cover image fetched from Kodex with the per-server `X-API-Key` header attached.
+ *
+ * A failed load draws a broken-image plate instead of nothing: on a grid of covers an empty tile is
+ * indistinguishable from artwork the source never had, so a load that is actually failing looks like
+ * a catalogue quirk. [ImageErrorPlate] carries the reason for anyone who taps it.
+ */
 @Composable
 fun CoverImage(url: String, apiKey: String, modifier: Modifier = Modifier) {
+    val context = LocalPlatformContext.current
+    val request = ImageRequest.Builder(context)
+        .data(url)
+        .httpHeaders(NetworkHeaders.Builder().set("X-API-Key", apiKey).build())
+        .crossfade(true)
+        .build()
+    SubcomposeAsyncImage(
+        model = request,
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        modifier = modifier,
+        error = { ImageErrorPlate(it.result.throwable.imageErrorText()) },
+    )
+}
+
+/**
+ * A cover used as decoration rather than as a catalogue entry — a mosaic cell, a backdrop. Unlike
+ * [CoverImage] a failed load draws nothing and lets whatever sits behind it show through: at this size
+ * an error plate is unreadable anyway, and the image isn't the thing being chosen from.
+ */
+@Composable
+fun CoverThumb(url: String, apiKey: String, modifier: Modifier = Modifier) {
     val context = LocalPlatformContext.current
     val request = ImageRequest.Builder(context)
         .data(url)
@@ -61,6 +95,49 @@ fun CoverImage(url: String, apiKey: String, modifier: Modifier = Modifier) {
         contentScale = ContentScale.Crop,
         modifier = modifier,
     )
+}
+
+/**
+ * Why an image load failed, in one short line. HTTP codes are spelled out because the two that
+ * actually happen here mean very different things: 403 is the server (or something in front of it)
+ * refusing the request, 404 is the page genuinely not being there.
+ */
+fun Throwable.imageErrorText(): String = when {
+    this is HttpException && message?.contains("403") == true -> "Blocked by server (403)"
+    this is HttpException && message?.contains("404") == true -> "Not found (404)"
+    this is HttpException -> message ?: "Server error"
+    else -> "Couldn't load image"
+}
+
+/** Muted broken-image plate with the reason underneath, sized to whatever slot it lands in. */
+@Composable
+fun ImageErrorPlate(message: String, modifier: Modifier = Modifier, onRetry: (() -> Unit)? = null) {
+    Box(
+        modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant).padding(8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(
+                Icons.Outlined.BrokenImage,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(28.dp),
+            )
+            Text(
+                message,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelSmall,
+                textAlign = TextAlign.Center,
+                maxLines = 3,
+            )
+            if (onRetry != null) {
+                TextButton(onClick = onRetry) { Text("Retry", style = MaterialTheme.typography.labelSmall) }
+            }
+        }
+    }
 }
 
 /**

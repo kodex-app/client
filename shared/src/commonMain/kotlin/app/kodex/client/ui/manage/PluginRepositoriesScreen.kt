@@ -50,6 +50,7 @@ import app.kodex.client.network.KodexApi
 import app.kodex.client.network.PluginRepositoryDto
 import app.kodex.client.network.UpdateRepositoryRequest
 import app.kodex.client.ui.EmptyMessage
+import app.kodex.client.ui.ErrorState
 import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.friendlyMessage
 import app.kodex.client.ui.rememberSnackbar
@@ -70,13 +71,17 @@ fun PluginRepositoriesScreen(session: SessionManager, api: KodexApi, onBack: () 
 
     var repos by remember { mutableStateOf<List<PluginRepositoryDto>?>(null) }
     var reload by remember { mutableIntStateOf(0) }
+    var loadError by remember { mutableStateOf<String?>(null) }
     var creating by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<PluginRepositoryDto?>(null) }
     var confirmDelete by remember { mutableStateOf<PluginRepositoryDto?>(null) }
 
     LaunchedEffect(server?.id, reload) {
         val s = server ?: return@LaunchedEffect
-        repos = runCatching { api.pluginRepositories(s.baseUrl, s.apiKey) }.getOrNull()
+        runCatching { api.pluginRepositories(s.baseUrl, s.apiKey) }.fold(
+            onSuccess = { repos = it; loadError = null },
+            onFailure = { loadError = it.friendlyMessage() },
+        )
     }
 
     fun act(message: String, block: suspend (String, String) -> Unit) {
@@ -104,7 +109,8 @@ fun PluginRepositoriesScreen(session: SessionManager, api: KodexApi, onBack: () 
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (val list = repos) {
-                null -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
+                null -> if (loadError != null) ErrorState(loadError!!) { reload++ }
+                    else Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
                 else -> if (list.isEmpty()) {
                     EmptyMessage("No repositories. Add one to install plugins from it.")
                 } else {

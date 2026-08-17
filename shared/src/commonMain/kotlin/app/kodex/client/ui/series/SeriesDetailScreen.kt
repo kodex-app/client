@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -318,6 +319,10 @@ fun SeriesDetailScreen(
                                     Text(resume.label, style = MaterialTheme.typography.labelLarge)
                                     Text(
                                         resume.target,
+                                        // The cap is what actually truncates. maxLines alone doesn't
+                                        // bound width, so a long chapter title stretched the whole FAB
+                                        // across the screen rather than ellipsing.
+                                        modifier = Modifier.widthIn(max = RESUME_TARGET_MAX_WIDTH),
                                         style = MaterialTheme.typography.labelSmall,
                                         // Muted against the container so the action still reads first.
                                         color = LocalContentColor.current.copy(alpha = 0.75f),
@@ -791,6 +796,13 @@ private fun SeriesHeader(
 }
 
 
+
+/**
+ * How wide the resume button's second line may get. Chapter titles run long (scanlation group, volume,
+ * language tags all end up in there), and the FAB grows to fit whatever it is handed — at full length
+ * it spanned the screen and buried the cover behind it.
+ */
+private val RESUME_TARGET_MAX_WIDTH = 200.dp
 
 private fun localResume(books: List<BookDto>, onOpenReader: (String) -> Unit, onOpenReaderIncognito: (String) -> Unit): Resume? {
     if (books.isEmpty()) return null

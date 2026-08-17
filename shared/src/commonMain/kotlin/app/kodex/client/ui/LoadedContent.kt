@@ -2,12 +2,18 @@ package app.kodex.client.ui
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -75,19 +81,55 @@ fun <T> LoadedContent(
         is LoadState.Loading ->
             Box(modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
 
-        is LoadState.Error ->
-            Box(modifier.fillMaxSize().padding(32.dp), Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        s.message,
-                        textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Button(onClick = { reload++ }, modifier = Modifier.padding(top = 16.dp)) { Text("Retry") }
-                }
-            }
+        is LoadState.Error -> ErrorState(s.message, modifier) { reload++ }
 
         is LoadState.Ready -> content(s.data)
+    }
+}
+
+/**
+ * The screen-level failure state: what went wrong plus a way to try again. Every load that can fail
+ * shows this rather than an empty list — an empty list reads as "there is nothing here", which sends
+ * you looking for missing content instead of at a broken connection.
+ */
+@Composable
+fun ErrorState(message: String, modifier: Modifier = Modifier, onRetry: (() -> Unit)? = null) {
+    Box(modifier.fillMaxSize().padding(32.dp), Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                Icons.Outlined.CloudOff,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(40.dp).padding(bottom = 12.dp),
+            )
+            Text(
+                message,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (onRetry != null) {
+                Button(onClick = onRetry, modifier = Modifier.padding(top = 16.dp)) { Text("Retry") }
+            }
+        }
+    }
+}
+
+/**
+ * Compact sibling of [ErrorState] for a failure that occupies one slot of a larger screen — a card, a
+ * section of a scrolling settings page. It sizes to its content instead of filling the viewport, so it
+ * can sit where the loaded widget would have been.
+ */
+@Composable
+fun InlineLoadError(message: String, modifier: Modifier = Modifier, onRetry: (() -> Unit)? = null) {
+    Column(modifier.padding(16.dp)) {
+        Text(
+            message,
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        if (onRetry != null) {
+            TextButton(onClick = onRetry, contentPadding = PaddingValues(0.dp)) { Text("Retry") }
+        }
     }
 }
 

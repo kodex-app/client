@@ -43,7 +43,9 @@ import app.kodex.client.auth.SessionManager
 import app.kodex.client.network.AvailablePluginDto
 import app.kodex.client.network.InstalledPluginDto
 import app.kodex.client.network.KodexApi
+import app.kodex.client.ui.ErrorState
 import app.kodex.client.ui.collectAsStateSafe
+import app.kodex.client.ui.friendlyMessage
 import app.kodex.client.ui.rememberSnackbar
 import kotlinx.coroutines.launch
 
@@ -61,14 +63,24 @@ fun PluginsScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit, on
     var installed by remember { mutableStateOf<List<InstalledPluginDto>?>(null) }
     var available by remember { mutableStateOf<List<AvailablePluginDto>?>(null) }
     var reload by remember { mutableIntStateOf(0) }
+    // One slot per list: the two tabs fetch independently, so a shared slot let whichever call
+    // finished second clear the other's failure and leave that tab spinning forever.
+    var installedError by remember { mutableStateOf<String?>(null) }
+    var availableError by remember { mutableStateOf<String?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
     // The provider whose settings sheet is open; its schema is fetched by the sheet itself.
     var configuring by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(server?.id, reload) {
         val s = server ?: return@LaunchedEffect
-        installed = runCatching { api.installedPlugins(s.baseUrl, s.apiKey) }.getOrNull()
-        available = runCatching { api.availablePlugins(s.baseUrl, s.apiKey) }.getOrNull()
+        runCatching { api.installedPlugins(s.baseUrl, s.apiKey) }.fold(
+            onSuccess = { installed = it; installedError = null },
+            onFailure = { installedError = it.friendlyMessage() },
+        )
+        runCatching { api.availablePlugins(s.baseUrl, s.apiKey) }.fold(
+            onSuccess = { available = it; availableError = null },
+            onFailure = { availableError = it.friendlyMessage() },
+        )
     }
 
     fun act(message: String, block: suspend () -> Unit) {
@@ -116,12 +128,12 @@ fun PluginsScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit, on
                 }
             }
             androidx.compose.foundation.pager.HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-                if (page == 0) InstalledList(installed, onEnable = { id -> act("Enabled") { val s = server!!; api.pluginAction(s.baseUrl, s.apiKey, id, "enable") } },
+                if (page == 0) InstalledList(installed, installedError, { reload++ }, onEnable = { id -> act("Enabled") { val s = server!!; api.pluginAction(s.baseUrl, s.apiKey, id, "enable") } },
                     onDisable = { id -> act("Disabled") { val s = server!!; api.pluginAction(s.baseUrl, s.apiKey, id, "disable") } },
                     onUpdate = { id -> act("Updating…") { val s = server!!; api.pluginAction(s.baseUrl, s.apiKey, id, "update") } },
                     onUninstall = { id -> act("Uninstalled") { val s = server!!; api.uninstallPlugin(s.baseUrl, s.apiKey, id) } },
                     onConfigure = { id -> configuring = id })
-                else BrowseList(available, installed, onInstall = { p -> act("Installing ${p.name}…") { val s = server!!; api.installPlugin(s.baseUrl, s.apiKey, p.id, p.latestVersion) } })
+                else BrowseList(available, installed, availableError, { reload++ }, onInstall = { p -> act("Installing ${p.name}…") { val s = server!!; api.installPlugin(s.baseUrl, s.apiKey, p.id, p.latestVersion) } })
             }
         }
     }
@@ -142,6 +154,8 @@ fun PluginsScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit, on
 @Composable
 private fun InstalledList(
     installed: List<InstalledPluginDto>?,
+    loadError: String?,
+    onRetry: () -> Unit,
     onEnable: (String) -> Unit,
     onDisable: (String) -> Unit,
     onUpdate: (String) -> Unit,
@@ -149,7 +163,8 @@ private fun InstalledList(
     onConfigure: (String) -> Unit,
 ) {
     when (installed) {
-        null -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
+        null -> if (loadError != null) ErrorState(loadError, onRetry = onRetry)
+                    else Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
         else -> if (installed.isEmpty()) Empty("No plugins installed.")
         else LazyColumn(Modifier.fillMaxSize()) {
             items(installed, key = { it.id }) { p ->
@@ -178,9 +193,16 @@ private fun InstalledList(
 }
 
 @Composable
-private fun BrowseList(available: List<AvailablePluginDto>?, installed: List<InstalledPluginDto>?, onInstall: (AvailablePluginDto) -> Unit) {
+private fun BrowseList(
+    available: List<AvailablePluginDto>?,
+    installed: List<InstalledPluginDto>?,
+    loadError: String?,
+    onRetry: () -> Unit,
+    onInstall: (AvailablePluginDto) -> Unit,
+) {
     when (available) {
-        null -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
+        null -> if (loadError != null) ErrorState(loadError, onRetry = onRetry)
+                    else Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
         else -> if (available.isEmpty()) Empty("No plugins in the repository.\nAdd a plugin repository on the server.")
         else {
             val installedIds = installed?.map { it.id }?.toSet() ?: emptySet()

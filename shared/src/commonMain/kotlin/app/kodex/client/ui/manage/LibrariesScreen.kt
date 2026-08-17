@@ -53,7 +53,9 @@ import app.kodex.client.data.saveLibraryNavPrefs
 import app.kodex.client.network.KodexApi
 import app.kodex.client.network.LibraryDto
 import app.kodex.client.ui.catalog.ColorBadge
+import app.kodex.client.ui.ErrorState
 import app.kodex.client.ui.collectAsStateSafe
+import app.kodex.client.ui.friendlyMessage
 import app.kodex.client.ui.rememberSnackbar
 import kotlinx.coroutines.launch
 
@@ -76,13 +78,17 @@ fun LibrariesScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) 
     var prefs by remember { mutableStateOf(LibraryNavPrefs()) }
     var counts by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
     var reload by remember { mutableIntStateOf(0) }
+    var loadError by remember { mutableStateOf<String?>(null) }
     var editTarget by remember { mutableStateOf<LibraryDto?>(null) }
     var creating by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf<LibraryDto?>(null) }
 
     LaunchedEffect(server?.id, reload) {
         val s = server ?: return@LaunchedEffect
-        libraries = runCatching { api.libraries(s.baseUrl, s.apiKey) }.getOrNull()
+        runCatching { api.libraries(s.baseUrl, s.apiKey) }.fold(
+            onSuccess = { libraries = it; loadError = null },
+            onFailure = { loadError = it.friendlyMessage() },
+        )
         prefs = loadLibraryNavPrefs(api, s.baseUrl, s.apiKey)
     }
 
@@ -150,7 +156,8 @@ fun LibrariesScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) 
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (libraries) {
-                null -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
+                null -> if (loadError != null) ErrorState(loadError!!) { reload++ }
+                    else Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
                 else -> if (ordered.isEmpty()) {
                     Text("No libraries. Tap + to add one.", Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else LazyColumn(Modifier.fillMaxSize()) {

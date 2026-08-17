@@ -48,6 +48,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -77,6 +78,8 @@ import app.kodex.client.ui.catalog.seriesCoverUrl
 import app.kodex.client.ui.catalog.seriesSubtitle
 import app.kodex.client.ui.catalog.seriesUnreadBadge
 import app.kodex.client.ui.catalog.sourceCoverUrl
+import app.kodex.client.ui.InlineLoadError
+import app.kodex.client.ui.friendlyMessage
 import app.kodex.client.ui.collectAsStateSafe
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -107,7 +110,16 @@ private sealed interface SearchUiState {
     data object Idle : SearchUiState
     data object Loading : SearchUiState
     data class Error(val message: String) : SearchUiState
-    data class Ready(val series: List<SeriesDto>, val books: List<BookDto>) : SearchUiState
+    /**
+     * [partialFailure] is set when one half of the search failed and the other did not. Without it a
+     * failed series query behind a successful book query rendered as "no series matched", which is a
+     * claim about the library rather than about the request.
+     */
+    data class Ready(
+        val series: List<SeriesDto>,
+        val books: List<BookDto>,
+        val partialFailure: String? = null,
+    ) : SearchUiState
 }
 
 /** Online (source) search: results grouped per content source. */
@@ -146,6 +158,8 @@ fun SearchScreen(
     val modeScope = androidx.compose.runtime.rememberCoroutineScope()
     val online = modePager.currentPage == 1 // false = library (local), true = sources (online)
     var facets by remember { mutableStateOf(Facets()) }
+    // Bumped by the retry action so a failed search can be re-run without editing the query.
+    var reloadKey by remember { mutableIntStateOf(0) }
     var state by remember { mutableStateOf<SearchUiState>(SearchUiState.Idle) }
     var sheetOpen by remember { mutableStateOf(false) }
     var sourceSheetOpen by remember { mutableStateOf(false) }
@@ -183,7 +197,7 @@ fun SearchScreen(
         onlineState = OnlineState.Ready(perSource)
     }
 
-    LaunchedEffect(query, facets, server?.id) {
+    LaunchedEffect(query, facets, server?.id, reloadKey) {
         val current = server ?: return@LaunchedEffect
         val text = query.trim()
         if (text.isEmpty() && facets.isEmpty) {
@@ -214,7 +228,15 @@ fun SearchScreen(
         state = if (results.first.isFailure && results.second.isFailure) {
             SearchUiState.Error("Search failed. Check your connection.")
         } else {
-            SearchUiState.Ready(results.first.getOrDefault(emptyList()), results.second.getOrDefault(emptyList()))
+            SearchUiState.Ready(
+                series = results.first.getOrDefault(emptyList()),
+                books = results.second.getOrDefault(emptyList()),
+                partialFailure = when {
+                    results.first.isFailure -> "Couldn't search series — ${results.first.exceptionOrNull()!!.friendlyMessage()}"
+                    results.second.isFailure -> "Couldn't search books — ${results.second.exceptionOrNull()!!.friendlyMessage()}"
+                    else -> null
+                },
+            )
         }
     }
 
@@ -302,8 +324,12 @@ fun SearchScreen(
                         is SearchUiState.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
                         is SearchUiState.Error -> Hint(s.message)
                         is SearchUiState.Ready ->
-                            if (s.series.isEmpty() && s.books.isEmpty()) Hint("No results.")
-                            else Results(server?.baseUrl ?: "", server?.apiKey ?: "", s, sourceNames, onOpenSeries, onOpenBook)
+                            // "No results" is only honest when both halves actually answered.
+                            if (s.series.isEmpty() && s.books.isEmpty() && s.partialFailure == null) Hint("No results.")
+                            else Column(Modifier.fillMaxSize()) {
+                                s.partialFailure?.let { InlineLoadError(it) { reloadKey++ } }
+                                Results(server?.baseUrl ?: "", server?.apiKey ?: "", s, sourceNames, onOpenSeries, onOpenBook)
+                            }
                     }
                 }
             }

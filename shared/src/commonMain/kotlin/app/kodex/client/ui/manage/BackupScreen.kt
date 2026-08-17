@@ -49,6 +49,7 @@ import app.kodex.client.network.BackupFileDto
 import app.kodex.client.network.BackupSettingsDto
 import app.kodex.client.network.BackupSettingsRequest
 import app.kodex.client.network.KodexApi
+import app.kodex.client.ui.InlineLoadError
 import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.friendlyMessage
 import app.kodex.client.ui.relativeTime
@@ -74,13 +75,23 @@ fun BackupScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) {
     var files by remember { mutableStateOf<List<BackupFileDto>?>(null) }
     var settings by remember { mutableStateOf<BackupSettingsDto?>(null) }
     var reload by remember { mutableIntStateOf(0) }
+    // Separate slots: the schedule and the stored-file list are fetched independently, so one
+    // failing must not be masked by the other succeeding.
+    var filesError by remember { mutableStateOf<String?>(null) }
+    var settingsError by remember { mutableStateOf<String?>(null) }
     var restoring by remember { mutableStateOf<BackupFileDto?>(null) }
     var confirmDelete by remember { mutableStateOf<BackupFileDto?>(null) }
 
     LaunchedEffect(server?.id, reload) {
         val s = server ?: return@LaunchedEffect
-        files = runCatching { api.backupFiles(s.baseUrl, s.apiKey) }.getOrNull()
-        settings = runCatching { api.backupSettings(s.baseUrl, s.apiKey) }.getOrNull()
+        runCatching { api.backupFiles(s.baseUrl, s.apiKey) }.fold(
+            onSuccess = { files = it; filesError = null },
+            onFailure = { filesError = it.friendlyMessage() },
+        )
+        runCatching { api.backupSettings(s.baseUrl, s.apiKey) }.fold(
+            onSuccess = { settings = it; settingsError = null },
+            onFailure = { settingsError = it.friendlyMessage() },
+        )
     }
 
     fun act(message: String, block: suspend (String, String) -> Unit) {
@@ -104,7 +115,8 @@ fun BackupScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) {
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp)) {
             SettingsSectionHeader("Automatic backups")
             when (val cfg = settings) {
-                null -> CircularProgressIndicator(Modifier.padding(16.dp))
+                null -> if (settingsError != null) InlineLoadError(settingsError!!) { reload++ }
+                    else CircularProgressIndicator(Modifier.padding(16.dp))
                 else -> AutoBackupCard(cfg) { request ->
                     act("Schedule saved") { b, k -> api.saveBackupSettings(b, k, request) }
                 }
@@ -115,7 +127,8 @@ fun BackupScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) {
             Card(Modifier.fillMaxWidth()) {
                 Column {
                     when (val list = files) {
-                        null -> CircularProgressIndicator(Modifier.padding(16.dp))
+                        null -> if (filesError != null) InlineLoadError(filesError!!) { reload++ }
+                            else CircularProgressIndicator(Modifier.padding(16.dp))
                         else -> if (list.isEmpty()) {
                             Text(
                                 "No backups on the server yet. One appears here after the first scheduled run.",

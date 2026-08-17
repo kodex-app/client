@@ -49,6 +49,7 @@ import app.kodex.client.auth.SessionManager
 import app.kodex.client.network.KodexApi
 import app.kodex.client.network.LogEntryDto
 import app.kodex.client.ui.EmptyMessage
+import app.kodex.client.ui.ErrorState
 import app.kodex.client.ui.TooltipIconButton
 import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.friendlyMessage
@@ -77,9 +78,14 @@ fun LogsScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) {
     var minLevel by remember { mutableStateOf("INFO") }
     var debug by remember { mutableStateOf<Boolean?>(null) }
 
+    var loadError by remember { mutableStateOf<String?>(null) }
+
     LaunchedEffect(server?.id, reload) {
         val s = server ?: return@LaunchedEffect
-        logs = runCatching { api.recentLogs(s.baseUrl, s.apiKey) }.getOrNull()
+        runCatching { api.recentLogs(s.baseUrl, s.apiKey) }.fold(
+            onSuccess = { logs = it; loadError = null },
+            onFailure = { loadError = it.friendlyMessage() },
+        )
         if (debug == null) debug = runCatching { api.debugMode(s.baseUrl, s.apiKey) }.getOrNull()
     }
 
@@ -134,6 +140,7 @@ fun LogsScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) {
             HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
 
             when {
+                logs == null && loadError != null -> ErrorState(loadError!!) { reload++ }
                 logs == null -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
                 visible.isEmpty() -> EmptyMessage("Nothing logged at $minLevel or above.")
                 else -> SelectionContainer {

@@ -36,8 +36,18 @@ import app.kodex.client.ui.catalog.seriesSubtitle
 import app.kodex.client.ui.catalog.seriesUnreadBadge
 import app.kodex.client.ui.catalog.sourceLabel
 import app.kodex.client.ui.collectAsStateSafe
+import app.kodex.client.ui.friendlyMessage
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.font.FontWeight
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+
+// Rail titles, shared by the section headers and the per-rail failure entries so the two can't drift.
+private const val RAIL_CONTINUE = "Continue reading"
+private const val RAIL_RECENT_SERIES = "Recent series"
+private const val RAIL_UPDATED = "Recently updated"
+private const val RAIL_RECENT_BOOKS = "Recently added"
 
 private data class HomeResults(
     val keepReading: Result<List<BookDto>>,
@@ -51,10 +61,16 @@ private data class HomeData(
     val recentSeries: List<SeriesDto> = emptyList(),
     val updatedSeries: List<SeriesDto> = emptyList(),
     val recentBooks: List<BookDto> = emptyList(),
+    /**
+     * Rails that failed to load, by section title. The four rails are fetched independently, so a
+     * partial failure used to render as a missing section — indistinguishable from a section that is
+     * legitimately empty. Each entry becomes a rail-shaped error with its own retry instead.
+     */
+    val failed: Map<String, String> = emptyMap(),
 ) {
     val isEmpty: Boolean
         get() = continueReading.isEmpty() && recentSeries.isEmpty() &&
-            updatedSeries.isEmpty() && recentBooks.isEmpty()
+            updatedSeries.isEmpty() && recentBooks.isEmpty() && failed.isEmpty()
 }
 
 private sealed interface HomeUiState {
@@ -65,8 +81,8 @@ private sealed interface HomeUiState {
 
 /**
  * Home mirrors the web UI: four horizontal cover rails — Continue reading, Recent series, Recently
- * updated series, Recently added books. Rows load independently; only a full failure surfaces an
- * error (with retry), matching the web's per-query behaviour.
+ * updated series, Recently added books. Rows load independently: a rail that fails takes its own
+ * error-and-retry slot in place of the section, and only a total failure replaces the whole screen.
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
@@ -108,6 +124,12 @@ fun HomeTab(
                     recentSeries = recentSeries.getOrDefault(emptyList()).visibleOnHome(navPrefs) { it.libraryId },
                     updatedSeries = updatedSeries.getOrDefault(emptyList()).visibleOnHome(navPrefs) { it.libraryId },
                     recentBooks = recentBooks.getOrDefault(emptyList()).visibleOnHome(navPrefs) { it.libraryId },
+                    failed = buildMap {
+                        keepReading.exceptionOrNull()?.let { put(RAIL_CONTINUE, it.friendlyMessage()) }
+                        recentSeries.exceptionOrNull()?.let { put(RAIL_RECENT_SERIES, it.friendlyMessage()) }
+                        updatedSeries.exceptionOrNull()?.let { put(RAIL_UPDATED, it.friendlyMessage()) }
+                        recentBooks.exceptionOrNull()?.let { put(RAIL_RECENT_BOOKS, it.friendlyMessage()) }
+                    },
                 ),
             )
         }
@@ -147,8 +169,11 @@ fun HomeTab(
                     contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(24.dp),
                 ) {
+                    s.data.failed.forEach { (title, message) ->
+                        item("failed-$title") { RailError(title, message) { reloadKey++ } }
+                    }
                     if (s.data.continueReading.isNotEmpty()) item {
-                        CoverSection("Continue reading", s.data.continueReading, key = { it.id }, onSeeAll = { onSeeAll(app.kodex.client.ui.catalog.SeeAllKind.KEEP_READING) }) { b ->
+                        CoverSection(RAIL_CONTINUE, s.data.continueReading, key = { it.id }, onSeeAll = { onSeeAll(app.kodex.client.ui.catalog.SeeAllKind.KEEP_READING) }) { b ->
                             CoverCard(
                                 coverUrl = bookCoverUrl(baseUrl, b.id),
                                 apiKey = apiKey,
@@ -160,17 +185,17 @@ fun HomeTab(
                         }
                     }
                     if (s.data.recentSeries.isNotEmpty()) item {
-                        CoverSection("Recent series", s.data.recentSeries, key = { it.id }, onSeeAll = { onSeeAll(app.kodex.client.ui.catalog.SeeAllKind.RECENT_SERIES) }) { series ->
+                        CoverSection(RAIL_RECENT_SERIES, s.data.recentSeries, key = { it.id }, onSeeAll = { onSeeAll(app.kodex.client.ui.catalog.SeeAllKind.RECENT_SERIES) }) { series ->
                             SeriesCard(baseUrl, apiKey, series, sourceNames, onOpenSeries)
                         }
                     }
                     if (s.data.updatedSeries.isNotEmpty()) item {
-                        CoverSection("Recently updated", s.data.updatedSeries, key = { it.id }, onSeeAll = { onSeeAll(app.kodex.client.ui.catalog.SeeAllKind.UPDATED_SERIES) }) { series ->
+                        CoverSection(RAIL_UPDATED, s.data.updatedSeries, key = { it.id }, onSeeAll = { onSeeAll(app.kodex.client.ui.catalog.SeeAllKind.UPDATED_SERIES) }) { series ->
                             SeriesCard(baseUrl, apiKey, series, sourceNames, onOpenSeries)
                         }
                     }
                     if (s.data.recentBooks.isNotEmpty()) item {
-                        CoverSection("Recently added", s.data.recentBooks, key = { it.id }, onSeeAll = { onSeeAll(app.kodex.client.ui.catalog.SeeAllKind.RECENT_BOOKS) }) { b ->
+                        CoverSection(RAIL_RECENT_BOOKS, s.data.recentBooks, key = { it.id }, onSeeAll = { onSeeAll(app.kodex.client.ui.catalog.SeeAllKind.RECENT_BOOKS) }) { b ->
                             CoverCard(
                                 coverUrl = bookCoverUrl(baseUrl, b.id),
                                 apiKey = apiKey,
@@ -214,6 +239,25 @@ private fun SeriesCard(
  * content vertically centred, which a bare `verticalScroll` would not (it measures against unbounded
  * height, pinning the content to the top).
  */
+/**
+ * A rail that failed, rendered where the section would have been: same title, and the reason plus a
+ * retry where the covers would sit. Keeping the header means a broken rail still reads as "this
+ * section exists and is broken", not as a section that quietly went missing.
+ */
+@Composable
+private fun RailError(title: String, message: String, onRetry: () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(
+            message,
+            modifier = Modifier.padding(top = 4.dp),
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        TextButton(onClick = onRetry, modifier = Modifier.padding(top = 4.dp)) { Text("Retry") }
+    }
+}
+
 @Composable
 private fun Centered(content: @Composable () -> Unit) {
     LazyColumn(Modifier.fillMaxSize()) {

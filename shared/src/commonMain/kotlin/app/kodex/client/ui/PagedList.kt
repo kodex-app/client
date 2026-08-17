@@ -1,7 +1,9 @@
 package app.kodex.client.ui
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -57,6 +59,14 @@ class PagedListState<T>(
         private set
     var error by mutableStateOf<String?>(null)
         private set
+
+    /**
+     * A failed *append*, kept apart from [error]: the list still has its earlier pages, so this shows
+     * as a retry row under them rather than replacing the screen. Without it a failing page-2 fetch was
+     * indistinguishable from reaching the end of the list.
+     */
+    var appendError by mutableStateOf<String?>(null)
+        private set
     var endReached by mutableStateOf(false)
         private set
 
@@ -90,6 +100,7 @@ class PagedListState<T>(
         if (initial) loading = true
         scope.launch {
             error = null
+            appendError = null
             runCatching { fetch(0) }.fold(
                 onSuccess = { pageResp ->
                     items.clear()
@@ -97,7 +108,9 @@ class PagedListState<T>(
                     endReached = pageResp.last
                     nextPage = 1
                 },
-                onFailure = { if (initial) error = it.friendlyMessage() },
+                // A failed refresh reports too, not just a failed first load: it leaves the stale list
+                // on screen, so staying quiet made a dead connection look like "nothing has changed".
+                onFailure = { error = it.friendlyMessage() },
             )
             loading = false
             refreshing = false
@@ -106,21 +119,34 @@ class PagedListState<T>(
 
     fun loadMore() {
         if (appending || loading || refreshing || endReached) return
+        // A failed append waits for the retry row rather than re-firing on every scroll tick, which
+        // would hammer a server that is already refusing and hide the error behind constant spinners.
+        if (appendError != null) return
         // Nothing to page past yet. Without this, an early trigger (the near-end check fires on an
         // empty list) would fetch page 0 a second time and duplicate every row.
         if (!loadedOnce || nextPage == 0 || items.isEmpty()) return
         appending = true
         scope.launch {
+            appendError = null
             runCatching { fetch(nextPage) }.fold(
                 onSuccess = { pageResp ->
                     items.addAll(pageResp.content)
                     endReached = pageResp.last
                     nextPage += 1
                 },
-                onFailure = { /* keep what we have; a later scroll retries */ },
+                // Keep the pages already loaded, but say so — the retry row is the only thing that
+                // distinguishes a broken append from the natural end of the list.
+                onFailure = { appendError = it.friendlyMessage() },
             )
             appending = false
         }
+    }
+
+    /** Re-attempt the append that set [appendError]. */
+    fun retryAppend() {
+        if (appendError == null) return
+        appendError = null
+        loadMore()
     }
 
     /** Remove matching items locally (e.g. after a "clear history" or "cancel" action). */
@@ -169,12 +195,7 @@ fun <T> PagedList(
             Box(modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
 
         state.error != null && state.isEmpty ->
-            Box(modifier.fillMaxSize().padding(32.dp), Alignment.Center) {
-                androidx.compose.foundation.layout.Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(state.error!!, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Button(onClick = { state.refresh() }, modifier = Modifier.padding(top = 16.dp)) { Text("Retry") }
-                }
-            }
+            ErrorState(state.error!!, modifier) { state.refresh() }
 
         state.isEmpty ->
             PullToRefreshBox(isRefreshing = state.refreshing, onRefresh = { state.refresh() }, modifier = modifier.fillMaxSize()) {
@@ -195,8 +216,34 @@ fun <T> PagedList(
                             }
                         }
                     }
+                    state.appendError?.let { message ->
+                        item("paging-error") { AppendErrorRow(message) { state.retryAppend() } }
+                    }
+                    // A refresh that failed while rows are still on screen: the list is stale, not empty,
+                    // so this sits under it instead of taking over the screen.
+                    if (state.error != null && !state.isEmpty) {
+                        item("refresh-error") { AppendErrorRow(state.error!!) { state.refresh() } }
+                    }
                 }
             }
+    }
+}
+
+/** Inline failure row under a list that still has content: the reason plus a retry, on one line. */
+@Composable
+private fun AppendErrorRow(message: String, onRetry: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            message,
+            modifier = Modifier.weight(1f),
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        TextButton(onClick = onRetry) { Text("Retry") }
     }
 }
 

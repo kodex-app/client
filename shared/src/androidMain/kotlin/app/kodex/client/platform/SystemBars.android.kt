@@ -9,10 +9,10 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 @Composable
-actual fun StatusBarIcons(darkIcons: Boolean) {
+actual fun StatusBarIcons(darkIcons: Boolean, navDarkIcons: Boolean) {
     val view = LocalView.current
     if (view.isInEditMode) return
-    DisposableEffect(darkIcons) {
+    DisposableEffect(darkIcons, navDarkIcons) {
         val window = view.context.findActivity()?.window
         if (window == null) {
             onDispose {}
@@ -22,7 +22,7 @@ actual fun StatusBarIcons(darkIcons: Boolean) {
             val prevNav = controller.isAppearanceLightNavigationBars
             // isAppearanceLightBars = true → light bar background → DARK icons (visible on a light UI).
             controller.isAppearanceLightStatusBars = darkIcons
-            controller.isAppearanceLightNavigationBars = darkIcons
+            controller.isAppearanceLightNavigationBars = navDarkIcons
             onDispose {
                 controller.isAppearanceLightStatusBars = prevStatus
                 controller.isAppearanceLightNavigationBars = prevNav

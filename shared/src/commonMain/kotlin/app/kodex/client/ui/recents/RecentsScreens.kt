@@ -100,22 +100,28 @@ fun UpdatesList(
         groupedByDayAndSeries(
             groups,
             collapsed = collapsed,
+            // A series folds shut by default: the newest chapter is already on the header line, so the
+            // whole day's series fit on screen and only a series you actually want the backlog of costs
+            // a tap.
+            seriesCollapsedByDefault = true,
             header = { group ->
-                val first = group.items.first()
+                // Feed order is newest-first, so the first item is the latest chapter found.
+                val latest = group.items.first()
                 MediaRow(
-                    coverUrl = sourceCoverUrl(baseUrl, first.providerId ?: "", first.coverUrl),
+                    coverUrl = sourceCoverUrl(baseUrl, latest.providerId ?: "", latest.coverUrl),
                     apiKey = apiKey,
                     title = group.label,
-                    subtitle = null,
-                    caption = if (group.items.size > 1) "${group.items.size} new chapters" else null,
-                    onClick = first.seriesId?.let { sid -> { onOpenSeries(sid) } },
-                    onCoverClick = first.seriesId?.let { sid -> { onOpenSeries(sid) } },
+                    subtitle = latest.chapterName ?: "New chapter",
+                    caption = updateCaption(latest) +
+                        (if (group.items.size > 1) " · +${group.items.size - 1} more" else ""),
+                    onClick = latest.seriesId?.let { sid -> { onOpenSeries(sid) } },
+                    onCoverClick = latest.seriesId?.let { sid -> { onOpenSeries(sid) } },
                 )
             },
         ) { u ->
             ChapterSubRow(
                 title = u.chapterName ?: "New chapter",
-                caption = relativeTime(u.foundDate) + (if (u.bookId != null) " · downloaded" else ""),
+                caption = updateCaption(u),
                 onClick = {
                     when {
                         u.bookId != null -> onOpenReader(u.bookId)
@@ -128,6 +134,10 @@ fun UpdatesList(
         }
     }
 }
+
+/** When a chapter turned up, plus whether it is already on the server — same wording either way. */
+private fun updateCaption(u: UpdateDto): String =
+    relativeTime(u.foundDate) + (if (u.bookId != null) " · downloaded" else "")
 
 /**
  * History — everything read across all libraries, newest first, grouped by day. A `BOOK` entry
@@ -388,9 +398,10 @@ private fun <T> groupByDayThenSeries(
 }
 
 /**
- * Collapse state for the day and series headings. Session-local and keyed by group rather than by
- * index, so it survives the regrouping that every infinite-scroll page causes — and a day you folded
- * away doesn't greet you folded on a later visit.
+ * Fold state for the day and series headings. Holds the groups whose state is *flipped from their
+ * default*, so the same set works for a list that starts expanded and one that starts collapsed.
+ * Session-local and keyed by group rather than by index, so it survives the regrouping that every
+ * infinite-scroll page causes — and a day you folded away doesn't greet you folded on a later visit.
  */
 @Composable
 private fun rememberCollapsedGroups(): MutableState<Set<String>> = remember { mutableStateOf(emptySet()) }
@@ -405,11 +416,13 @@ private fun MutableState<Set<String>>.toggle(key: String) {
 /**
  * Emits day → series sections, each heading collapsible: a sticky [DayHeader] when the day changes,
  * then a [header] row per series carrying the cover, then a compact [row] per item beneath it.
+ * [seriesCollapsedByDefault] picks which way an untouched series starts.
  */
 @OptIn(ExperimentalFoundationApi::class)
 private inline fun <T> LazyListScope.groupedByDayAndSeries(
     groups: List<DayGroup<T>>,
     collapsed: MutableState<Set<String>>,
+    seriesCollapsedByDefault: Boolean = false,
     crossinline header: @Composable (SeriesGroup<T>) -> Unit,
     crossinline row: @Composable (T) -> Unit,
 ) {
@@ -427,7 +440,7 @@ private inline fun <T> LazyListScope.groupedByDayAndSeries(
         if (dayCollapsed) return@forEachIndexed
         day.series.forEachIndexed { si, group ->
             val key = seriesCollapseKey(day.day, group.key)
-            val seriesCollapsed = key in collapsed.value
+            val seriesCollapsed = (key in collapsed.value) != seriesCollapsedByDefault
             item(key = "series-$di-$si") {
                 CollapsibleSeriesHeader(collapsed = seriesCollapsed, onToggle = { collapsed.toggle(key) }) {
                     header(group)

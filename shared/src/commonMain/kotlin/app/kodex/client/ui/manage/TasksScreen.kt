@@ -46,6 +46,7 @@ import app.kodex.client.ui.EmptyMessage
 import app.kodex.client.ui.OnServerEvent
 import app.kodex.client.ui.TooltipIconButton
 import app.kodex.client.ui.catalog.ColorBadge
+import app.kodex.client.ui.ErrorState
 import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.friendlyMessage
 import app.kodex.client.ui.relativeTime
@@ -67,11 +68,15 @@ fun TasksScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) {
 
     var tasks by remember { mutableStateOf<List<TaskDto>?>(null) }
     var reload by remember { mutableIntStateOf(0) }
+    var loadError by remember { mutableStateOf<String?>(null) }
     var confirmCancelAll by remember { mutableStateOf(false) }
 
     LaunchedEffect(server?.id, reload) {
         val s = server ?: return@LaunchedEffect
-        tasks = runCatching { api.tasks(s.baseUrl, s.apiKey) }.getOrNull()
+        runCatching { api.tasks(s.baseUrl, s.apiKey) }.fold(
+            onSuccess = { tasks = it; loadError = null },
+            onFailure = { loadError = it.friendlyMessage() },
+        )
     }
 
     // The queue is exactly what SSE reports on, so it refreshes itself instead of polling.
@@ -106,7 +111,8 @@ fun TasksScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) {
                 )
             }
             when (val list = tasks) {
-                null -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
+                null -> if (loadError != null) ErrorState(loadError!!) { reload++ }
+                    else Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
                 else -> if (list.isEmpty()) {
                     EmptyMessage("The queue is empty.")
                 } else {

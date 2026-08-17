@@ -28,6 +28,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -42,6 +43,7 @@ import app.kodex.client.auth.SessionManager
 import app.kodex.client.network.KodexApi
 import app.kodex.client.network.NetworkSettingsDto
 import app.kodex.client.network.NetworkSettingsRequest
+import app.kodex.client.ui.InlineLoadError
 import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.friendlyMessage
 import app.kodex.client.ui.rememberSnackbar
@@ -65,10 +67,15 @@ fun NetworkSettingsScreen(session: SessionManager, api: KodexApi, onBack: () -> 
 
     var loaded by remember { mutableStateOf<NetworkSettingsDto?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    var reload by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(server?.id) {
+    LaunchedEffect(server?.id, reload) {
         val s = server ?: return@LaunchedEffect
-        loaded = runCatching { api.networkSettings(s.baseUrl, s.apiKey) }.getOrNull()
+        runCatching { api.networkSettings(s.baseUrl, s.apiKey) }.fold(
+            onSuccess = { loaded = it; loadError = null },
+            onFailure = { loadError = it.friendlyMessage() },
+        )
     }
 
     Scaffold(
@@ -82,7 +89,8 @@ fun NetworkSettingsScreen(session: SessionManager, api: KodexApi, onBack: () -> 
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp)) {
             val current = loaded
             if (current == null) {
-                CircularProgressIndicator(Modifier.padding(16.dp))
+                if (loadError != null) InlineLoadError(loadError!!) { reload++ }
+                else CircularProgressIndicator(Modifier.padding(16.dp))
                 return@Column
             }
 

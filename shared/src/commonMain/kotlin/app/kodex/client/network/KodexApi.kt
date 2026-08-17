@@ -194,6 +194,24 @@ class KodexApi(private val client: HttpClient) {
         }.body<PageResponse<SeriesDto>>().content
 
     /**
+     * The Libraries tab's tile: the [size] most recently touched series of a library, plus the library's
+     * total. One request covers both the cover mosaic and the count — the count alone is
+     * [seriesCountInLibrary], which is the same query with `size = 1` and the content thrown away.
+     */
+    suspend fun libraryPreview(
+        baseUrl: String,
+        apiKey: String,
+        libraryId: String,
+        size: Int = 4,
+    ): PageResponse<SeriesDto> =
+        client.get("$baseUrl/api/v1/series") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("libraryId", libraryId)
+            parameter("size", size)
+            parameter("sort", "lastModifiedDate,desc")
+        }.body()
+
+    /**
      * How many series a library holds. Asks for a single row and reads the page total, so it stays a
      * cheap count rather than pulling the whole library down to size it.
      */

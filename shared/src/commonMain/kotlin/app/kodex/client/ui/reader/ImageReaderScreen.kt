@@ -55,6 +55,7 @@ import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.ViewList
 import androidx.compose.material.icons.outlined.Book
 import androidx.compose.material.icons.outlined.Bookmark
+import androidx.compose.material.icons.outlined.BrokenImage
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
@@ -115,6 +116,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.Velocity
@@ -124,9 +126,10 @@ import app.kodex.client.auth.SessionManager
 import app.kodex.client.network.KodexApi
 import app.kodex.client.platform.StatusBarIcons
 import app.kodex.client.ui.collectAsStateSafe
+import app.kodex.client.ui.catalog.imageErrorText
 import coil3.SingletonImageLoader
-import coil3.compose.AsyncImage
 import coil3.compose.LocalPlatformContext
+import coil3.compose.SubcomposeAsyncImage
 import coil3.network.NetworkHeaders
 import coil3.network.httpHeaders
 import coil3.request.ImageRequest
@@ -749,6 +752,13 @@ private fun ZoomablePage(
 
 // ── Continuous (webtoon) ───────────────────────────────────────────────────────────────────────────
 
+/**
+ * Height a not-yet-measured page holds open in the continuous reader. A guess by necessity — the size
+ * is only known once the image decodes — so it is deliberately tall: too short and the scroll position
+ * lurches forward as each page grows into place, which is far more disorienting than a little slack.
+ */
+private val CONTINUOUS_PLACEHOLDER_HEIGHT = 560.dp
+
 @Composable
 private fun ContinuousReader(
     source: ReaderSource,
@@ -796,6 +806,7 @@ private fun ContinuousReader(
                 apiKey = source.apiKey,
                 contentScale = ContentScale.FillWidth,
                 modifier = Modifier.fillMaxWidth(),
+                placeholderHeight = CONTINUOUS_PLACEHOLDER_HEIGHT,
             )
         }
         source.nav?.next?.let { next ->
@@ -819,14 +830,93 @@ private fun ContinuousNextTile(title: String, onClick: () -> Unit) {
 
 // ── Shared image ───────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * One page of the reader.
+ *
+ * A failed page shows why and offers a retry rather than leaving the reader background bare — a
+ * blank page is indistinguishable from a slow one, so a chapter that cannot load at all looks
+ * identical to a chapter that is still loading. [retry] re-issues the request by changing the key
+ * the [ImageRequest] is remembered under, which is what makes Coil refetch rather than serve its
+ * cached failure.
+ */
 @Composable
-private fun PageImage(url: String, apiKey: String, contentScale: ContentScale, modifier: Modifier = Modifier) {
+private fun PageImage(
+    url: String,
+    apiKey: String,
+    contentScale: ContentScale,
+    modifier: Modifier = Modifier,
+    /**
+     * Height to hold open while the page has no intrinsic size yet. Needed only where the slot's own
+     * height is unbounded — the continuous reader's [LazyColumn] — because there a placeholder that
+     * wraps its content measures to the spinner, collapsing the row to nothing and then snapping to
+     * full page height on arrival. That shifts everything below it mid-scroll. Null elsewhere: the
+     * paged reader and the thumbnail grid already constrain height, so the placeholder just fills it.
+     */
+    placeholderHeight: Dp? = null,
+) {
     val context = LocalPlatformContext.current
-    val request = ImageRequest.Builder(context)
-        .data(url)
-        .httpHeaders(NetworkHeaders.Builder().set("X-API-Key", apiKey).build())
-        .build()
-    AsyncImage(model = request, contentDescription = null, contentScale = contentScale, modifier = modifier)
+    var attempt by remember(url) { mutableStateOf(0) }
+    val request = remember(url, attempt) {
+        ImageRequest.Builder(context)
+            .data(url)
+            .httpHeaders(NetworkHeaders.Builder().set("X-API-Key", apiKey).build())
+            // Only a retry gets its own cache key. The first attempt must keep the default (the URL)
+            // or it would miss everything the preloader put in the memory cache under that key.
+            .memoryCacheKey(if (attempt == 0) null else "$url#$attempt")
+            .build()
+    }
+    val slot = if (placeholderHeight != null) {
+        Modifier.fillMaxWidth().height(placeholderHeight)
+    } else {
+        Modifier.fillMaxSize()
+    }
+    SubcomposeAsyncImage(
+        model = request,
+        contentDescription = null,
+        contentScale = contentScale,
+        modifier = modifier,
+        loading = { PageSpinner(slot) },
+        error = { PageErrorPlate(slot, it.result.throwable.imageErrorText()) { attempt++ } },
+    )
+}
+
+/** Placeholder while a page is in flight. Muted white so it reads on any of the three backgrounds. */
+@Composable
+private fun PageSpinner(modifier: Modifier) {
+    Box(modifier, contentAlignment = Alignment.Center) {
+        CircularProgressIndicator(color = Color.White.copy(alpha = 0.7f))
+    }
+}
+
+/** Failure plate for a reader page: dark, centred, and readable over any page background. */
+@Composable
+private fun PageErrorPlate(modifier: Modifier, message: String, onRetry: () -> Unit) {
+    Box(modifier.padding(24.dp), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(
+                Icons.Outlined.BrokenImage,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.75f),
+                modifier = Modifier.size(44.dp),
+            )
+            Text(
+                "This page didn't load",
+                color = Color.White,
+                style = MaterialTheme.typography.titleSmall,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                message,
+                color = Color.White.copy(alpha = 0.7f),
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
+            )
+            TextButton(onClick = onRetry) { Text("Retry", color = Color.White) }
+        }
+    }
 }
 
 // ── Chrome ─────────────────────────────────────────────────────────────────────────────────────────

@@ -56,6 +56,7 @@ import app.kodex.client.network.KodexApi
 import app.kodex.client.network.UpdateUserLimitsRequest
 import app.kodex.client.network.UserDto
 import app.kodex.client.ui.catalog.ColorBadge
+import app.kodex.client.ui.ErrorState
 import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.friendlyMessage
 import app.kodex.client.ui.rememberSnackbar
@@ -81,6 +82,7 @@ fun UsersScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) {
 
     var users by remember { mutableStateOf<List<UserDto>?>(null) }
     var reload by remember { mutableIntStateOf(0) }
+    var loadError by remember { mutableStateOf<String?>(null) }
     var creating by remember { mutableStateOf(false) }
     var editingLimits by remember { mutableStateOf<UserDto?>(null) }
     var resettingPassword by remember { mutableStateOf<UserDto?>(null) }
@@ -88,7 +90,10 @@ fun UsersScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) {
 
     LaunchedEffect(server?.id, reload) {
         val s = server ?: return@LaunchedEffect
-        users = runCatching { api.users(s.baseUrl, s.apiKey) }.getOrNull()
+        runCatching { api.users(s.baseUrl, s.apiKey) }.fold(
+            onSuccess = { users = it; loadError = null },
+            onFailure = { loadError = it.friendlyMessage() },
+        )
     }
 
     /** Runs an admin action, reporting the server's own reason on failure (duplicate email, weak password…). */
@@ -114,7 +119,8 @@ fun UsersScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) {
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (val list = users) {
-                null -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
+                null -> if (loadError != null) ErrorState(loadError!!) { reload++ }
+                    else Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
                 else -> LazyColumn(Modifier.fillMaxSize()) {
                     items(list, key = { it.id }) { user ->
                         UserRow(

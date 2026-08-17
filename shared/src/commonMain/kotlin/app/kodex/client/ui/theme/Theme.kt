@@ -19,6 +19,7 @@ fun KodexTheme(settings: AppSettings, content: @Composable () -> Unit) {
     val theme by settings.appTheme.collectAsStateSafe()
     val amoled by settings.amoled.collectAsStateSafe()
     val dynamic by settings.dynamicColor.collectAsStateSafe()
+    val incognito by settings.incognitoMode.collectAsStateSafe()
 
     val dark = when (mode) {
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
@@ -30,7 +31,10 @@ fun KodexTheme(settings: AppSettings, content: @Composable () -> Unit) {
     val scheme = dynamicScheme ?: resolveColorScheme(theme, dark, amoled)
 
     // Match the system-bar icons to the theme so they stay visible: dark icons in light mode, light in dark.
-    app.kodex.client.platform.StatusBarIcons(darkIcons = !dark)
+    // Incognito is the exception: its banner runs its dark indigo under the status bar app-wide, so
+    // that bar always needs light icons. The navigation bar is untouched by the banner and keeps the
+    // theme's rule. Readers that hide the banner set their own appearance further down the tree.
+    app.kodex.client.platform.StatusBarIcons(darkIcons = !dark && !incognito, navDarkIcons = !dark)
 
     MaterialTheme(colorScheme = scheme, content = content)
 }

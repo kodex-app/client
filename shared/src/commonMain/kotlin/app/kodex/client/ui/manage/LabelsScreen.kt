@@ -41,7 +41,9 @@ import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
 import app.kodex.client.network.KodexApi
 import app.kodex.client.network.LabelDto
+import app.kodex.client.ui.ErrorState
 import app.kodex.client.ui.collectAsStateSafe
+import app.kodex.client.ui.friendlyMessage
 import app.kodex.client.ui.rememberSnackbar
 import kotlinx.coroutines.launch
 
@@ -55,13 +57,17 @@ fun LabelsScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) {
 
     var labels by remember { mutableStateOf<List<LabelDto>?>(null) }
     var reload by remember { mutableIntStateOf(0) }
+    var loadError by remember { mutableStateOf<String?>(null) }
     var editing by remember { mutableStateOf<LabelDto?>(null) } // rename target
     var creating by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf<LabelDto?>(null) }
 
     LaunchedEffect(server?.id, reload) {
         val s = server ?: return@LaunchedEffect
-        labels = runCatching { api.labels(s.baseUrl, s.apiKey) }.getOrNull()
+        runCatching { api.labels(s.baseUrl, s.apiKey) }.fold(
+            onSuccess = { labels = it; loadError = null },
+            onFailure = { loadError = it.friendlyMessage() },
+        )
     }
 
     fun act(message: String, block: suspend () -> Unit) {
@@ -86,7 +92,8 @@ fun LabelsScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) {
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (val list = labels) {
-                null -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
+                null -> if (loadError != null) ErrorState(loadError!!) { reload++ }
+                    else Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
                 else -> if (list.isEmpty()) {
                     Text("No labels yet. Tap + to create one.", Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {

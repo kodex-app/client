@@ -17,6 +17,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
+import app.kodex.client.ui.InlineLoadError
+import app.kodex.client.ui.friendlyMessage
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -53,13 +55,22 @@ fun BookmarksSheet(
     var reload by remember { mutableStateOf(0) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
-    LaunchedEffect(reload) { rows = runCatching { load() }.getOrDefault(emptyList()) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    // An empty fallback here claimed "No bookmarks yet." whenever the fetch failed — the one wrong
+    // answer that reads as reassuring, since it says your bookmarks are gone rather than unreachable.
+    LaunchedEffect(reload) {
+        runCatching { load() }.fold(
+            onSuccess = { rows = it; loadError = null },
+            onFailure = { loadError = it.friendlyMessage() },
+        )
+    }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
             Text("Bookmarks", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             when (val list = rows) {
-                null -> Box(Modifier.fillMaxWidth().padding(32.dp), Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp)) }
+                null -> if (loadError != null) InlineLoadError(loadError!!) { reload++ }
+                    else Box(Modifier.fillMaxWidth().padding(32.dp), Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp)) }
                 else -> if (list.isEmpty()) {
                     Text("No bookmarks yet.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 24.dp))
                 } else {
