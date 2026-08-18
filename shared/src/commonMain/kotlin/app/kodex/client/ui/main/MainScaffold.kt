@@ -224,6 +224,7 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
                 BottomTab.Libraries -> LibrariesTab(
                     session, api, appSettings,
                     onOpenLibrary = { backStack.add(DetailRoute.LibrarySeries(it)) },
+                    onArrange = { backStack.add(DetailRoute.Libraries) },
                 )
                 BottomTab.Recents -> RecentsTab(
                     session, api,

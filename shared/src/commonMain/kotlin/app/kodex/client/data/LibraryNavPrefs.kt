@@ -22,6 +22,12 @@ data class LibraryNavPrefs(
     val order: List<String> = emptyList(),
     val hidden: List<String> = emptyList(),
     val hiddenFromHome: List<String> = emptyList(),
+    /**
+     * Libraries the web UI hides from *every* aggregated list. No client screen honours this yet, but it
+     * is modelled so a save from here round-trips it: this whole preference is written back as one
+     * object, so a facet the class doesn't know about is a facet the next toggle silently deletes.
+     */
+    val hiddenEverywhere: List<String> = emptyList(),
 ) {
     fun isHidden(id: String) = id in hidden
     fun isHiddenFromHome(id: String) = id in hiddenFromHome

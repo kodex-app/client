@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
@@ -70,13 +72,17 @@ import kotlinx.coroutines.launch
 /** Gap between mosaic cells — a seam of card colour, enough to read as separate covers. */
 private val MosaicGap = 2.dp
 
-/** Lists the server's libraries as cover tiles; tapping one drills into its series grid. */
+/**
+ * Lists the server's libraries as cover tiles; tapping one drills into its series grid. [onArrange]
+ * opens the manage screen, where the order and the hidden flags this list obeys are edited.
+ */
 @Composable
 fun LibrariesTab(
     session: SessionManager,
     api: KodexApi,
     appSettings: AppSettings,
     onOpenLibrary: (LibraryDto) -> Unit,
+    onArrange: () -> Unit,
 ) {
     val server by session.activeServer.collectAsStateSafe()
     val storedSort by appSettings.librariesSort.collectAsStateSafe()
@@ -135,6 +141,7 @@ fun LibrariesTab(
                     kinds = kinds,
                     sort = sort,
                     onSort = { appSettings.setLibrariesSort(it.store()) },
+                    onArrange = onArrange,
                 )
                 if (shown.isEmpty()) {
                     // The toolbar stays put above this: the way out of an over-narrow filter is the
@@ -271,6 +278,7 @@ private fun LibrariesToolbar(
     kinds: List<String>,
     sort: LibrariesSort,
     onSort: (LibrariesSort) -> Unit,
+    onArrange: () -> Unit,
 ) {
     var filterMenu by remember { mutableStateOf(false) }
     var sortMenu by remember { mutableStateOf(false) }
@@ -382,6 +390,16 @@ private fun LibrariesToolbar(
                 }
             }
         }
+        // Reordering and hiding are lasting decisions about the list, not a view you flip in and out of,
+        // so they keep their own screen — but the way in belongs here, next to the list they rearrange,
+        // rather than only under More.
+        IconButton(onClick = onArrange) {
+            Icon(
+                Icons.Filled.Tune,
+                contentDescription = "Arrange libraries",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 
     // Media kinds come from the libraries themselves rather than a fixed list — a server that only holds
@@ -435,16 +453,6 @@ private fun LibraryTile(
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
             CoverMosaic(preview?.covers, apiKey, library.name)
-            // Only WEB is badged. LOCAL sat on nearly every row, so it read as decoration rather than
-            // information; marking the exception is what makes the badge worth looking at. Both ride on
-            // the artwork so the strip below belongs to the name alone.
-            Row(
-                Modifier.align(Alignment.TopStart).padding(8.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                if (library.isWeb) ColorBadge("WEB")
-                library.mediaKind?.takeIf { it.isNotBlank() }?.let { ColorBadge(it) }
-            }
             seriesCountLabel(preview?.total)?.let { label ->
                 // Over artwork, not beside it: the count is the one number worth reading at a glance,
                 // and the mosaic is the only surface with room to spare.
@@ -464,19 +472,27 @@ private fun LibraryTile(
                 }
             }
         }
-        // The name gets the strip to itself, at title weight: it is what you are actually picking
-        // between, and the mosaic already says everything the badges and the count used to say here.
-        Text(
-            library.name,
-            modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 12.dp),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
-            // Two lines either way, so tiles in a row keep the same height whatever their names do.
-            minLines = 2,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 12.dp)) {
+            // The name leads at title weight: it is what you are actually picking between, and the badges
+            // read as its caption rather than as competition.
+            Text(
+                library.name,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                // Two lines either way, so tiles in a row keep the same height whatever their names do.
+                minLines = 2,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.size(6.dp))
+            // Every library is one of LOCAL/WEB, so this line is never empty and the tiles keep matching
+            // heights without having to reserve space for it.
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                ColorBadge(if (library.isWeb) "WEB" else "LOCAL")
+                library.mediaKind?.takeIf { it.isNotBlank() }?.let { ColorBadge(it) }
+            }
+        }
     }
 }
 
