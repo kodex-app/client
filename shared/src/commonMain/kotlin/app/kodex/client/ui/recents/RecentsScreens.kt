@@ -147,6 +147,14 @@ fun UpdatesList(
 private fun updateCaption(u: UpdateDto): String =
     relativeTime(u.foundDate) + (if (u.bookId != null) " · downloaded" else "")
 
+/** What was read: the chapter's own title, falling back to the series when it hasn't got one. */
+private fun historyEntryTitle(h: HistoryEntryDto): String =
+    h.title?.takeIf { it.isNotBlank() } ?: h.seriesName
+
+/** When it was read and how far it got — the History counterpart of [updateCaption]. */
+private fun historyCaption(h: HistoryEntryDto): String =
+    "${relativeTime(h.readDate)} · ${if (h.completed) "Finished" else "Page ${h.page}"}"
+
 /**
  * History — everything read across all libraries, newest first, grouped by day. A `BOOK` entry
  * re-opens the local book reader; a `SOURCE` entry re-opens the streaming reader.
@@ -226,22 +234,27 @@ fun HistoryList(
             groupedByDayAndSeries(
                 groups,
                 collapsed = collapsed,
+                // Folded shut like Updates: the latest chapter you read is already on the header line,
+                // so a day's series fit on screen and only a backlog you want open costs a tap.
+                seriesCollapsedByDefault = true,
                 header = { group ->
-                    val first = group.items.first()
+                    // Newest-first, so the first entry is the last thing read in this series.
+                    val latest = group.items.first()
                     MediaRow(
-                        coverUrl = historyCover(baseUrl, first),
+                        coverUrl = historyCover(baseUrl, latest),
                         apiKey = apiKey,
                         title = group.label,
-                        subtitle = null,
-                        caption = if (group.items.size > 1) "${group.items.size} chapters" else null,
-                        onClick = first.seriesId?.let { sid -> { onOpenSeries(sid) } },
-                        onCoverClick = first.seriesId?.let { sid -> { onOpenSeries(sid) } },
+                        subtitle = historyEntryTitle(latest),
+                        caption = historyCaption(latest) +
+                            (if (group.items.size > 1) " · +${group.items.size - 1} more" else ""),
+                        onClick = latest.seriesId?.let { sid -> { onOpenSeries(sid) } },
+                        onCoverClick = latest.seriesId?.let { sid -> { onOpenSeries(sid) } },
                     )
                 },
             ) { h ->
                 ChapterSubRow(
-                    title = h.title?.takeIf { it.isNotBlank() } ?: h.seriesName,
-                    caption = "${relativeTime(h.readDate)} · ${if (h.completed) "Finished" else "Page ${h.page}"}",
+                    title = historyEntryTitle(h),
+                    caption = historyCaption(h),
                     onClick = { openHistoryEntry(h, onOpenReader, onOpenSourceReader, onOpenBrowseReader) },
                     onDelete = { pendingDelete = h },
                 )
