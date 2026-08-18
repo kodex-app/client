@@ -181,7 +181,7 @@ fun ReaderScreen(
                             ReaderChapterNav(
                                 prev = ref(siblings.getOrNull(idx - 1)),
                                 next = ref(siblings.getOrNull(idx + 1)),
-                                chapters = siblings.map { sib -> ReaderChapterItem(chapterTitle(sib), sib.id == book.id, { openBook(sib, ReaderEdge.FIRST) }) },
+                                chapters = siblings.map { sib -> readerChapterItem(sib, book.id) { openBook(sib, ReaderEdge.FIRST) } },
                             )
                         } else null
                         val bookLabel = book.title.ifBlank { book.numberDisplay ?: "Reading" }
@@ -216,6 +216,21 @@ fun ReaderScreen(
 }
 
 private fun chapterTitle(book: BookDto): String = book.title.ifBlank { book.numberDisplay ?: "Book" }
+
+/**
+ * A book-list row for [book], carrying the read state the list draws its markers from.
+ *
+ * `readProgress` is the list payload's own state — good enough for "read / where I left off"; the
+ * open book's live position comes from the reader itself, and that row is marked by [currentId]
+ * regardless of what the list says.
+ */
+private fun readerChapterItem(book: BookDto, currentId: String, open: () -> Unit) = ReaderChapterItem(
+    title = chapterTitle(book),
+    active = book.id == currentId,
+    read = book.readProgress?.completed == true,
+    progressPage = book.readProgress?.page?.takeIf { book.readProgress?.completed != true },
+    open = open,
+)
 
 /** Black full-screen shell with a persistent back button (for loading/error/gate states). */
 @Composable
@@ -279,7 +294,7 @@ private fun rememberEbookSource(
             prev = ref(siblings.getOrNull(idx - 1)),
             next = ref(siblings.getOrNull(idx + 1)),
             chapters = siblings.map { sib ->
-                ReaderChapterItem(chapterTitle(sib), sib.id == book.id) { onOpenSibling(sib, ReaderEdge.FIRST) }
+                readerChapterItem(sib, book.id) { onOpenSibling(sib, ReaderEdge.FIRST) }
             },
         )
     } else {

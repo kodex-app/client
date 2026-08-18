@@ -105,6 +105,7 @@ fun DetailHost(
     appSettings: AppSettings,
     onOpenSeries: (String) -> Unit,
     onOpenBook: (String) -> Unit,
+    onOpenLibrary: (LibraryDto) -> Unit,
     onOpenSourceSeries: (SourceDescriptor, SourceSearchResult) -> Unit,
     onOpenReader: (String) -> Unit,
     onOpenReaderAt: (bookId: String, page: Int) -> Unit,
@@ -174,7 +175,7 @@ fun DetailHost(
             AboutScreen(onBack)
 
         is DetailRoute.Libraries ->
-            LibrariesScreen(session, api, onBack)
+            LibrariesScreen(session, api, onBack, onOpenLibrary = onOpenLibrary)
 
         is DetailRoute.Labels ->
             LabelsScreen(session, api, onBack)

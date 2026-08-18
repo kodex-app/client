@@ -25,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -34,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.kodex.client.network.PageResponse
+import app.kodex.client.ui.nav.retain
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -46,9 +48,18 @@ import kotlinx.coroutines.launch
  * The reusable Phase-0 enabler behind Updates, History, and Downloads.
  */
 class PagedListState<T>(
-    private val scope: CoroutineScope,
-    private val fetch: suspend (page: Int) -> PageResponse<T>,
+    scope: CoroutineScope,
+    fetch: suspend (page: Int) -> PageResponse<T>,
 ) {
+    /**
+     * Both are rebound by [rememberPagedList] on every composition, because a *retained* list outlives
+     * the composition that created it: being covered by a detail screen cancels that composition's
+     * scope, so keeping the original one would leave refresh/loadMore silently doing nothing once the
+     * screen came back. The fetch lambda is rebound with it, so it never closes over a stale session.
+     */
+    internal var scope: CoroutineScope = scope
+    internal var fetch: suspend (page: Int) -> PageResponse<T> = fetch
+
     val items = emptyList<T>().toMutableStateList()
 
     var loading by mutableStateOf(false)
@@ -155,10 +166,32 @@ class PagedListState<T>(
     }
 }
 
+/**
+ * The [PagedListState] for a screen, loaded once.
+ *
+ * [retainKey] opts the loaded pages into surviving this screen being covered by another one (a
+ * detail screen, the reader): with it set, coming back keeps the rows that were already loaded
+ * instead of re-fetching page 0, which is what a retained scroll position needs to still mean
+ * anything. The string only has to be unique within the screen. See `nav/RetainedState.kt`.
+ */
 @Composable
-fun <T> rememberPagedList(key: Any?, fetch: suspend (page: Int) -> PageResponse<T>): PagedListState<T> {
+fun <T> rememberPagedList(
+    key: Any?,
+    retainKey: String? = null,
+    fetch: suspend (page: Int) -> PageResponse<T>,
+): PagedListState<T> {
     val scope = rememberCoroutineScope()
-    val state = remember(key) { PagedListState(scope, fetch) }
+    // [key] is folded into the retained entry rather than passed to `retain`, so switching server
+    // still starts a fresh list instead of showing the previous server's rows.
+    val state = if (retainKey == null) {
+        remember(key) { PagedListState(scope, fetch) }
+    } else {
+        retain("$retainKey/$key") { PagedListState(scope, fetch) }
+    }
+    SideEffect {
+        state.scope = scope
+        state.fetch = fetch
+    }
     LaunchedEffect(state) { state.start() }
     return state
 }

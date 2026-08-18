@@ -1,5 +1,6 @@
 package app.kodex.client.ui.manage
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -69,7 +70,13 @@ import kotlinx.coroutines.launch
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LibrariesScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) {
+fun LibrariesScreen(
+    session: SessionManager,
+    api: KodexApi,
+    onBack: () -> Unit,
+    /** Open a library's series list. The row body is the tap target; the menu keeps the admin actions. */
+    onOpenLibrary: (LibraryDto) -> Unit = {},
+) {
     val server by session.activeServer.collectAsStateSafe()
     val snackbar = rememberSnackbar()
     val scope = rememberCoroutineScope()
@@ -178,6 +185,7 @@ fun LibrariesScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) 
                             onAnalyze = { act("Analyze queued") { val s = server!!; api.analyzeLibrary(s.baseUrl, s.apiKey, lib.id) } },
                             onEdit = { editTarget = lib },
                             onDelete = { confirmDelete = lib },
+                            onOpen = { onOpenLibrary(lib) },
                         )
                         HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
                     }
@@ -238,11 +246,15 @@ private fun LibraryRow(
     onAnalyze: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onOpen: () -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
     // A hidden library still lists here (this is where you un-hide it) but reads back visually.
     val nameColor = if (hidden) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
-    Row(Modifier.fillMaxWidth().padding(start = 16.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(start = 16.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Column(Modifier.weight(1f)) {
             Text(lib.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, color = nameColor)
             Spacer(Modifier.size(2.dp))

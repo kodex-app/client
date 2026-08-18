@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -57,6 +58,7 @@ import app.kodex.client.ui.isoDayKey
 import app.kodex.client.ui.main.OpenBrowseReader
 import app.kodex.client.ui.main.OpenSourceReader
 import app.kodex.client.ui.main.SourceSeriesContext
+import app.kodex.client.ui.nav.retain
 import app.kodex.client.ui.nowIsoUtc
 import app.kodex.client.ui.relativeTime
 import kotlinx.coroutines.launch
@@ -78,9 +80,11 @@ fun UpdatesList(
     val baseUrl = current.baseUrl
     val apiKey = current.apiKey
 
-    val paged = app.kodex.client.ui.rememberPagedList(current.id) { page ->
+    val paged = app.kodex.client.ui.rememberPagedList(current.id, retainKey = "updates") { page ->
         api.updates(baseUrl, apiKey, page)
     }
+    // Retained with the rows, so opening a chapter and coming back lands where you left off.
+    val listState = retain("updates:scroll") { LazyListState() }
 
     // Live: new chapters arrive when a WEB library finishes updating or books are imported.
     app.kodex.client.ui.OnServerEvent(
@@ -88,8 +92,12 @@ fun UpdatesList(
         app.kodex.client.network.ServerEvent.BOOK_ADDED,
     ) { paged.silentRefresh() }
 
-    val collapsed = rememberCollapsedGroups()
-    PagedList(paged, emptyText = "No updates yet.\nFollow a series in Browse to see new chapters here.") { items ->
+    val collapsed = rememberCollapsedGroups("updates")
+    PagedList(
+        paged,
+        emptyText = "No updates yet.\nFollow a series in Browse to see new chapters here.",
+        listState = listState,
+    ) { items ->
         val groups = groupByDayThenSeries(
             items,
             dayKeyOf = { isoDayKey(it.foundDate) },
@@ -162,11 +170,12 @@ fun HistoryList(
     var pendingClear by remember { mutableStateOf<PendingClear?>(null) }
     var pendingDelete by remember { mutableStateOf<HistoryEntryDto?>(null) }
     var rangePicker by remember { mutableStateOf(false) }
-    val collapsed = rememberCollapsedGroups()
+    val collapsed = rememberCollapsedGroups("history")
 
-    val paged = app.kodex.client.ui.rememberPagedList(current.id) { page ->
+    val paged = app.kodex.client.ui.rememberPagedList(current.id, retainKey = "history") { page ->
         api.history(baseUrl, apiKey, page)
     }
+    val listState = retain("history:scroll") { LazyListState() }
 
     fun clear(from: String?, to: String?, label: String) {
         scope.launch {
@@ -206,7 +215,7 @@ fun HistoryList(
             }
         }
 
-        PagedList(paged, emptyText = "No reading history yet.") { items ->
+        PagedList(paged, emptyText = "No reading history yet.", listState = listState) { items ->
             val groups = groupByDayThenSeries(
                 items,
                 dayKeyOf = { isoDayKey(it.readDate) },
@@ -402,9 +411,13 @@ private fun <T> groupByDayThenSeries(
  * default*, so the same set works for a list that starts expanded and one that starts collapsed.
  * Session-local and keyed by group rather than by index, so it survives the regrouping that every
  * infinite-scroll page causes — and a day you folded away doesn't greet you folded on a later visit.
+ *
+ * Retained per list ([retainKey]), so a group you opened is still open when you come back from
+ * whatever you tapped inside it.
  */
 @Composable
-private fun rememberCollapsedGroups(): MutableState<Set<String>> = remember { mutableStateOf(emptySet()) }
+private fun rememberCollapsedGroups(retainKey: String): MutableState<Set<String>> =
+    retain("$retainKey:collapsed") { mutableStateOf(emptySet()) }
 
 private fun dayCollapseKey(day: String) = "d:$day"
 private fun seriesCollapseKey(day: String, seriesKey: String) = "s:$day:$seriesKey"

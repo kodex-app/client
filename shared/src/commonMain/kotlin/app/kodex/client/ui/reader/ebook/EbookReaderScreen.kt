@@ -554,6 +554,7 @@ fun EbookReaderScreen(
                     siblingTitle = target.title,
                     seriesTitle = source.title,
                     onContinue = { confirmTransition() },
+                    background = pageBg,
                     modifier = Modifier.pointerInput(boundary, commitThreshold) {
                         var drag = 0f
                         detectHorizontalDragGestures(

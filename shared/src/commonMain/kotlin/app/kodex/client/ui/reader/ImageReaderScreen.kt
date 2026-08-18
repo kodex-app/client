@@ -49,6 +49,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
@@ -175,7 +177,20 @@ class ReaderChapterRef(
 )
 
 /** One entry in the chapter-list menu. */
-class ReaderChapterItem(val title: String, val active: Boolean, val open: () -> Unit)
+/**
+ * One row of the reader's book list.
+ *
+ * [read] and [progressPage] are what the row shows about your history with that book: finished books
+ * are ticked and dimmed, started ones say where you left off. A live source list carries no per-user
+ * state, so both stay unset there and every row reads as unvisited — which is accurate, not a bug.
+ */
+class ReaderChapterItem(
+    val title: String,
+    val active: Boolean,
+    val read: Boolean = false,
+    val progressPage: Int? = null,
+    val open: () -> Unit,
+)
 
 /** Cross-chapter navigation context for the reader. */
 class ReaderChapterNav(
@@ -618,6 +633,7 @@ private fun PagedReader(
                 siblingTitle = source.nav?.prev?.title.orEmpty(),
                 seriesTitle = source.title,
                 onContinue = { onConfirmBoundary(Boundary.START) },
+                background = bgColor(prefs.bg),
             )
 
             slot >= leading + contentSlots -> ChapterTransitionPage(
@@ -626,6 +642,7 @@ private fun PagedReader(
                 siblingTitle = source.nav?.next?.title.orEmpty(),
                 seriesTitle = source.title,
                 onContinue = { onConfirmBoundary(Boundary.END) },
+                background = bgColor(prefs.bg),
             )
 
             double -> {
@@ -1216,22 +1233,72 @@ internal fun IncognitoBadge(modifier: Modifier = Modifier) {
 }
 
 
-/** Chapter/book list in a bottom sheet; tapping a row jumps to that chapter. */
+/**
+ * Chapter/book list in a bottom sheet; tapping a row jumps to that chapter.
+ *
+ * The list opens scrolled to the book you are in, since a long series otherwise opens at #1 with the
+ * current book far off-screen. Each row carries its state: the current one is tinted and labelled,
+ * finished ones are ticked and dimmed, and a started one says which page it stopped on.
+ */
 @Composable
 internal fun ChapterListSheet(chapters: List<ReaderChapterItem>, onClose: () -> Unit) {
+    val activeIndex = chapters.indexOfFirst { it.active }
+    // Two rows above the active one, so it lands with context rather than pinned to the top edge.
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = (activeIndex - 2).coerceAtLeast(0))
     Column(Modifier.fillMaxWidth().heightIn(max = 480.dp).padding(bottom = 24.dp)) {
         Text("Books", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 8.dp))
-        LazyColumn {
-            items(chapters) { ch ->
+        LazyColumn(state = listState) {
+            items(chapters) { ch -> ChapterListRow(ch, onClose) }
+        }
+    }
+}
+
+/** One book row: state marker, title, and a status line for anything but a plain unread book. */
+@Composable
+private fun ChapterListRow(ch: ReaderChapterItem, onClose: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    // Read rows step back so the unread ones ahead of you are what the eye lands on.
+    val titleColor = when {
+        ch.active -> scheme.primary
+        ch.read -> scheme.onSurface.copy(alpha = 0.5f)
+        else -> scheme.onSurface
+    }
+    val status = when {
+        ch.active -> "Reading now"
+        ch.read -> "Read"
+        ch.progressPage != null && ch.progressPage > 0 -> "In progress · page ${ch.progressPage}"
+        else -> null
+    }
+    Row(
+        Modifier.fillMaxWidth()
+            .background(if (ch.active) scheme.primary.copy(alpha = 0.10f) else Color.Transparent)
+            .clickable { if (!ch.active) ch.open(); onClose() }
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // A fixed-width marker column so titles stay aligned whether or not a row has a marker.
+        Box(Modifier.width(28.dp), contentAlignment = Alignment.CenterStart) {
+            when {
+                ch.active -> Icon(Icons.Filled.Circle, contentDescription = null, tint = scheme.primary, modifier = Modifier.size(12.dp))
+                ch.read -> Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = scheme.onSurface.copy(alpha = 0.45f), modifier = Modifier.size(16.dp))
+                ch.progressPage != null && ch.progressPage > 0 ->
+                    Icon(Icons.Filled.Circle, contentDescription = null, tint = scheme.onSurface.copy(alpha = 0.28f), modifier = Modifier.size(8.dp))
+            }
+        }
+        Column(Modifier.weight(1f)) {
+            Text(
+                ch.title.ifBlank { "—" },
+                color = titleColor,
+                fontWeight = if (ch.active) FontWeight.SemiBold else FontWeight.Normal,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (status != null) {
                 Text(
-                    ch.title.ifBlank { "—" },
-                    color = if (ch.active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                    fontWeight = if (ch.active) FontWeight.SemiBold else FontWeight.Normal,
-                    style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 2,
-                    modifier = Modifier.fillMaxWidth()
-                        .clickable { if (!ch.active) ch.open(); onClose() }
-                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    status,
+                    color = if (ch.active) scheme.primary else scheme.onSurfaceVariant.copy(alpha = 0.8f),
+                    style = MaterialTheme.typography.labelSmall,
                 )
             }
         }

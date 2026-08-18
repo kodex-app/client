@@ -12,15 +12,18 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
 import app.kodex.client.network.KodexApi
+import app.kodex.client.ui.nav.retain
 import app.kodex.client.ui.recents.HistoryList
 import app.kodex.client.ui.recents.UpdatesList
 import kotlinx.coroutines.launch
@@ -36,8 +39,14 @@ fun RecentsTab(
     onOpenBrowseReader: OpenBrowseReader,
     onOpenSeries: (String) -> Unit,
 ) {
+    // Which of the two lists you were on has to outlive opening something from it: the tab area is
+    // dropped while a detail screen is open, so a plain `remember` sent you back to Updates.
+    val selected = retain("recents:tab") { mutableStateOf(0) }
     // The segmented button and the pager share one source of truth, so tapping and swiping agree.
-    val pagerState = rememberPagerState(0) { 2 }
+    val pagerState = rememberPagerState(selected.value) { 2 }
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.currentPage }.collect { selected.value = it }
+    }
     val scope = rememberCoroutineScope()
     val showHistory = pagerState.currentPage == 1
 

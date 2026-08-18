@@ -47,8 +47,17 @@ private data class ChapterTarget(val id: String, val name: String?, val edge: Re
  * A sibling chapter for reader navigation, normalised so both paths into this screen feed one nav
  * builder: a Browse read supplies the source's live chapter list, a followed series its stored
  * (tracked-catalogue) one.
+ *
+ * [read]/[page] are the per-user state the book list marks rows with; the live source list carries
+ * none, so they stay unset for a Browse read.
  */
-private data class NavChapter(val id: String, val name: String, val number: Double?)
+private data class NavChapter(
+    val id: String,
+    val name: String,
+    val number: Double?,
+    val read: Boolean = false,
+    val page: Int? = null,
+)
 
 /**
  * Streams a content-source chapter's pages directly — no download (the Mihon-style path). Feeds the
@@ -91,7 +100,7 @@ fun SourceReaderScreen(
                         .map { NavChapter(it.externalId, it.name, it.number) }
                 seriesId != null ->
                     api.seriesChapters(s.baseUrl, s.apiKey, seriesId)
-                        .map { NavChapter(it.chapterId, it.name.orEmpty(), it.number) }
+                        .map { NavChapter(it.chapterId, it.name.orEmpty(), it.number, read = it.read, page = it.page) }
                 else -> emptyList()
             }
         }.getOrDefault(emptyList())
@@ -309,7 +318,12 @@ private fun rememberChapterNav(
         prev = ref(sorted.getOrNull(index + 1)),
         next = ref(sorted.getOrNull(index - 1)),
         chapters = sorted.map { c ->
-            ReaderChapterItem(label(c), active = c.id == currentId) { open(c, ReaderEdge.FIRST) }
+            ReaderChapterItem(
+                title = label(c),
+                active = c.id == currentId,
+                read = c.read,
+                progressPage = c.page?.takeIf { !c.read },
+            ) { open(c, ReaderEdge.FIRST) }
         },
     )
 }

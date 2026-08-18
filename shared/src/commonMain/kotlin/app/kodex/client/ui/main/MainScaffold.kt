@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
 import app.kodex.client.data.AppSettings
 import app.kodex.client.network.KodexApi
+import app.kodex.client.network.LibraryDto
 import app.kodex.client.platform.AppBackHandler
 import app.kodex.client.platform.nowMillis
 import app.kodex.client.ui.collectAsStateSafe
@@ -103,6 +104,7 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
 
     val openSeries: (String) -> Unit = { backStack.add(DetailRoute.SeriesDetail(it)) }
     val openBook: (String) -> Unit = { backStack.add(DetailRoute.BookDetail(it)) }
+    val openLibrary: (LibraryDto) -> Unit = { backStack.add(DetailRoute.LibrarySeries(it)) }
 
     /**
      * Open the series a reader belongs to, *on top of* the reader.
@@ -149,6 +151,7 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
             appSettings = appSettings,
             onOpenSeries = openSeries,
             onOpenBook = openBook,
+            onOpenLibrary = openLibrary,
             onOpenSourceSeries = { source, seed -> backStack.add(DetailRoute.SourceSeries(source, seed)) },
             onOpenReader = { backStack.add(DetailRoute.Reader(it, incognito = incognito)) },
             onOpenReaderAt = { bookId, page -> backStack.add(DetailRoute.Reader(bookId, page, incognito = incognito)) },
@@ -223,7 +226,7 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
                 )
                 BottomTab.Libraries -> LibrariesTab(
                     session, api, appSettings,
-                    onOpenLibrary = { backStack.add(DetailRoute.LibrarySeries(it)) },
+                    onOpenLibrary = openLibrary,
                     onArrange = { backStack.add(DetailRoute.Libraries) },
                 )
                 BottomTab.Recents -> RecentsTab(
