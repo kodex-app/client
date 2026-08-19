@@ -36,6 +36,8 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.outlined.DoneAll
+import androidx.compose.material.icons.outlined.RemoveDone
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -90,6 +92,8 @@ import app.kodex.client.ui.catalog.bookCoverUrl
 import app.kodex.client.ui.catalog.seriesCoverUrl
 import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.friendlyMessage
+import app.kodex.client.ui.icons.DonePrev
+import app.kodex.client.ui.icons.UndonePrev
 import app.kodex.client.ui.main.OpenSourceReader
 import app.kodex.client.ui.rememberSelection
 import app.kodex.client.ui.rememberSnackbar
@@ -311,8 +315,17 @@ fun SeriesDetailScreen(
                 if (selection.active) {
                     SelectionBottomBar(
                         isWeb = isWeb,
+                        // "Previous" needs one anchor to be relative to, so the menu is offered only
+                        // while exactly one entry is selected (the same rule Mihon uses).
+                        showPrevious = selection.count == 1,
                         onMarkRead = { markSelected(api, s, content, selection, read = true, ::runAction) },
                         onMarkUnread = { markSelected(api, s, content, selection, read = false, ::runAction) },
+                        onMarkPreviousRead = {
+                            markPrevious(api, s, content, selection, visibleChapters, read = true, snackbar, ::runAction)
+                        },
+                        onMarkPreviousUnread = {
+                            markPrevious(api, s, content, selection, visibleChapters, read = false, snackbar, ::runAction)
+                        },
                         onDownload = { downloadSelected(api, s, content, selection, snackbar, scope) { reload() } },
                     )
                 }
@@ -479,17 +492,34 @@ private fun ErrorRetry(message: String, onRetry: () -> Unit) {
 // ── Selection bars ─────────────────────────────────────────────────────────────────────────────
 
 
-/** Contextual bottom action bar for multi-select — the bulk functions as icon buttons. */
+/**
+ * Contextual bottom action bar for multi-select — the bulk functions as icon buttons.
+ *
+ * The two "previous" actions sit next to their plain counterparts, before Download. They only mean
+ * anything against a single anchor, so they appear at [showPrevious] and their tooltips carry the
+ * distinction the glyphs alone can't.
+ */
 @Composable
 private fun SelectionBottomBar(
     isWeb: Boolean,
+    showPrevious: Boolean,
     onMarkRead: () -> Unit,
     onMarkUnread: () -> Unit,
+    onMarkPreviousRead: () -> Unit,
+    onMarkPreviousUnread: () -> Unit,
     onDownload: () -> Unit,
 ) {
     SelectionActionBar {
-        TooltipIconButton("Mark as read", onMarkRead) { Icon(Icons.Filled.Check, contentDescription = "Mark as read") }
-        TooltipIconButton("Mark as unread", onMarkUnread) { Icon(Icons.Filled.MarkAsUnread, contentDescription = "Mark as unread") }
+        TooltipIconButton("Mark as read", onMarkRead) { Icon(Icons.Outlined.DoneAll, contentDescription = "Mark as read") }
+        TooltipIconButton("Mark as unread", onMarkUnread) { Icon(Icons.Outlined.RemoveDone, contentDescription = "Mark as unread") }
+        if (showPrevious) {
+            TooltipIconButton("Mark previous as read", onMarkPreviousRead) {
+                Icon(DonePrev, contentDescription = "Mark previous as read")
+            }
+            TooltipIconButton("Mark previous as unread", onMarkPreviousUnread) {
+                Icon(UndonePrev, contentDescription = "Mark previous as unread")
+            }
+        }
         if (isWeb) {
             TooltipIconButton("Download", onDownload) { Icon(Icons.Filled.Download, contentDescription = "Download") }
         }
@@ -504,11 +534,65 @@ private fun markSelected(
     selection: SelectionState<String>,
     read: Boolean,
     run: (String?, suspend () -> Unit) -> Unit,
+) = markIds(api, server, content, selection.selected.toList(), read, if (read) "Marked read" else "Marked unread", run)
+
+/**
+ * Mark everything *before* the selected entry — the "I started this series at book 40" catch-up, and
+ * its undo. The anchor itself is left alone; the plain "Mark as read" next to it covers that.
+ */
+private fun markPrevious(
+    api: KodexApi,
+    server: app.kodex.client.data.model.ServerConnection?,
+    content: SeriesContent?,
+    selection: SelectionState<String>,
+    visibleChapters: List<SeriesChapterDto>,
+    read: Boolean,
+    snackbar: app.kodex.client.ui.SnackbarController?,
+    run: (String?, suspend () -> Unit) -> Unit,
+) {
+    val ids = idsBeforeSelection(content, selection, visibleChapters)
+    if (ids.isEmpty()) {
+        snackbar?.show("Nothing comes before this one.")
+        return
+    }
+    markIds(api, server, content, ids, read, "Marked ${ids.size} earlier as ${if (read) "read" else "unread"}", run)
+}
+
+/**
+ * The entries before the selected one, in the series own ascending order rather than the current view
+ * order — "previous" means earlier in the series, not further up a list you happen to have reversed.
+ * Empty unless exactly one entry is selected, and empty when that one is already the first.
+ */
+private fun idsBeforeSelection(
+    content: SeriesContent?,
+    selection: SelectionState<String>,
+    visibleChapters: List<SeriesChapterDto>,
+): List<String> {
+    content ?: return emptyList()
+    val anchor = selection.selected.singleOrNull() ?: return emptyList()
+    // Chapters go by the filtered list, the same one "select all" operates on: a scanlator filter hides
+    // entries, and silently marking hidden ones would be a surprise.
+    val ordered = if (content.detail.isWeb) {
+        visibleChapters.sortedWith(compareBy(nullsLast()) { it.number }).map { it.chapterId }
+    } else {
+        content.books.sortedBy { it.number }.map { it.id }
+    }
+    val at = ordered.indexOf(anchor)
+    return if (at <= 0) emptyList() else ordered.subList(0, at)
+}
+
+/** The one path that marks a set of ids read/unread, whichever kind of series this is. */
+private fun markIds(
+    api: KodexApi,
+    server: app.kodex.client.data.model.ServerConnection?,
+    content: SeriesContent?,
+    ids: List<String>,
+    read: Boolean,
+    label: String,
+    run: (String?, suspend () -> Unit) -> Unit,
 ) {
     server ?: return; content ?: return
-    val ids = selection.selected.toList()
     if (ids.isEmpty()) return
-    val label = if (read) "Marked read" else "Marked unread"
     if (content.detail.isWeb) {
         run(label) { api.markChaptersRead(server.baseUrl, server.apiKey, content.detail.id, ids, read) }
     } else {

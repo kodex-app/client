@@ -48,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
@@ -308,7 +309,7 @@ private fun IncognitoBanner(onTurnOff: () -> Unit) {
             overflow = TextOverflow.Ellipsis,
         )
         TextButton(onClick = onTurnOff, colors = ButtonDefaults.textButtonColors(contentColor = Color.White)) {
-            Text("Turn off", style = MaterialTheme.typography.labelLarge)
+            Text("Turn off", style = MaterialTheme.typography.labelLarge, textDecoration = TextDecoration.Underline)
         }
     }
 }
