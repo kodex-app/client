@@ -232,6 +232,9 @@ fun EbookReaderScreen(
         if (handle != null) return@LaunchedEffect
         val config = buildJsonObject {
             put("format", source.format)
+            // Only a source chapter's images are remote (and only it names a provider to fetch them
+            // as), so only it asks the page to route them through the host's proxy.
+            put("imageProxy", source.origin is EbookOrigin.SourceChapter)
             put("initialLocator", source.initialLocator)
             put("initialFraction", source.initialFraction)
             putJsonObject("prefs") { p.putInto(this) }
@@ -312,6 +315,15 @@ fun EbookReaderScreen(
                     "ArrowLeft" -> events.trySend(SYNTHETIC_PREV)
                     "ArrowRight", " " -> events.trySend(SYNTHETIC_NEXT)
                     "Escape" -> if (transition != null) transition = null else onBack()
+                }
+
+                // A swipe that ran off the first or last page. foliate clamps that gesture to the
+                // book's own bounds and turns nothing, so the page hands the attempt over here —
+                // where the neighbouring chapters are known — down the same path as a key or a
+                // toolbar press.
+                "edge" -> when (obj["dir"]?.jsonPrimitive?.content) {
+                    "next" -> events.trySend(SYNTHETIC_NEXT)
+                    "prev" -> events.trySend(SYNTHETIC_PREV)
                 }
 
                 "error" -> failure = obj["message"]?.jsonPrimitive?.content ?: "Couldn't open this book."

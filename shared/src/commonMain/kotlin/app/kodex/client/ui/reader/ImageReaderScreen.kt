@@ -256,7 +256,10 @@ fun ImageReaderScreen(
     }
 
     fun update(next: ReaderPrefs) {
-        if (next.mode == MODE_AUTO) autoMode = null // re-probe when Auto reselected
+        // Re-arm detection only when switching *into* Auto. Clearing it for edits made while already
+        // in Auto (background, fit, ...) left effectiveMode null without changing the probe effect's
+        // keys, so nothing re-ran it and the reader sat on its loading spinner.
+        if (next.mode == MODE_AUTO && prefs?.mode != MODE_AUTO) autoMode = null
         prefs = next
         val s = server ?: return
         scope.launch { runCatching { saveReaderOverride(api, s.baseUrl, s.apiKey, source.kind, source.seriesId, next) } }
@@ -517,8 +520,9 @@ fun ImageReaderScreen(
                     val s = server ?: return@SettingsSheet
                     scope.launch {
                         runCatching { resetReaderOverride(api, s.baseUrl, s.apiKey, source.kind, source.seriesId) }
+                        val wasAuto = prefs?.mode == MODE_AUTO
                         prefs = defaultPrefs
-                        if (defaultPrefs.mode == MODE_AUTO) autoMode = null
+                        if (defaultPrefs.mode == MODE_AUTO && !wasAuto) autoMode = null
                     }
                     settingsOpen = false
                 },

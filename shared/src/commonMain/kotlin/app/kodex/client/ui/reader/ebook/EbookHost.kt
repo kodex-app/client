@@ -5,6 +5,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsBytes
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.encodeURLParameter
@@ -13,6 +14,7 @@ import io.ktor.server.cio.CIO
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.request.receiveText
+import io.ktor.server.response.header
 import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.RoutingContext
@@ -174,6 +176,22 @@ object EbookHost {
             proxy(ctx, "${ctx.baseUrl}/api/v1/fonts/${id.encodeURLQueryComponent()}/file")
         }
 
+        // A source chapter's illustrations aren't in the EPUB — the chapter HTML points at the
+        // source's own CDN, so loading them straight from the page asks the *device* to reach a host
+        // it frequently can't: hotlink-protected (Hako's images want the site as Referer), blocked on
+        // the network the phone is on, or only reachable through the proxy the server is configured
+        // with. `reader.js` points them here instead, and the core fetches them exactly as it already
+        // fetches source covers.
+        get("/{token}/image") {
+            val ctx = session() ?: return@get notFound()
+            val url = call.request.queryParameters["url"] ?: return@get notFound()
+            val target = ctx.sourceImageUrl(url) ?: return@get notFound()
+            // Sections are re-rendered constantly (every settings change reloads them); without this
+            // every re-render would pull the illustrations down the wire again.
+            call.response.header(HttpHeaders.CacheControl, "private, max-age=3600")
+            proxy(ctx, target)
+        }
+
         // The page's only way back into Kotlin: `ready`, `relocate` and `error`, posted as JSON.
         post("/{token}/event") {
             val ctx = session() ?: return@post notFound()
@@ -242,6 +260,20 @@ private fun EbookHostSession.resourceUrl(href: String): String = when (origin) {
     is EbookOrigin.SourceChapter ->
         "$baseUrl/api/v1/content-sources/${origin.providerId.encodeURLQueryComponent()}/chapter-resource" +
             "?chapterId=${origin.chapterId.encodeURLParameter()}&href=${href.encodeURLParameter()}"
+}
+
+/**
+ * One of the chapter's remote illustrations, routed through the core's source-image proxy — the same
+ * endpoint source covers go through, which fetches with the source's Referer/User-Agent over the
+ * server's configured HTTP client. Null (→ 404) unless this is a source chapter with an absolute
+ * http(s) image: a library book's images live inside its own file, and there'd be no source to fetch
+ * them as anyway.
+ */
+private fun EbookHostSession.sourceImageUrl(url: String): String? {
+    if (origin !is EbookOrigin.SourceChapter) return null
+    if (!url.startsWith("http://") && !url.startsWith("https://")) return null
+    return "$baseUrl/api/v1/content-sources/${origin.providerId.encodeURLQueryComponent()}/cover" +
+        "?url=${url.encodeURLParameter()}"
 }
 
 /** Whole-file reads (MOBI/KF8/FB2) only exist for library books; source chapters are always EPUB. */

@@ -157,6 +157,7 @@ fun SeriesDetailScreen(
     var bookmarksOpen by remember { mutableStateOf(false) }
     var editOpen by remember { mutableStateOf(false) }
     var moveOpen by remember { mutableStateOf(false) }
+    var removeOpen by remember { mutableStateOf(false) }
 
     fun reload() { selection.clear(); st.forceFull = true; reloadTick++ }
 
@@ -305,6 +306,11 @@ fun SeriesDetailScreen(
                                     })
                                     DropdownMenuItem(text = { Text("Edit metadata") }, onClick = { menuOpen = false; editOpen = true })
                                     DropdownMenuItem(text = { Text("Bookmarks") }, onClick = { menuOpen = false; bookmarksOpen = true })
+                                    // Removing only unlinks a followed WEB series from its library; LOCAL
+                                    // series live on disk and are removed by deleting their files.
+                                    if (isWeb && detail?.libraryId != null) {
+                                        DropdownMenuItem(text = { Text("Remove from library") }, onClick = { menuOpen = false; removeOpen = true })
+                                    }
                                 }
                             }
                         },
@@ -397,6 +403,28 @@ fun SeriesDetailScreen(
                 }
             }
         }
+
+    val removeLibraryId = detail?.libraryId
+    if (removeOpen && s != null && detail != null && removeLibraryId != null) {
+        AlertDialog(
+            onDismissRequest = { removeOpen = false },
+            title = { Text("Remove from library?") },
+            text = { Text("\"${detail.title}\" will be removed from this library. Downloaded files are kept.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    removeOpen = false
+                    scope.launch {
+                        runCatching { api.unfollowWebSeries(s.baseUrl, s.apiKey, removeLibraryId, seriesId, deleteFiles = false) }.fold(
+                            // The series no longer exists here, so there is nothing to reload back into.
+                            onSuccess = { snackbar?.show("Removed from your library"); onBack() },
+                            onFailure = { snackbar?.show("Action failed. Please try again.") },
+                        )
+                    }
+                }) { Text("Remove") }
+            },
+            dismissButton = { TextButton(onClick = { removeOpen = false }) { Text("Cancel") } },
+        )
+    }
 
     if (moveOpen && s != null) {
         MoveLibraryDialog(

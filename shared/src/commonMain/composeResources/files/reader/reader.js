@@ -109,6 +109,31 @@ function contentStyles(p) {
 
 // ── Book loading ─────────────────────────────────────────────────────────────────────────────────
 
+// A BOOK source's chapter HTML keeps the illustrations where the source put them — on its own CDN —
+// so the EPUB the core builds carries absolute `https://…` <img> URLs rather than entries of its own.
+// Left alone, those are fetched by the *device*, which frequently can't have them: Hako's images are
+// hotlink-protected (they want the site as Referer), the CDNs are blocked on plenty of the networks a
+// phone sits on, and a server reached through a proxy has an internet the phone doesn't share. So
+// point them at the host's `./image`, which fetches them through the core the same way source covers
+// already load. Library books keep their images inside the EPUB and are never rewritten.
+const IMG_SRC = /(<img\b[^>]*?\bsrc\s*=\s*")(https?:\/\/[^"]+)(")/gi
+const XML_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }
+
+/** The attribute is XML-escaped in the EPUB; the proxy needs the URL the source actually wrote. */
+function unescapeXml(s) {
+  return s.replace(/&(?:(amp|lt|gt|quot|apos)|#(\d+));/g, (m, name, dec) =>
+    dec ? String.fromCharCode(Number(dec)) : (XML_ENTITIES[name] ?? m))
+}
+
+function proxyImages(name, text) {
+  if (!CONFIG.imageProxy || !text || !/\.x?html?$/i.test(name)) return text
+  return text.replace(IMG_SRC, (_, before, url, after) => {
+    const proxied = new URL(`./image?url=${encodeURIComponent(unescapeXml(url))}`, location.href).href
+    // Percent-encoded, so the result carries nothing the XHTML parser has to see escaped.
+    return before + proxied + after
+  })
+}
+
 /**
  * A foliate-js EPUB loader backed by the host's proxy: the Kodex server holds the EPUB and
  * random-accesses the zip, so the whole file is never downloaded. foliate resolves hrefs against the
@@ -124,7 +149,9 @@ async function openEpub() {
   const resourceUrl = (name) => new URL(`./resource?href=${encodeURIComponent(name)}`, location.href).href
   const loadText = async (name) => {
     const res = await fetch(resourceUrl(name))
-    return res.ok ? res.text() : null
+    // Rewritten here rather than after the section renders, so each illustration is requested once —
+    // from the host — instead of failing direct first and then being re-fetched.
+    return res.ok ? proxyImages(name, await res.text()) : null
   }
   const loadBlob = async (name) => {
     const res = await fetch(resourceUrl(name))
@@ -237,6 +264,36 @@ function onRelocate(e) {
 const TAP_SLOP_PX = 12
 const TAP_MAX_MS = 400
 
+/** How far a swipe has to travel before it counts as an attempt to leave the book. */
+const EDGE_SWIPE_PX = 48
+
+/**
+ * foliate swallows a swipe that would run off the first or last page: the drag is clamped to the
+ * book's own bounds and snaps back, so no page turn happens and — until this — nothing was reported
+ * either. On the last page of a chapter that left swiping forwards doing nothing at all, with only
+ * the toolbar's skip button to get to the next one. The neighbouring chapters are the native side's
+ * to know about, so report the *attempt* and let it decide (see `goNext`/`goPrev`, which raise the
+ * between-chapters screen).
+ *
+ * [atStart]/[atEnd] are taken as they were when the gesture began, not as they are now: in scrolled
+ * flow the very swipe that carries you to the end would otherwise report running off it.
+ */
+function reportEdgeSwipe(dx, dy, wasAtStart, wasAtEnd) {
+  if (!wasAtStart && !wasAtEnd) return
+  // Paginated turns are horizontal — the same axis foliate reads the swipe on. Scrolled flow runs
+  // vertically, so there "past the end" is a swipe up.
+  const scrolled = prefs.flow === 'scrolled'
+  const along = scrolled ? dy : dx
+  const across = scrolled ? dx : dy
+  if (Math.abs(along) < EDGE_SWIPE_PX || Math.abs(along) <= Math.abs(across)) return
+  // Dragging the content backwards moves you forwards. An RTL book swaps the two horizontal
+  // directions, exactly as foliate's own goLeft/goRight do.
+  const rtl = !scrolled && view && view.book && view.book.dir === 'rtl'
+  const forward = (along < 0) !== rtl
+  if (forward && wasAtEnd) post({ type: 'edge', dir: 'next' })
+  else if (!forward && wasAtStart) post({ type: 'edge', dir: 'prev' })
+}
+
 /**
  * Each chapter renders in its own same-origin iframe, so events inside it never reach this document.
  * Bind the handlers the native chrome needs to every document: tap-to-toggle-bars, and the arrow
@@ -248,6 +305,8 @@ function bindDocument(doc) {
   let sx = 0
   let sy = 0
   let st = 0
+  let sAtStart = false
+  let sAtEnd = false
   let touching = false
 
   doc.addEventListener(
@@ -259,6 +318,8 @@ function bindDocument(doc) {
       sx = t.screenX
       sy = t.screenY
       st = ev.timeStamp
+      sAtStart = atStart
+      sAtEnd = atEnd
     },
     { passive: true },
   )
@@ -267,8 +328,11 @@ function bindDocument(doc) {
     (ev) => {
       const t = ev.changedTouches && ev.changedTouches[0]
       if (!t) return
-      const moved = Math.hypot(t.screenX - sx, t.screenY - sy)
+      const dx = t.screenX - sx
+      const dy = t.screenY - sy
+      const moved = Math.hypot(dx, dy)
       if (moved <= TAP_SLOP_PX && ev.timeStamp - st <= TAP_MAX_MS) post({ type: 'tap' })
+      else reportEdgeSwipe(dx, dy, sAtStart, sAtEnd)
       // Leave `touching` set briefly so the synthetic click below doesn't double-fire.
       setTimeout(() => {
         touching = false
