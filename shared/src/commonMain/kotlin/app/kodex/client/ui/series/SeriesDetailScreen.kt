@@ -898,7 +898,7 @@ private fun SeriesHeader(
  * language tags all end up in there), and the FAB grows to fit whatever it is handed — at full length
  * it spanned the screen and buried the cover behind it.
  */
-private val RESUME_TARGET_MAX_WIDTH = 200.dp
+private val RESUME_TARGET_MAX_WIDTH = 150.dp
 
 private fun localResume(books: List<BookDto>, onOpenReader: (String) -> Unit, onOpenReaderIncognito: (String) -> Unit): Resume? {
     if (books.isEmpty()) return null

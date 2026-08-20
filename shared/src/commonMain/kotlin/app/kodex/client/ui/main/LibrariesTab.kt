@@ -284,7 +284,7 @@ private fun LibrariesToolbar(
     var sortMenu by remember { mutableStateOf(false) }
 
     Row(
-        Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp),
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         OutlinedTextField(
