@@ -136,6 +136,10 @@ import coil3.network.NetworkHeaders
 import coil3.network.httpHeaders
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
+import coil3.size.Size
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -1432,28 +1436,71 @@ internal fun SegRow(label: String, value: String, options: List<Pair<String, Str
 }
 
 // ── Auto-detect ──────────────────────────────────────────────────────────────────────────────────
+// Kept in step with the web reader's ImageReader.vue — same thresholds, same verdicts.
+//
+// Vertical-strip comics reach us in two shapes, and only one is tall enough to spot by aspect ratio:
+//   • un-sliced — one enormous image per page (Solo Leveling: 720x4000, ratio 5.6). Mihon's
+//     long-strip heuristic (TallImageSplitCalculator.shouldSplit) catches these at height >= 3x width.
+//   • sliced — the strip cut into tiles at the strip's width (Lookism: 700x1240, 700x800, 700x1064).
+//     These are the common case, and measured against real sources their ratios (1.5-2.1) overlap
+//     paged manga (1.39-1.54) too tightly for *any* single ratio cut-off to separate them.
+// So the sliced case is identified structurally instead. A strip is cut at a constant width, each cut
+// landing on whatever height the panel break gives — constant width, visibly varying heights. A
+// scanned comic is the opposite: its pages are normalized to a uniform size (height spread was exactly
+// 0 across every manga sampled, 0.02 for the worst case), and the pages that *do* differ are
+// double-page spreads, which change the width and so fail the constant-width test. Both guards have to
+// agree, which keeps borderline-tall manga (Vagabond: spread 0.02, tallest ratio 1.54) paged.
+private const val WEBTOON_RATIO = 3f // un-sliced long strip: height >= 3x width
+private const val SLICE_HEIGHT_SPREAD = 0.05f // sliced strip: >=5% variation between tallest and shortest tile
+private const val SLICE_TALL_RATIO = 1.6f // ...and at least one tile taller than any print page shape
 
-private const val WEBTOON_RATIO = 3f
+private data class PageSize(val w: Int, val h: Int)
 
 private suspend fun detectMode(context: coil3.PlatformContext, source: ReaderSource): String {
-    val samples = probePages(source.pageCount)
-    val ratios = samples.mapNotNull { imageAspectRatio(context, source.pageUrlFor(it), source.apiKey) }
-    val tall = ratios.count { it >= WEBTOON_RATIO }
-    return if (ratios.isNotEmpty() && tall * 2 >= ratios.size) MODE_CONTINUOUS else MODE_PAGED
+    // Probed in parallel: the reader holds a spinner until this resolves, and on a source read every
+    // sample is a fetch the server proxies from the remote source.
+    val sizes = coroutineScope {
+        probePages(source.pageCount)
+            .map { async { imageSize(context, source.pageUrlFor(it), source.apiKey) } }
+            .awaitAll()
+            .filterNotNull()
+    }
+    return if (sizes.isNotEmpty() && isWebtoon(sizes)) MODE_CONTINUOUS else MODE_PAGED
 }
 
+/**
+ * Pages to sample. Spread across the chapter (and past a possible odd-sized cover or title banner) so
+ * no single page decides it alone — the sliced-strip test needs several heights to compare.
+ */
 private fun probePages(pageCount: Int): List<Int> = when {
     pageCount <= 1 -> listOf(1)
     pageCount == 2 -> listOf(1, 2)
-    else -> listOf(1, 2, minOf(pageCount, maxOf(3, pageCount / 2)))
+    else -> listOf(1, 2, (pageCount * 0.35f).roundToInt(), (pageCount * 0.5f).roundToInt(), (pageCount * 0.75f).roundToInt())
+        .map { it.coerceIn(1, pageCount) }
+        .distinct()
 }
 
-private suspend fun imageAspectRatio(context: coil3.PlatformContext, url: String, apiKey: String): Float? {
+private fun isWebtoon(sizes: List<PageSize>): Boolean {
+    val ratios = sizes.map { it.h.toFloat() / it.w }
+    // Un-sliced: predominantly very tall pages.
+    if (ratios.count { it >= WEBTOON_RATIO } * 2 >= ratios.size) return true
+    if (sizes.size < 2) return false // one readable page can't show a height spread
+    // Sliced: every tile shares the strip's width while the heights differ.
+    val tallest = sizes.maxOf { it.h }
+    val spread = (tallest - sizes.minOf { it.h }).toFloat() / tallest
+    val sameWidth = sizes.distinctBy { it.w }.size == 1
+    return sameWidth && spread >= SLICE_HEIGHT_SPREAD && ratios.max() >= SLICE_TALL_RATIO
+}
+
+private suspend fun imageSize(context: coil3.PlatformContext, url: String, apiKey: String): PageSize? {
     val request = ImageRequest.Builder(context)
         .data(url)
         .httpHeaders(NetworkHeaders.Builder().set("X-API-Key", apiKey).build())
+        // The width/height comparisons need the source's real pixels — without this a downsampled
+        // decode would rescale each tile independently and break the constant-width test.
+        .size(Size.ORIGINAL)
         .build()
     val result = SingletonImageLoader.get(context).execute(request)
     val image = (result as? SuccessResult)?.image ?: return null
-    return if (image.width > 0) image.height.toFloat() / image.width else null
+    return if (image.width > 0 && image.height > 0) PageSize(image.width, image.height) else null
 }
