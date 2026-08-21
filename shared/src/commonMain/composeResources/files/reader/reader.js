@@ -236,13 +236,24 @@ function onRelocate(e) {
     atStart = !!view.renderer.atStart
     atEnd = !!view.renderer.atEnd
     // Pin the exact ends to foliate's authoritative boundary state, so 100% shows only at the true
-    // last page (never early from page-count rounding) and 0% at the first.
+    // last page (never early from page-count rounding) and 0% at the first. A document that fits on a
+    // single page is at both ends at once — the end has to win, or a one-page book would sit at 0%
+    // and never reach the fraction that marks it finished.
     if (atEnd) frac = 1
+    else if (atStart) frac = 0
     else if (frac >= 1) frac = 0.99
-    if (atStart) frac = 0
   } else {
     atEnd = foliateFrac >= 0.999
     atStart = foliateFrac <= 0.001
+    // Same one-page case in scrolled flow (and in any section that fits on one screen): foliate's
+    // fraction never leaves 0 because nothing scrolls, so 0.999 is unreachable. The renderer reporting
+    // both boundaries at once means there is nothing left to read here — treat it as finished, and let
+    // a swipe hand over to the neighbouring chapter rather than dead-ending.
+    if (view && view.renderer && view.renderer.atStart && view.renderer.atEnd) {
+      atStart = true
+      atEnd = true
+      frac = 1
+    }
   }
 
   const section = d.section && typeof d.section.current === 'number' ? d.section : null

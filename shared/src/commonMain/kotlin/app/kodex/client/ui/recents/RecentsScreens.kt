@@ -122,7 +122,9 @@ fun UpdatesList(
                     subtitle = latest.chapterName ?: "New chapter",
                     caption = updateCaption(latest) +
                         (if (group.items.size > 1) " · +${group.items.size - 1} more" else ""),
-                    onClick = latest.seriesId?.let { sid -> { onOpenSeries(sid) } },
+                    // The title line is the chapter you'd read next, so it opens the reader; the
+                    // series detail hangs off the cover instead.
+                    onClick = { openUpdate(latest, onOpenReader, onOpenSourceReader) },
                     onCoverClick = latest.seriesId?.let { sid -> { onOpenSeries(sid) } },
                 )
             },
@@ -130,16 +132,23 @@ fun UpdatesList(
             ChapterSubRow(
                 title = u.chapterName ?: "New chapter",
                 caption = updateCaption(u),
-                onClick = {
-                    when {
-                        u.bookId != null -> onOpenReader(u.bookId)
-                        u.providerId != null && u.chapterId != null ->
-                            onOpenSourceReader(u.providerId, u.chapterId, u.seriesId, u.chapterName)
-                        else -> Unit
-                    }
-                },
+                onClick = { openUpdate(u, onOpenReader, onOpenSourceReader) },
             )
         }
+    }
+}
+
+/** Opens what an update points at: the downloaded book if there is one, else the live source chapter. */
+private fun openUpdate(
+    u: UpdateDto,
+    onOpenReader: (String) -> Unit,
+    onOpenSourceReader: OpenSourceReader,
+) {
+    when {
+        u.bookId != null -> onOpenReader(u.bookId)
+        u.providerId != null && u.chapterId != null ->
+            onOpenSourceReader(u.providerId, u.chapterId, u.seriesId, u.chapterName)
+        else -> Unit
     }
 }
 
@@ -247,7 +256,9 @@ fun HistoryList(
                         subtitle = historyEntryTitle(latest),
                         caption = historyCaption(latest) +
                             (if (group.items.size > 1) " · +${group.items.size - 1} more" else ""),
-                        onClick = latest.seriesId?.let { sid -> { onOpenSeries(sid) } },
+                        // Same split as Updates: the title line resumes what was last read here, the
+                        // cover goes to the series.
+                        onClick = { openHistoryEntry(latest, onOpenReader, onOpenSourceReader, onOpenBrowseReader) },
                         onCoverClick = latest.seriesId?.let { sid -> { onOpenSeries(sid) } },
                     )
                 },
