@@ -120,6 +120,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
@@ -136,6 +137,9 @@ import coil3.network.NetworkHeaders
 import coil3.network.httpHeaders
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
+import coil3.size.Dimension
+import coil3.size.Precision
+import coil3.size.Scale
 import coil3.size.Size
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -241,6 +245,7 @@ fun ImageReaderScreen(
     var pickerOpen by remember { mutableStateOf(false) }
     var transition by remember { mutableStateOf<Boundary?>(null) } // between-chapters overlay
     var chaptersOpen by remember { mutableStateOf(false) }
+    var viewport by remember { mutableStateOf(IntSize.Zero) } // reader area in px; sizes the prefetch decode
 
     // Load persisted prefs (series override → user default → built-in) + global preload count.
     LaunchedEffect(source.seriesId, source.kind, server?.id) {
@@ -297,14 +302,35 @@ fun ImageReaderScreen(
 
     // Prefetch the next [preload] pages into Coil's cache so turns feel instant; spill over into the
     // next chapter's first pages near the end.
-    LaunchedEffect(page, preload, effectiveMode, source.pageCount) {
-        if (preload <= 0 || source.pageCount <= 0) return@LaunchedEffect
+    // The prefetch has to decode at exactly the size the on-screen page will ask for. Coil keys the
+    // memory cache on the URL alone, and MemoryCacheService.isCacheValueValidForSize hands any
+    // *unsampled* entry straight to an INEXACT request without ever comparing sizes — so a prefetch
+    // left at the builder default (SizeResolver.ORIGINAL) is decoded at the source's native size and
+    // then rescaled at draw time, while a page that outran its prefetch decodes pixel-exact. Same
+    // chapter, two pipelines: pages render crisp or soft depending only on which ones the prefetcher
+    // reached first.
+    LaunchedEffect(page, preload, effectiveMode, source.pageCount, viewport, p?.zoom, p?.isDouble) {
+        if (preload <= 0 || source.pageCount <= 0 || viewport.width <= 0) return@LaunchedEffect
         val loader = SingletonImageLoader.get(context)
+        // Mirror each viewer's slot: continuous and fit-width fill the width and leave height free,
+        // fit-original decodes untouched, fit-height fits the viewport (halved for a two-page spread).
+        val fitsWidth = effectiveMode == MODE_CONTINUOUS || p?.zoom == ZOOM_WIDTH
+        val size = when {
+            fitsWidth -> Size(viewport.width, Dimension.Undefined)
+            p?.zoom == ZOOM_ORIGINAL -> Size.ORIGINAL
+            p?.isDouble == true -> Size(viewport.width / 2, viewport.height)
+            else -> Size(viewport.width, viewport.height)
+        }
+        // ContentScale.FillWidth/None map to FILL, ContentScale.Fit to FIT (see ContentScale.toScale).
+        val scale = if (fitsWidth || size == Size.ORIGINAL) Scale.FILL else Scale.FIT
         fun prefetch(url: String) {
             loader.enqueue(
                 ImageRequest.Builder(context)
                     .data(url)
                     .httpHeaders(NetworkHeaders.Builder().set("X-API-Key", source.apiKey).build())
+                    .size(size)
+                    .scale(scale)
+                    .precision(Precision.INEXACT) // what AsyncImagePainter applies to the on-screen request
                     .build(),
             )
         }
@@ -390,6 +416,7 @@ fun ImageReaderScreen(
     Box(
         Modifier
             .fillMaxSize()
+            .onSizeChanged { viewport = it }
             .background(if (p == null) Color.Black else bgColor(p.bg))
             .focusRequester(focusRequester)
             .focusable()
