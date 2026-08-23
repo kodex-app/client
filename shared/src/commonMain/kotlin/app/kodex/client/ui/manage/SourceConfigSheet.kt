@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -43,6 +44,7 @@ import app.kodex.client.network.ConfigFieldDto
 import app.kodex.client.network.KodexApi
 import app.kodex.client.network.SourceConfigDto
 import app.kodex.client.ui.friendlyMessage
+import app.kodex.client.ui.sheetMinHeight
 import kotlinx.coroutines.launch
 
 /**
@@ -78,7 +80,7 @@ fun SourceConfigSheet(
             .onFailure { failed = true }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    ModalBottomSheet(modifier = Modifier.heightIn(min = sheetMinHeight()), onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(16.dp)) {
             val current = config
             Text(

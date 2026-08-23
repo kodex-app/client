@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -38,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import app.kodex.client.network.LabelDto
 import app.kodex.client.network.SeriesDetailDto
 import app.kodex.client.network.UpdateSeriesMetadataRequest
+import app.kodex.client.ui.sheetMinHeight
 
 private val STATUSES = listOf("UNKNOWN", "ONGOING", "COMPLETED", "PUBLISHING_FINISHED", "LICENSED", "CANCELLED", "ON_HIATUS")
 
@@ -76,7 +78,7 @@ fun SeriesMetadataSheet(
     var labelIds by remember { mutableStateOf(detail.labels.map { it.id }.toSet()) }
     var locked by remember { mutableStateOf(detail.lockedFields) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    ModalBottomSheet(modifier = Modifier.heightIn(min = sheetMinHeight()), onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(16.dp)) {
             Text("Edit series", style = androidx.compose.material3.MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.size(12.dp))

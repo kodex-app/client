@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -67,6 +68,7 @@ import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.nav.retain
 import app.kodex.client.ui.friendlyMessage
 import app.kodex.client.ui.rememberSnackbar
+import app.kodex.client.ui.sheetMinHeight
 import kotlinx.coroutines.launch
 
 /** A single book: cover + metadata + summary, mark read/unread, and edit / re-analyze / delete. */
@@ -252,7 +254,7 @@ private fun EditMetadataSheet(
     val authors = remember { book.authors.toMutableStateList() }
     var locked by remember { mutableStateOf(book.lockedFields) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    ModalBottomSheet(modifier = Modifier.heightIn(min = sheetMinHeight()), onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(16.dp)) {
             Text("Edit metadata", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(12.dp))
