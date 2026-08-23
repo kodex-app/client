@@ -27,9 +27,9 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -49,7 +49,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -86,7 +85,9 @@ import app.kodex.client.network.SourceSearchResult
 import app.kodex.client.network.TextFilterDto
 import app.kodex.client.network.TriStateFilter
 import app.kodex.client.ui.EmptyMessage
+import app.kodex.client.ui.SelectionActionBar
 import app.kodex.client.ui.SelectionState
+import app.kodex.client.ui.SelectionTopBar
 import app.kodex.client.ui.Tip
 import app.kodex.client.ui.catalog.CoverCard
 import app.kodex.client.ui.catalog.sourceCoverUrl
@@ -179,16 +180,17 @@ fun SourceFeedScreen(
         }
     }
 
-    // Resolve which WEB library to add to: pick directly when there's one, else show a picker.
+    // Resolve which WEB library to add to: pick directly when there's one, else show a picker. Only
+    // shelves holding this source's media kind qualify — offering a book shelf for a comic source (or the
+    // reverse) lists a target the server refuses.
     fun onAddToLibraries() {
         val s = server ?: return
         scope.launch {
-            val webLibs = runCatching { api.libraries(s.baseUrl, s.apiKey) }.getOrDefault(emptyList()).filter { it.isWeb }
+            val targets = api.webLibraryTargets(s.baseUrl, s.apiKey, source.mediaKind)
             when {
-                webLibs.size == 1 -> addSelectedTo(webLibs.first().id)
-                webLibs.isEmpty() -> runCatching { api.webLibrary(s.baseUrl, s.apiKey) }
-                    .fold({ addSelectedTo(it.id) }, { snackbar?.show("No web library to add to.") })
-                else -> libraryPicker = webLibs
+                targets.size == 1 -> addSelectedTo(targets.first().id)
+                targets.isEmpty() -> snackbar?.show("No ${mediaKindLabel(source.mediaKind)} library to add to.")
+                else -> libraryPicker = targets
             }
         }
     }
@@ -249,30 +251,13 @@ fun SourceFeedScreen(
     Scaffold(
         topBar = {
             if (selection.active) {
-                TopAppBar(
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    ),
-                    title = { Text("${selection.count} selected", fontWeight = FontWeight.SemiBold) },
-                    navigationIcon = {
-                        IconButton(onClick = { selection.clear() }) { Icon(Icons.Outlined.Close, contentDescription = "Cancel selection") }
-                    },
-                    actions = {
-                        Tip("Select all") {
-                            IconButton(onClick = { selection.selectAll(items.map { it.externalId }) }) {
-                                Icon(Icons.Outlined.SelectAll, contentDescription = "Select all")
-                            }
-                        }
-                        Tip("Add the selected series to a library") {
-                            TextButton(onClick = { onAddToLibraries() }, enabled = !addingBusy) {
-                                Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Text("Add to library", modifier = Modifier.padding(start = 4.dp))
-                            }
-                        }
-                    },
+                // The same contextual chrome as the library grid: count + cancel / select-all / invert up
+                // top, and the bulk action itself down in the bottom bar, within thumb reach.
+                SelectionTopBar(
+                    count = selection.count,
+                    onClose = { selection.clear() },
+                    onSelectAll = { selection.selectAll(items.map { it.externalId }) },
+                    onSelectInverse = { selection.selectInverse(items.map { it.externalId }) },
                 )
             } else {
             TopAppBar(
@@ -328,12 +313,34 @@ fun SourceFeedScreen(
             }
         },
         floatingActionButton = {
-            val filterCount = appliedFilters.filters.count { it.isActive() }
-            androidx.compose.material3.ExtendedFloatingActionButton(
-                onClick = { openFilters() },
-                icon = { Icon(Icons.Outlined.FilterList, contentDescription = null) },
-                text = { Text(if (filterCount > 0) "Filter ($filterCount)" else "Filter") },
-            )
+            // Hidden while selecting: the selection bottom bar owns the screen then, and a FAB over it
+            // would sit on top of its actions.
+            if (!selection.active) {
+                val filterCount = appliedFilters.filters.count { it.isActive() }
+                androidx.compose.material3.ExtendedFloatingActionButton(
+                    onClick = { openFilters() },
+                    icon = { Icon(Icons.Outlined.FilterList, contentDescription = null) },
+                    text = { Text(if (filterCount > 0) "Filter ($filterCount)" else "Filter") },
+                )
+            }
+        },
+        bottomBar = {
+            if (selection.active) {
+                SelectionActionBar {
+                    Tip("Add the selected series to a library") {
+                        // The bar paints primaryContainer, so the label takes the bar's content colour
+                        // rather than TextButton's default primary, which would fight the background.
+                        TextButton(
+                            onClick = { onAddToLibraries() },
+                            enabled = !addingBusy,
+                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onPrimaryContainer),
+                        ) {
+                            Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Text("Add to library", modifier = Modifier.padding(start = 4.dp))
+                        }
+                    }
+                }
+            }
         },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
@@ -378,7 +385,7 @@ fun SourceFeedScreen(
 
     // Library picker for "Add to libraries" when the user has more than one WEB library.
     libraryPicker?.let { libs ->
-        ModalBottomSheet(onDismissRequest = { libraryPicker = null }, sheetState = rememberModalBottomSheetState()) {
+        ModalBottomSheet(onDismissRequest = { libraryPicker = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
                 Text(
                     "Add ${selection.count} to library",
@@ -424,7 +431,7 @@ private fun FilterSheet(
     onReset: () -> Unit,
     onApply: (List<SourceFilter>, String) -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         if (filters == null) {
             Box(Modifier.fillMaxWidth().padding(48.dp), Alignment.Center) { CircularProgressIndicator() }

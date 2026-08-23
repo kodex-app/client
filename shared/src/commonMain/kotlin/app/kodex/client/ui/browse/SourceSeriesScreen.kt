@@ -259,9 +259,12 @@ fun SourceSeriesScreen(
                         message = message,
                         onFollow = {
                             act { srv ->
-                                val lib = api.webLibrary(srv.baseUrl, srv.apiKey)
+                                // A WEB library holds one media kind, so the target has to match this
+                                // source's — the implicit /libraries/web shelf is always COMIC.
+                                val lib = api.webLibraryTargets(srv.baseUrl, srv.apiKey, source.mediaKind).firstOrNull()
+                                    ?: error("No ${mediaKindLabel(source.mediaKind)} library to add to.")
                                 api.followWebSeries(srv.baseUrl, srv.apiKey, lib.id, source.id, seed.externalId)
-                                "Added to your library"
+                                "Added to ${lib.name}"
                             }
                         },
                         onDownload = {

@@ -525,7 +525,7 @@ fun ImageReaderScreen(
     }
 
     if (chaptersOpen && p != null && source.nav != null) {
-        ModalBottomSheet(onDismissRequest = { chaptersOpen = false }, sheetState = rememberModalBottomSheetState()) {
+        ModalBottomSheet(onDismissRequest = { chaptersOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             ChapterListSheet(source.nav.chapters) { chaptersOpen = false }
         }
     }
@@ -535,7 +535,7 @@ fun ImageReaderScreen(
     }
 
     if (settingsOpen && p != null) {
-        ModalBottomSheet(onDismissRequest = { settingsOpen = false }, sheetState = rememberModalBottomSheetState()) {
+        ModalBottomSheet(onDismissRequest = { settingsOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             SettingsSheet(
                 prefs = p,
                 effectiveMode = effectiveMode ?: MODE_PAGED,

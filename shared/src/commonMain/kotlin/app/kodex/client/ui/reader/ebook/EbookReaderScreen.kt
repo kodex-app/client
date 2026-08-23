@@ -586,7 +586,7 @@ fun EbookReaderScreen(
     }
 
     if (settingsOpen) {
-        ModalBottomSheet(onDismissRequest = { settingsOpen = false }, sheetState = rememberModalBottomSheetState()) {
+        ModalBottomSheet(onDismissRequest = { settingsOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             EbookSettingsSheet(
                 prefs = prefs ?: EbookPrefs(),
                 fonts = fonts,
@@ -607,7 +607,7 @@ fun EbookReaderScreen(
     }
 
     if (tocOpen) {
-        ModalBottomSheet(onDismissRequest = { tocOpen = false }, sheetState = rememberModalBottomSheetState()) {
+        ModalBottomSheet(onDismissRequest = { tocOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             TocSheet(toc, current = chapterLabel) { href ->
                 call(hrefCommand(href))
                 tocOpen = false
@@ -616,7 +616,7 @@ fun EbookReaderScreen(
     }
 
     if (chaptersOpen) {
-        ModalBottomSheet(onDismissRequest = { chaptersOpen = false }, sheetState = rememberModalBottomSheetState()) {
+        ModalBottomSheet(onDismissRequest = { chaptersOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             ChapterListSheet(source.nav?.chapters.orEmpty()) { chaptersOpen = false }
         }
     }
@@ -626,7 +626,7 @@ fun EbookReaderScreen(
         if (marks == null) {
             bookmarksOpen = false
         } else {
-            ModalBottomSheet(onDismissRequest = { bookmarksOpen = false }, sheetState = rememberModalBottomSheetState()) {
+            ModalBottomSheet(onDismissRequest = { bookmarksOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
                 BookmarksSheet(
                     items = marks.items,
                     onAdd = {

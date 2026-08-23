@@ -63,6 +63,9 @@ import app.kodex.client.ui.nav.RetainedStateStore
 import app.kodex.client.ui.recents.rememberNewUpdateCount
 import app.kodex.client.ui.search.SearchScreen
 
+/** Retained-state slot for the search screen; it keeps its query and results while a result is open. */
+private const val SEARCH_SLOT = "search"
+
 /** The five destinations of the main bottom navigation. */
 enum class BottomTab(val label: String, val icon: ImageVector) {
     Home("Home", Icons.Outlined.Home),
@@ -90,6 +93,12 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
         retained.forget(detailSlot(i))
         backStack.removeAt(i)
     }
+
+    /** Leaving search for good — its retained query and results are dropped, so it reopens clean. */
+    fun closeSearch() {
+        searchOpen = false
+        retained.forget(SEARCH_SLOT)
+    }
     val incognito by appSettings.incognitoMode.collectAsStateSafe()
     val server by session.activeServer.collectAsStateSafe()
 
@@ -116,31 +125,20 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
      */
     val openSeriesFromReader: (DetailRoute) -> Unit = { route -> backStack.add(route) }
 
-    // System back navigates within the app: close search → pop a detail screen → return to Home tab.
+    // System back navigates within the app: pop a detail screen → close search → return to Home tab.
+    // Details are popped first because search sits *under* them: opening a result from search keeps the
+    // search screen on the stack, so back off that result has to land on the results again.
     // Disabled only on the Home tab with nothing open, so back there exits the app (expected).
     AppBackHandler(enabled = searchOpen || backStack.isNotEmpty() || tab != BottomTab.Home) {
         when {
-            searchOpen -> searchOpen = false
             backStack.isNotEmpty() -> popDetail()
+            searchOpen -> closeSearch()
             else -> tab = BottomTab.Home
         }
     }
 
     val immersive = backStack.lastOrNull().let { it is DetailRoute.Reader || it is DetailRoute.SourceReader }
     val turnOffIncognito = { appSettings.setIncognitoMode(false) }
-
-    if (searchOpen) {
-      WithIncognitoBanner(incognito, turnOffIncognito) {
-        SearchScreen(
-            session, api,
-            onClose = { searchOpen = false },
-            onOpenSeries = { searchOpen = false; openSeries(it.id) },
-            onOpenBook = { searchOpen = false; openBook(it.id) },
-            onOpenSourceSeries = { source, seed -> searchOpen = false; backStack.add(DetailRoute.SourceSeries(source, seed)) },
-        )
-      }
-        return
-    }
 
     if (backStack.isNotEmpty()) {
       CompositionLocalProvider(LocalRetainedSlot provides retained.slot(detailSlot(backStack.lastIndex))) {
@@ -175,6 +173,23 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
             },
             onOpenPluginRepositories = { backStack.add(DetailRoute.PluginRepositories) },
             onBack = { popDetail() },
+        )
+      }
+      }
+        return
+    }
+
+    // Search renders *below* the detail stack: a result opens on top of it rather than replacing it, so
+    // back returns to the results (still loaded — SearchScreen retains them in this slot).
+    if (searchOpen) {
+      CompositionLocalProvider(LocalRetainedSlot provides retained.slot(SEARCH_SLOT)) {
+      WithIncognitoBanner(incognito, turnOffIncognito) {
+        SearchScreen(
+            session, api,
+            onClose = { closeSearch() },
+            onOpenSeries = { openSeries(it.id) },
+            onOpenBook = { openBook(it.id) },
+            onOpenSourceSeries = { source, seed -> backStack.add(DetailRoute.SourceSeries(source, seed)) },
         )
       }
       }
@@ -221,8 +236,11 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
             when (tab) {
                 BottomTab.Home -> HomeTab(
                     session, api,
-                    onOpenBook = { openBook(it.id) },
-                    onOpenSeries = { openSeries(it.id) },
+                    onOpenBook = openBook,
+                    onOpenSeries = openSeries,
+                    onOpenBrowseReader = { source, chapterId, chapterName ->
+                        backStack.add(DetailRoute.SourceReader(source.providerId, chapterId, null, chapterName, source, incognito = incognito))
+                    },
                     onSeeAll = { kind -> backStack.add(DetailRoute.SeeAll(kind)) },
                 )
                 BottomTab.Libraries -> LibrariesTab(

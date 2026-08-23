@@ -10,7 +10,9 @@ import kotlinx.serialization.json.encodeToJsonElement
 
 /**
  * Per-user library view preferences: a custom display order, which libraries are hidden from the
- * Libraries tab, and which are kept off the Home screen's rows.
+ * Libraries tab, and which are kept off the Home screen's rows. Home itself no longer reads this to
+ * filter — the server applies `hiddenFromHome` when it assembles `GET /api/v1/home` — so what is left
+ * here is the Libraries tab's own ordering/hiding, plus the editor that writes the preference.
  *
  * Stored as the single opaque user setting the web UI already uses (`nav.libraries`), so the two
  * clients stay in sync and neither touches the shared Library records — this is purely a view
@@ -52,18 +54,6 @@ const val LIBRARY_NAV_PREF_KEY = "nav.libraries"
 private val prefsJson = Json {
     ignoreUnknownKeys = true
     encodeDefaults = true
-}
-
-/**
- * Drops items belonging to a library the user hid from Home. An item with no library id is kept:
- * better to show something unattributed than to silently swallow it.
- *
- * Shared by the Home rows and each row's "See all", which is the whole point — the two screens show
- * the same lists, so a library hidden from one has to be hidden from the other.
- */
-fun <T> List<T>.visibleOnHome(prefs: LibraryNavPrefs, libraryIdOf: (T) -> String?): List<T> {
-    val hidden = prefs.hiddenFromHome.toSet()
-    return if (hidden.isEmpty()) this else filterNot { libraryIdOf(it) in hidden }
 }
 
 /** Sorts by the saved order; anything not in it keeps server order at the end. */

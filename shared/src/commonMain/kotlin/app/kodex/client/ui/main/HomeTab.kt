@@ -22,14 +22,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
-import app.kodex.client.data.visibleOnHome
-import app.kodex.client.network.BookDto
+import app.kodex.client.network.HomeDto
+import app.kodex.client.network.KeepReadingDto
 import app.kodex.client.network.KodexApi
 import app.kodex.client.network.SeriesDto
 import app.kodex.client.ui.catalog.CoverCard
 import app.kodex.client.ui.catalog.CoverSection
 import app.kodex.client.ui.catalog.bookCoverUrl
 import app.kodex.client.ui.catalog.bookSubtitle
+import app.kodex.client.ui.catalog.keepReadingCover
+import app.kodex.client.ui.catalog.openKeepReading
 import app.kodex.client.ui.catalog.rememberSourceNames
 import app.kodex.client.ui.catalog.seriesCoverUrl
 import app.kodex.client.ui.catalog.seriesSubtitle
@@ -37,60 +39,40 @@ import app.kodex.client.ui.catalog.seriesUnreadBadge
 import app.kodex.client.ui.catalog.sourceLabel
 import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.friendlyMessage
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.TextButton
-import androidx.compose.ui.text.font.FontWeight
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 
-// Rail titles, shared by the section headers and the per-rail failure entries so the two can't drift.
+// Rail titles, shared by the section headers and the "See all" screens so the two can't drift.
 private const val RAIL_CONTINUE = "Continue reading"
 private const val RAIL_RECENT_SERIES = "Recent series"
 private const val RAIL_UPDATED = "Recently updated"
 private const val RAIL_RECENT_BOOKS = "Recently added"
 
-private data class HomeResults(
-    val keepReading: Result<List<BookDto>>,
-    val recentSeries: Result<List<SeriesDto>>,
-    val updatedSeries: Result<List<SeriesDto>>,
-    val recentBooks: Result<List<BookDto>>,
-)
-
-private data class HomeData(
-    val continueReading: List<BookDto> = emptyList(),
-    val recentSeries: List<SeriesDto> = emptyList(),
-    val updatedSeries: List<SeriesDto> = emptyList(),
-    val recentBooks: List<BookDto> = emptyList(),
-    /**
-     * Rails that failed to load, by section title. The four rails are fetched independently, so a
-     * partial failure used to render as a missing section — indistinguishable from a section that is
-     * legitimately empty. Each entry becomes a rail-shaped error with its own retry instead.
-     */
-    val failed: Map<String, String> = emptyMap(),
-) {
-    val isEmpty: Boolean
-        get() = continueReading.isEmpty() && recentSeries.isEmpty() &&
-            updatedSeries.isEmpty() && recentBooks.isEmpty() && failed.isEmpty()
-}
-
 private sealed interface HomeUiState {
     data object Loading : HomeUiState
     data class Error(val message: String) : HomeUiState
-    data class Ready(val data: HomeData) : HomeUiState
+    data class Ready(val data: HomeDto) : HomeUiState
 }
+
+private val HomeDto.isEmpty: Boolean
+    get() = keepReading.isEmpty() && recentSeries.isEmpty() &&
+        recentlyUpdatedSeries.isEmpty() && recentBooks.isEmpty()
 
 /**
  * Home mirrors the web UI: four horizontal cover rails — Continue reading, Recent series, Recently
- * updated series, Recently added books. Rows load independently: a rail that fails takes its own
- * error-and-retry slot in place of the section, and only a total failure replaces the whole screen.
+ * updated series, Recently added books.
+ *
+ * All four come from one request (`GET /api/v1/home`), which is also what applies the user's
+ * hidden-library / hidden-source preferences: the server owns that rule now, so this screen no longer
+ * fetches the preferences and filters the rails itself. Because it is a single request, a failure is a
+ * whole-screen failure rather than a rail-shaped one.
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun HomeTab(
     session: SessionManager,
     api: KodexApi,
-    onOpenBook: (BookDto) -> Unit = {},
-    onOpenSeries: (SeriesDto) -> Unit = {},
+    onOpenBook: (String) -> Unit = {},
+    onOpenSeries: (String) -> Unit = {},
+    onOpenBrowseReader: OpenBrowseReader = { _, _, _ -> },
     onSeeAll: (app.kodex.client.ui.catalog.SeeAllKind) -> Unit = {},
 ) {
     val server by session.activeServer.collectAsStateSafe()
@@ -105,34 +87,11 @@ fun HomeTab(
     androidx.compose.runtime.LaunchedEffect(server?.id, reloadKey) {
         val current = server ?: run { refreshing = false; return@LaunchedEffect }
         if (!refreshing) state = HomeUiState.Loading
-        val navPrefs = app.kodex.client.data.loadLibraryNavPrefs(api, current.baseUrl, current.apiKey)
-        val (keepReading, recentSeries, updatedSeries, recentBooks) = coroutineScope {
-            val kr = async { runCatching { api.keepReading(current.baseUrl, current.apiKey) } }
-            val rs = async { runCatching { api.recentSeries(current.baseUrl, current.apiKey) } }
-            val us = async { runCatching { api.recentlyUpdatedSeries(current.baseUrl, current.apiKey) } }
-            val rb = async { runCatching { api.recentBooks(current.baseUrl, current.apiKey) } }
-            HomeResults(kr.await(), rs.await(), us.await(), rb.await())
-        }
-        val all = listOf(keepReading, recentSeries, updatedSeries, recentBooks)
-
-        state = if (all.all { it.isFailure }) {
-            HomeUiState.Error("Couldn't reach ${current.label}. Tap retry.")
-        } else {
-            HomeUiState.Ready(
-                HomeData(
-                    continueReading = keepReading.getOrDefault(emptyList()).visibleOnHome(navPrefs) { it.libraryId },
-                    recentSeries = recentSeries.getOrDefault(emptyList()).visibleOnHome(navPrefs) { it.libraryId },
-                    updatedSeries = updatedSeries.getOrDefault(emptyList()).visibleOnHome(navPrefs) { it.libraryId },
-                    recentBooks = recentBooks.getOrDefault(emptyList()).visibleOnHome(navPrefs) { it.libraryId },
-                    failed = buildMap {
-                        keepReading.exceptionOrNull()?.let { put(RAIL_CONTINUE, it.friendlyMessage()) }
-                        recentSeries.exceptionOrNull()?.let { put(RAIL_RECENT_SERIES, it.friendlyMessage()) }
-                        updatedSeries.exceptionOrNull()?.let { put(RAIL_UPDATED, it.friendlyMessage()) }
-                        recentBooks.exceptionOrNull()?.let { put(RAIL_RECENT_BOOKS, it.friendlyMessage()) }
-                    },
-                ),
+        state = runCatching { api.home(current.baseUrl, current.apiKey) }
+            .fold(
+                onSuccess = { HomeUiState.Ready(it) },
+                onFailure = { HomeUiState.Error(it.friendlyMessage()) },
             )
-        }
         refreshing = false
     }
 
@@ -169,29 +128,24 @@ fun HomeTab(
                     contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(24.dp),
                 ) {
-                    s.data.failed.forEach { (title, message) ->
-                        item("failed-$title") { RailError(title, message) { reloadKey++ } }
-                    }
-                    if (s.data.continueReading.isNotEmpty()) item {
-                        CoverSection(RAIL_CONTINUE, s.data.continueReading, key = { it.id }, onSeeAll = { onSeeAll(app.kodex.client.ui.catalog.SeeAllKind.KEEP_READING) }) { b ->
-                            CoverCard(
-                                coverUrl = bookCoverUrl(baseUrl, b.id),
-                                apiKey = apiKey,
-                                title = b.title,
-                                subtitle = bookSubtitle(b),
-                                unread = null,
-                                onClick = { onOpenBook(b) },
-                            )
+                    if (s.data.keepReading.isNotEmpty()) item {
+                        CoverSection(
+                            RAIL_CONTINUE,
+                            s.data.keepReading,
+                            key = { "${it.kind}-${it.bookId ?: it.chapterId}" },
+                            onSeeAll = { onSeeAll(app.kodex.client.ui.catalog.SeeAllKind.KEEP_READING) },
+                        ) { k ->
+                            KeepReadingCard(baseUrl, apiKey, k, onOpenBook, onOpenSeries, onOpenBrowseReader)
                         }
                     }
                     if (s.data.recentSeries.isNotEmpty()) item {
                         CoverSection(RAIL_RECENT_SERIES, s.data.recentSeries, key = { it.id }, onSeeAll = { onSeeAll(app.kodex.client.ui.catalog.SeeAllKind.RECENT_SERIES) }) { series ->
-                            SeriesCard(baseUrl, apiKey, series, sourceNames, onOpenSeries)
+                            SeriesCard(baseUrl, apiKey, series, sourceNames) { onOpenSeries(it.id) }
                         }
                     }
-                    if (s.data.updatedSeries.isNotEmpty()) item {
-                        CoverSection(RAIL_UPDATED, s.data.updatedSeries, key = { it.id }, onSeeAll = { onSeeAll(app.kodex.client.ui.catalog.SeeAllKind.UPDATED_SERIES) }) { series ->
-                            SeriesCard(baseUrl, apiKey, series, sourceNames, onOpenSeries)
+                    if (s.data.recentlyUpdatedSeries.isNotEmpty()) item {
+                        CoverSection(RAIL_UPDATED, s.data.recentlyUpdatedSeries, key = { it.id }, onSeeAll = { onSeeAll(app.kodex.client.ui.catalog.SeeAllKind.UPDATED_SERIES) }) { series ->
+                            SeriesCard(baseUrl, apiKey, series, sourceNames) { onOpenSeries(it.id) }
                         }
                     }
                     if (s.data.recentBooks.isNotEmpty()) item {
@@ -202,7 +156,7 @@ fun HomeTab(
                                 title = b.title,
                                 subtitle = bookSubtitle(b),
                                 unread = null,
-                                onClick = { onOpenBook(b) },
+                                onClick = { onOpenBook(b.id) },
                             )
                         }
                     }
@@ -211,6 +165,29 @@ fun HomeTab(
         }
     }
     }
+}
+
+/**
+ * One "Continue reading" card. The rail spans both reading paths, so the card shows the series it
+ * belongs to over the entry you're part-way through, and resolves its own cover and destination.
+ */
+@Composable
+private fun KeepReadingCard(
+    baseUrl: String,
+    apiKey: String,
+    entry: KeepReadingDto,
+    onOpenBook: (String) -> Unit,
+    onOpenSeries: (String) -> Unit,
+    onOpenBrowseReader: OpenBrowseReader,
+) {
+    CoverCard(
+        coverUrl = keepReadingCover(baseUrl, entry),
+        apiKey = apiKey,
+        title = entry.seriesName.ifBlank { entry.title.orEmpty() },
+        subtitle = entry.title,
+        unread = null,
+        onClick = { openKeepReading(entry, onOpenBook, onOpenSeries, onOpenBrowseReader) },
+    )
 }
 
 @Composable
@@ -239,25 +216,6 @@ private fun SeriesCard(
  * content vertically centred, which a bare `verticalScroll` would not (it measures against unbounded
  * height, pinning the content to the top).
  */
-/**
- * A rail that failed, rendered where the section would have been: same title, and the reason plus a
- * retry where the covers would sit. Keeping the header means a broken rail still reads as "this
- * section exists and is broken", not as a section that quietly went missing.
- */
-@Composable
-private fun RailError(title: String, message: String, onRetry: () -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Text(
-            message,
-            modifier = Modifier.padding(top = 4.dp),
-            color = MaterialTheme.colorScheme.error,
-            style = MaterialTheme.typography.bodySmall,
-        )
-        TextButton(onClick = onRetry, modifier = Modifier.padding(top = 4.dp)) { Text("Retry") }
-    }
-}
-
 @Composable
 private fun Centered(content: @Composable () -> Unit) {
     LazyColumn(Modifier.fillMaxSize()) {

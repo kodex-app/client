@@ -58,44 +58,41 @@ class KodexApi(private val client: HttpClient) {
             header(HEADER_API_KEY, apiKey)
         }.body()
 
-    // ── Home rows ────────────────────────────────────────────────────────────────────────────────
+    // ── Home ─────────────────────────────────────────────────────────────────────────────────────
 
-    /** In-progress books — "Continue reading". */
-    suspend fun keepReading(baseUrl: String, apiKey: String): List<BookDto> =
-        client.get("$baseUrl/api/v1/books/keep-reading") {
+    /**
+     * The whole Home screen in one request. The server applies the user's hidden-library and
+     * hidden-source preferences itself, so nothing here has to fetch those preferences or drop rows
+     * afterwards — filtering a fetched page client-side returned short rails whose counts disagreed
+     * with the server's.
+     */
+    suspend fun home(baseUrl: String, apiKey: String): HomeDto =
+        client.get("$baseUrl/api/v1/home") {
             header(HEADER_API_KEY, apiKey)
+            parameter("size", HOME_ROW_SIZE)
         }.body()
 
-    /** Most recently added books. */
-    suspend fun recentBooks(baseUrl: String, apiKey: String): List<BookDto> =
-        client.get("$baseUrl/api/v1/books") {
+    /** The full continue-reading list — Home's "See all" for that rail, scoped exactly like the rail. */
+    suspend fun homeKeepReading(baseUrl: String, apiKey: String, limit: Int = 50): List<KeepReadingDto> =
+        client.get("$baseUrl/api/v1/home/keep-reading") {
             header(HEADER_API_KEY, apiKey)
-            parameter("sort", "createdDate,desc")
-            parameter("size", HOME_ROW_SIZE)
-        }.body<PageResponse<BookDto>>().content
+            parameter("limit", limit)
+        }.body()
 
-    /** A larger page of books by [sort] — backs Home's "See all" for a book rail. */
-    suspend fun booksList(baseUrl: String, apiKey: String, sort: String, size: Int = 300): List<BookDto> =
-        client.get("$baseUrl/api/v1/books") {
+    /** One of Home's series rails expanded: [row] is `RECENT` (newest) or `UPDATED` (newest content). */
+    suspend fun homeSeries(baseUrl: String, apiKey: String, row: String, size: Int = 300): List<SeriesDto> =
+        client.get("$baseUrl/api/v1/home/series") {
             header(HEADER_API_KEY, apiKey)
-            parameter("sort", sort)
+            parameter("row", row)
+            parameter("size", size)
+        }.body<PageResponse<SeriesDto>>().content
+
+    /** Home's recently-added books rail expanded. */
+    suspend fun homeBooks(baseUrl: String, apiKey: String, size: Int = 300): List<BookDto> =
+        client.get("$baseUrl/api/v1/home/books") {
+            header(HEADER_API_KEY, apiKey)
             parameter("size", size)
         }.body<PageResponse<BookDto>>().content
-
-    /** Most recently added series. */
-    suspend fun recentSeries(baseUrl: String, apiKey: String): List<SeriesDto> =
-        series(baseUrl, apiKey, sort = "createdDate,desc")
-
-    /** Series whose content changed most recently. */
-    suspend fun recentlyUpdatedSeries(baseUrl: String, apiKey: String): List<SeriesDto> =
-        series(baseUrl, apiKey, sort = "lastModifiedDate,desc")
-
-    private suspend fun series(baseUrl: String, apiKey: String, sort: String): List<SeriesDto> =
-        client.get("$baseUrl/api/v1/series") {
-            header(HEADER_API_KEY, apiKey)
-            parameter("sort", sort)
-            parameter("size", HOME_ROW_SIZE)
-        }.body<PageResponse<SeriesDto>>().content
 
     // ── Global search ────────────────────────────────────────────────────────────────────────────
 

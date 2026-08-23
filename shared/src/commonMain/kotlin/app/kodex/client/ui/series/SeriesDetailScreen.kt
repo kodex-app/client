@@ -207,9 +207,13 @@ fun SeriesDetailScreen(
     val detail = content?.detail
     val isWeb = detail?.isWeb == true
 
-    // Libraries the series could move to: same kind as its current one, excluding where it already is.
-    // (Matches the web — offered only for WEB series, whose location is just a DB link.)
-    val eligibleLibraries = content?.libraries.orEmpty().filter { it.isWeb == isWeb && it.id != detail?.libraryId }
+    // Libraries the series could move to: same type AND media kind as its current one, excluding where it
+    // already is. (Matches the web — offered only for WEB series, whose location is just a DB link.) The
+    // media kind matters because the server refuses a move that would put comics on a book shelf.
+    val currentLibrary = content?.libraries.orEmpty().firstOrNull { it.id == detail?.libraryId }
+    val eligibleLibraries = content?.libraries.orEmpty().filter {
+        it.isWeb == isWeb && it.id != detail?.libraryId && (currentLibrary == null || it.kind == currentLibrary.kind)
+    }
     val canMove = isWeb && eligibleLibraries.isNotEmpty()
 
     // Chapters visible after the translator filter — drives the list and "select all"/"inverse".

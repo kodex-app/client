@@ -25,7 +25,20 @@ data class LibraryDto(
     val autoDownload: Boolean = false,
 ) {
     val isWeb: Boolean get() = type == "WEB"
+
+    /**
+     * The media kind this library holds. A WEB library holds exactly one kind, and the server treats a
+     * null/blank one (libraries created before mediaKind existed) as COMIC — mirror that here so
+     * "which libraries can this take?" never offers a shelf the server will reject.
+     */
+    val kind: String get() = mediaKind?.takeIf { it.isNotBlank() } ?: MEDIA_KIND_COMIC
 }
+
+/** Page-image content (manga, comics, webtoons) — `MediaKind.COMIC` on the server. */
+const val MEDIA_KIND_COMIC = "COMIC"
+
+/** Reflowable text content (web/light novels, ebooks) — `MediaKind.BOOK` on the server. */
+const val MEDIA_KIND_BOOK = "BOOK"
 
 /** An installed content source (plugin) shown in Browse. */
 @Serializable
@@ -36,8 +49,11 @@ data class SourceDescriptor(
     val website: String? = null,
     val adultContent: Boolean = false,
     val language: String? = null,
-    val kind: String = "COMIC",
-)
+    val kind: String = MEDIA_KIND_COMIC,
+) {
+    /** The kind of WEB library this source's series belong in (blank = the COMIC default). */
+    val mediaKind: String get() = kind.takeIf { it.isNotBlank() } ?: MEDIA_KIND_COMIC
+}
 
 /** One series returned by a content source's search/browse feed or its detail endpoint. */
 @Serializable

@@ -67,6 +67,45 @@ data class BookDto(
     val isReady: Boolean get() = mediaStatus == null || mediaStatus == "READY"
 }
 
+/**
+ * One resumable item on Home's "Continue reading" rail: a downloaded book, or a chapter streamed
+ * straight from a content source. [kind] picks what to open — `BOOK` by [bookId], `SOURCE` by
+ * [providerId] + [chapterId]. A chapter read from Browse without following the series has no local
+ * [seriesId], so it carries the source's own identity ([sourceSeriesId], [seriesName], [coverUrl])
+ * instead. Entries are one per series, newest first.
+ */
+@Serializable
+data class KeepReadingDto(
+    val kind: String = "BOOK",
+    val bookId: String? = null,
+    val seriesId: String? = null,
+    val sourceSeriesId: String? = null,
+    val providerId: String? = null,
+    val chapterId: String? = null,
+    val title: String? = null,
+    val seriesName: String = "",
+    val coverUrl: String? = null,
+    val libraryId: String? = null,
+    val page: Int = 0,
+    val pageCount: Int? = null,
+    val readDate: String? = null,
+) {
+    val isBook: Boolean get() = kind == "BOOK"
+}
+
+/**
+ * The whole Home screen (`GET /api/v1/home`) — every rail in one response, already scoped to what this
+ * user wants to see. The server reads their hidden-library / hidden-source preferences itself, so the
+ * client neither fetches those preferences nor filters rows after the fact.
+ */
+@Serializable
+data class HomeDto(
+    val keepReading: List<KeepReadingDto> = emptyList(),
+    val recentSeries: List<SeriesDto> = emptyList(),
+    val recentlyUpdatedSeries: List<SeriesDto> = emptyList(),
+    val recentBooks: List<BookDto> = emptyList(),
+)
+
 /** A canonical "open on …" link derived from a book's identifiers. */
 @Serializable
 data class WebLinkDto(val label: String = "", val url: String = "")

@@ -14,7 +14,7 @@ Legend: `[x]` done · `[~]` partial (built, gaps listed) · `[ ]` not started
 - [x] Main scaffold — 5-tab bottom nav (Home · Libraries · Recents · Browse · More)
 - [x] Toolbar + global search entry
 - [x] Back-stack navigation (`DetailHost` / `DetailRoute`)
-- [x] Home (4 cover rails)
+- [x] Home (4 cover rails from `GET /api/v1/home` — one request, scoped server-side by the user's hidden libraries/sources; Continue reading spans downloaded books and streamed chapters)
 - [x] Readers — image (paged/continuous/auto, zoom, RTL, settings, per-series prefs) + source streaming; **ebook** (EPUB streamed by entry, MOBI/KF8/FB2 whole-file) on foliate-js in a WebView over an in-app loopback host — native chrome, TOC, CFI progress, bookmarks, per-series display prefs
 - [x] Series detail (header, books/chapters, read button)
 - [x] Book detail (cover, metadata, read + mark read/unread)

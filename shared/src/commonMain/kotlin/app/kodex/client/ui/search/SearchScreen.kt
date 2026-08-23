@@ -6,19 +6,23 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -34,6 +38,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
@@ -80,10 +85,40 @@ import app.kodex.client.ui.catalog.seriesUnreadBadge
 import app.kodex.client.ui.catalog.sourceCoverUrl
 import app.kodex.client.ui.InlineLoadError
 import app.kodex.client.ui.friendlyMessage
+import app.kodex.client.ui.nav.retain
 import app.kodex.client.ui.collectAsStateSafe
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+
+/**
+ * Search state that outlives opening a result. The host keeps search *under* the detail stack, so this
+ * screen is un-composed while a result is open and every `remember` in it would die — the query, the
+ * results and the scroll offsets live here instead. Dropped when search is closed for good.
+ * See RetainedState.kt.
+ */
+private class SearchState {
+    val query = mutableStateOf("")
+    val facets = mutableStateOf(Facets())
+    val reloadKey = mutableIntStateOf(0)
+    val local = mutableStateOf<SearchUiState>(SearchUiState.Idle)
+    val online = mutableStateOf<OnlineState>(OnlineState.Idle)
+    val onlineQuery = mutableStateOf("")
+    val onlineToken = mutableIntStateOf(0)
+    val sources = mutableStateOf<List<SourceDescriptor>>(emptyList())
+    val selectedSources = mutableStateOf<Set<String>>(emptySet())
+    val vocab = mutableStateOf<FacetVocab?>(null)
+    val mode = mutableIntStateOf(0) // 0 = library, 1 = online
+    val localGrid = LazyGridState()
+    val onlineList = LazyListState()
+
+    // Which inputs the loaded results belong to. Coming back from a result restarts the search effects
+    // with unchanged inputs; without these they would re-query and flash a spinner over results that
+    // are already here. Set only once results land, so a cancelled search still re-runs.
+    var loadedLocal: String? = null
+    var loadedOnline: String? = null
+    var loadedSourcesFor: String? = null
+}
 
 /** Selected search facets. Empty = unfiltered. */
 private data class Facets(
@@ -131,13 +166,30 @@ private sealed interface OnlineState {
     data class Ready(val perSource: List<SourceResults>) : OnlineState
 }
 
+/**
+ * Shortest library query worth running: one or two characters match a large slice of a library, so the
+ * round trip per keystroke buys nothing. Facet-only browsing (empty query) is exempt.
+ */
+private const val MIN_LOCAL_QUERY = 3
+
+/** Chips a facet group shows while collapsed; the rest are behind "Show all". */
+private const val FACET_COLLAPSED = 10
+
+/** From this many values a group gets a find box when expanded — scanning chips stops working. */
+private const val FACET_SEARCHABLE = 12
+
+/** Hard cap on chips laid out at once, however big the vocabulary; the find box is the way past it. */
+private const val FACET_MAX_VISIBLE = 100
+
 private val SERIES_STATUSES = listOf("ONGOING", "COMPLETED", "PUBLISHING_FINISHED", "LICENSED", "CANCELLED", "ON_HIATUS", "UNKNOWN")
 private val READING_STATUSES = listOf("NOT_STARTED" to "Unread", "IN_PROGRESS" to "In progress", "COMPLETED" to "Read")
 
 /**
- * Full-screen global search — the mobile form of the web's library search + facet filters. A debounced
- * field queries series (with facets) + books in parallel; a filter sheet narrows by genre, status,
- * reading status, language, tag, and label. With facets set, the query can be empty (browse by facet).
+ * Full-screen global search — the mobile form of the web's library search + facet filters. Library mode
+ * queries series (with facets) + books in parallel, debounced, once the query reaches [MIN_LOCAL_QUERY]
+ * characters; a filter sheet narrows by genre, status, reading status, language, tag, and label. With
+ * facets set, the query can be empty (browse by facet). Online mode only searches on Enter — a fan-out
+ * across every installed source is far too expensive to run while the user is still typing.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -151,40 +203,59 @@ fun SearchScreen(
 ) {
     val server by session.activeServer.collectAsStateSafe()
     val sourceNames = rememberSourceNames(session, api)
-    var query by remember { mutableStateOf("") }
+    val st = retain("search") { SearchState() }
+    var query by st.query
     // Library/Online is a two-page pager so the modes can be swiped between as well as tapped;
-    // `online` stays derived from it, keeping one source of truth for the search effect below.
-    val modePager = androidx.compose.foundation.pager.rememberPagerState(0) { 2 }
+    // `online` stays derived from it, keeping one source of truth for the search effect below. The page
+    // is seeded from (and written back to) the retained mode, so returning to search reopens the tab
+    // the results are on.
+    val modePager = androidx.compose.foundation.pager.rememberPagerState(st.mode.intValue) { 2 }
     val modeScope = androidx.compose.runtime.rememberCoroutineScope()
     val online = modePager.currentPage == 1 // false = library (local), true = sources (online)
-    var facets by remember { mutableStateOf(Facets()) }
+    LaunchedEffect(modePager.currentPage) { st.mode.intValue = modePager.currentPage }
+    var facets by st.facets
     // Bumped by the retry action so a failed search can be re-run without editing the query.
-    var reloadKey by remember { mutableIntStateOf(0) }
-    var state by remember { mutableStateOf<SearchUiState>(SearchUiState.Idle) }
+    var reloadKey by st.reloadKey
+    var state by st.local
     var sheetOpen by remember { mutableStateOf(false) }
     var sourceSheetOpen by remember { mutableStateOf(false) }
-    var vocab by remember { mutableStateOf<FacetVocab?>(null) }
+    var vocab by st.vocab
     // Online mode: installed sources + which to search (empty = all) + per-source results.
-    var sources by remember { mutableStateOf<List<SourceDescriptor>>(emptyList()) }
-    var selectedSources by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var onlineState by remember { mutableStateOf<OnlineState>(OnlineState.Idle) }
+    var sources by st.sources
+    var selectedSources by st.selectedSources
+    var onlineState by st.online
+    // Online searches the query the user *submitted*, not the one being typed. The token re-runs the
+    // same text (pressing Enter again after a source-level failure) without needing to edit it.
+    var onlineQuery by st.onlineQuery
+    var onlineToken by st.onlineToken
     val focusRequester = remember { FocusRequester() }
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+
+    fun submitOnline() {
+        onlineQuery = query.trim()
+        onlineToken++
+        keyboard?.hide()
+    }
 
     // Load the installed content sources once per server (for the online-mode source picker + search).
     LaunchedEffect(server?.id) {
         val s = server ?: return@LaunchedEffect
+        if (st.loadedSourcesFor == s.id) return@LaunchedEffect
         sources = runCatching { api.contentSources(s.baseUrl, s.apiKey) }.getOrDefault(emptyList())
+        st.loadedSourcesFor = s.id
     }
 
-    // Online search: fan out the query across the selected sources (or all) and group results per source.
-    LaunchedEffect(query, selectedSources, online, server?.id, sources) {
+    // Online search: fan out the submitted query across the selected sources (or all) and group results
+    // per source. Keyed on the submitted text, so typing alone never starts a fan-out.
+    LaunchedEffect(onlineQuery, onlineToken, selectedSources, online, server?.id, sources) {
         if (!online) return@LaunchedEffect
         val current = server ?: return@LaunchedEffect
-        val text = query.trim()
-        if (text.isEmpty()) { onlineState = OnlineState.Idle; return@LaunchedEffect }
+        val text = onlineQuery
+        if (text.isEmpty()) { st.loadedOnline = null; onlineState = OnlineState.Idle; return@LaunchedEffect }
+        val loadKey = "${current.id}|$text|$onlineToken|${selectedSources.sorted()}"
+        if (st.loadedOnline == loadKey) return@LaunchedEffect // already on screen — came back from a result
         val targets = if (selectedSources.isEmpty()) sources else sources.filter { it.id in selectedSources }
         if (targets.isEmpty()) { onlineState = OnlineState.Ready(emptyList()); return@LaunchedEffect }
-        delay(350)
         onlineState = OnlineState.Loading
         val perSource = coroutineScope {
             targets.map { src ->
@@ -195,15 +266,20 @@ fun SearchScreen(
             }.map { it.await() }
         }
         onlineState = OnlineState.Ready(perSource)
+        st.loadedOnline = loadKey
     }
 
     LaunchedEffect(query, facets, server?.id, reloadKey) {
         val current = server ?: return@LaunchedEffect
         val text = query.trim()
-        if (text.isEmpty() && facets.isEmpty) {
+        // Runs on a long-enough query, or on facets alone; anything shorter stays Idle (see the hint).
+        if (!(text.length >= MIN_LOCAL_QUERY || (text.isEmpty() && !facets.isEmpty))) {
+            st.loadedLocal = null
             state = SearchUiState.Idle
             return@LaunchedEffect
         }
+        val loadKey = "${current.id}|$text|$facets|$reloadKey"
+        if (st.loadedLocal == loadKey) return@LaunchedEffect // already on screen — came back from a result
         delay(350)
         state = SearchUiState.Loading
         val results = coroutineScope {
@@ -225,6 +301,7 @@ fun SearchScreen(
             val books = async { if (text.isBlank()) Result.success(emptyList()) else runCatching { api.searchBooks(current.baseUrl, current.apiKey, text) } }
             series.await() to books.await()
         }
+        st.loadedLocal = loadKey
         state = if (results.first.isFailure && results.second.isFailure) {
             SearchUiState.Error("Search failed. Check your connection.")
         } else {
@@ -240,7 +317,9 @@ fun SearchScreen(
         }
     }
 
+    // Only on a fresh open: returning from a result shouldn't throw the keyboard back over the results.
     LaunchedEffect(Unit) {
+        if (query.isNotEmpty() || !facets.isEmpty) return@LaunchedEffect
         delay(120)
         runCatching { focusRequester.requestFocus() }
     }
@@ -275,9 +354,16 @@ fun SearchScreen(
                         singleLine = true,
                         leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
                         trailingIcon = {
-                            if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Clear, contentDescription = "Clear") }
+                            if (query.isNotEmpty()) {
+                                IconButton(onClick = { query = ""; onlineQuery = "" }) {
+                                    Icon(Icons.Filled.Clear, contentDescription = "Clear")
+                                }
+                            }
                         },
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        // Enter is what starts an online search; in library mode it only closes the
+                        // keyboard, since those results are already following the text.
+                        keyboardActions = KeyboardActions(onSearch = { if (online) submitOnline() else keyboard?.hide() }),
                         colors = TextFieldDefaults.colors(
                             focusedContainerColor = Color.Transparent,
                             unfocusedContainerColor = Color.Transparent,
@@ -312,15 +398,18 @@ fun SearchScreen(
                     when (val os = onlineState) {
                         is OnlineState.Idle ->
                             if (sources.isEmpty()) Hint("No content sources installed. Install one from Browse → Extensions.")
-                            else Hint("Search across your installed sources.")
+                            else Hint("Type a title and press Enter to search your installed sources.")
                         is OnlineState.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
                         is OnlineState.Ready ->
                             if (os.perSource.all { it.items.isEmpty() }) Hint("No results.")
-                            else OnlineResults(server?.baseUrl ?: "", server?.apiKey ?: "", os.perSource, onOpenSourceSeries)
+                            else OnlineResults(server?.baseUrl ?: "", server?.apiKey ?: "", os.perSource, st.onlineList, onOpenSourceSeries)
                     }
                 } else {
                     when (val s = state) {
-                        is SearchUiState.Idle -> Hint("Search series and books, or tap Filters to browse by genre, status, and more.")
+                        is SearchUiState.Idle -> Hint(
+                            if (query.isNotBlank()) "Type at least $MIN_LOCAL_QUERY characters to search your library."
+                            else "Search series and books, or tap Filters to browse by genre, status, and more.",
+                        )
                         is SearchUiState.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
                         is SearchUiState.Error -> Hint(s.message)
                         is SearchUiState.Ready ->
@@ -328,7 +417,7 @@ fun SearchScreen(
                             if (s.series.isEmpty() && s.books.isEmpty() && s.partialFailure == null) Hint("No results.")
                             else Column(Modifier.fillMaxSize()) {
                                 s.partialFailure?.let { InlineLoadError(it) { reloadKey++ } }
-                                Results(server?.baseUrl ?: "", server?.apiKey ?: "", s, sourceNames, onOpenSeries, onOpenBook)
+                                Results(server?.baseUrl ?: "", server?.apiKey ?: "", s, sourceNames, st.localGrid, onOpenSeries, onOpenBook)
                             }
                     }
                 }
@@ -365,7 +454,7 @@ private fun FacetSheet(
     onClear: () -> Unit,
     onApply: (Facets) -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var working by remember(facets) { mutableStateOf(facets) }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
@@ -390,7 +479,7 @@ private fun FacetSheet(
                 if (vocab.languages.isNotEmpty()) FacetGroup("Language", vocab.languages, working.languages,
                     labelOf = { it.uppercase() },
                     onToggle = { working = working.copy(languages = working.languages.toggle(it)) })
-                if (vocab.tags.isNotEmpty()) FacetGroup("Tag", vocab.tags.take(60), working.tags,
+                if (vocab.tags.isNotEmpty()) FacetGroup("Tag", vocab.tags, working.tags,
                     onToggle = { working = working.copy(tags = working.tags.toggle(it)) })
                 if (vocab.labels.isNotEmpty()) FacetGroup("Label", vocab.labels.map { it.id }, working.labelIds,
                     labelOf = { id -> vocab.labels.first { it.id == id }.name },
@@ -418,12 +507,71 @@ private fun FacetGroup(
     labelOf: (String) -> String = { it },
     onToggle: (String) -> Unit,
 ) {
-    Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 14.dp, bottom = 6.dp))
+    var expanded by remember(title) { mutableStateOf(false) }
+    var find by remember(title) { mutableStateOf("") }
+
+    // Picked values sort to the front, so a selection is never buried below the collapsed cut-off or
+    // filtered out of sight — the group always shows what it is currently contributing to the search.
+    val matches = remember(values, selected, find) {
+        val needle = find.trim()
+        values.filter { needle.isEmpty() || labelOf(it).contains(needle, ignoreCase = true) }
+            .sortedByDescending { it in selected }
+    }
+    val visible = matches.take(if (expanded) FACET_MAX_VISIBLE else FACET_COLLAPSED)
+    val overflow = matches.size - visible.size
+    val picked = selected.count { it in values }
+
+    Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            if (picked > 0) "$title · $picked" else title,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.weight(1f),
+        )
+        if (expanded || matches.size > FACET_COLLAPSED) {
+            TextButton(onClick = { expanded = !expanded; if (!expanded) find = "" }) {
+                Text(if (expanded) "Show less" else "Show all (${values.size})")
+            }
+        }
+    }
+    // Big vocabularies (genres, tags) are unusable as a wall of chips; expanding one opens a find box so
+    // the wanted value is a few keystrokes away instead of a long scroll.
+    if (expanded && values.size > FACET_SEARCHABLE) {
+        OutlinedTextField(
+            value = find,
+            onValueChange = { find = it },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            placeholder = { Text("Find ${title.lowercase()}") },
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
+            trailingIcon = {
+                if (find.isNotEmpty()) {
+                    IconButton(onClick = { find = "" }) { Icon(Icons.Filled.Clear, contentDescription = "Clear") }
+                }
+            },
+        )
+    }
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        values.forEach { v ->
+        visible.forEach { v ->
             FilterChip(selected = v in selected, onClick = { onToggle(v) }, label = { Text(labelOf(v)) })
         }
     }
+    when {
+        matches.isEmpty() -> FacetNote("No $title matches \"${find.trim()}\".")
+        expanded && overflow > 0 -> FacetNote("+$overflow more — type above to narrow.")
+    }
+}
+
+/** Small caption under a facet group: the overflow count, or an empty find result. */
+@Composable
+private fun FacetNote(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 6.dp),
+    )
 }
 
 private fun Set<String>.toggle(v: String): Set<String> = if (v in this) this - v else this + v
@@ -435,11 +583,13 @@ private fun Results(
     apiKey: String,
     ready: SearchUiState.Ready,
     sourceNames: Map<String, String>,
+    gridState: LazyGridState,
     onOpenSeries: (SeriesDto) -> Unit,
     onOpenBook: (BookDto) -> Unit,
 ) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(112.dp),
+        state = gridState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -483,9 +633,11 @@ private fun OnlineResults(
     baseUrl: String,
     apiKey: String,
     perSource: List<SourceResults>,
+    listState: LazyListState,
     onOpen: (SourceDescriptor, SourceSearchResult) -> Unit,
 ) {
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -543,7 +695,7 @@ private fun SourcePickerSheet(
     onClear: () -> Unit,
     onApply: (Set<String>) -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var working by remember(selected) { mutableStateOf(selected) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {

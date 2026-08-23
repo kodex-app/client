@@ -210,8 +210,9 @@ fun DetailHost(
         is DetailRoute.SeeAll ->
             app.kodex.client.ui.catalog.SeeAllScreen(
                 session, api, route.kind, onBack,
-                onOpenSeries = { onOpenSeries(it.id) },
-                onOpenBook = { onOpenBook(it.id) },
+                onOpenSeries = onOpenSeries,
+                onOpenBook = onOpenBook,
+                onOpenBrowseReader = onOpenBrowseReader,
             )
 
         is DetailRoute.Migrate ->

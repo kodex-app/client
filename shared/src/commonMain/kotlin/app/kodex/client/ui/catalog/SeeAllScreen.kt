@@ -22,19 +22,25 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
-import app.kodex.client.data.loadLibraryNavPrefs
-import app.kodex.client.data.visibleOnHome
 import app.kodex.client.network.BookDto
+import app.kodex.client.network.KeepReadingDto
 import app.kodex.client.network.KodexApi
 import app.kodex.client.network.SeriesDto
 import app.kodex.client.ui.EmptyMessage
 import app.kodex.client.ui.LoadedContent
 import app.kodex.client.ui.collectAsStateSafe
+import app.kodex.client.ui.main.OpenBrowseReader
 
 /** What a "See all" screen shows — backs Home's per-section View-all. */
 enum class SeeAllKind { KEEP_READING, RECENT_BOOKS, RECENT_SERIES, UPDATED_SERIES }
 
-/** Full-screen cover grid for one Home rail's complete list. */
+/**
+ * Full-screen cover grid for one Home rail's complete list.
+ *
+ * Each rail expands through the home resource's own row endpoint under `/v1/home`, so it is scoped by the
+ * server exactly like the rail it came from — the expanded list can't show libraries or sources the rail
+ * hid, and no filtering happens here.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SeeAllScreen(
@@ -42,12 +48,12 @@ fun SeeAllScreen(
     api: KodexApi,
     kind: SeeAllKind,
     onBack: () -> Unit,
-    onOpenSeries: (SeriesDto) -> Unit,
-    onOpenBook: (BookDto) -> Unit,
+    onOpenSeries: (String) -> Unit,
+    onOpenBook: (String) -> Unit,
+    onOpenBrowseReader: OpenBrowseReader = { _, _, _ -> },
 ) {
     val server by session.activeServer.collectAsStateSafe()
     val sourceNames = rememberSourceNames(session, api)
-    val isBooks = kind == SeeAllKind.KEEP_READING || kind == SeeAllKind.RECENT_BOOKS
     val title = when (kind) {
         SeeAllKind.KEEP_READING -> "Continue reading"
         SeeAllKind.RECENT_BOOKS -> "Recently added"
@@ -69,19 +75,11 @@ fun SeeAllScreen(
                 key = kind to server?.id,
                 load = {
                     val s = server!!
-                    // This screen is one Home row expanded, so it hides the same libraries Home does.
-                    val navPrefs = loadLibraryNavPrefs(api, s.baseUrl, s.apiKey)
                     when (kind) {
-                        SeeAllKind.KEEP_READING ->
-                            api.keepReading(s.baseUrl, s.apiKey).visibleOnHome(navPrefs) { it.libraryId }
-                        SeeAllKind.RECENT_BOOKS ->
-                            api.booksList(s.baseUrl, s.apiKey, "createdDate,desc").visibleOnHome(navPrefs) { it.libraryId }
-                        SeeAllKind.RECENT_SERIES ->
-                            api.querySeries(s.baseUrl, s.apiKey, sort = "createdDate,desc", size = 300)
-                                .visibleOnHome(navPrefs) { it.libraryId }
-                        SeeAllKind.UPDATED_SERIES ->
-                            api.querySeries(s.baseUrl, s.apiKey, sort = "lastModifiedDate,desc", size = 300)
-                                .visibleOnHome(navPrefs) { it.libraryId }
+                        SeeAllKind.KEEP_READING -> api.homeKeepReading(s.baseUrl, s.apiKey)
+                        SeeAllKind.RECENT_BOOKS -> api.homeBooks(s.baseUrl, s.apiKey)
+                        SeeAllKind.RECENT_SERIES -> api.homeSeries(s.baseUrl, s.apiKey, row = "RECENT")
+                        SeeAllKind.UPDATED_SERIES -> api.homeSeries(s.baseUrl, s.apiKey, row = "UPDATED")
                     }
                 },
             ) { list ->
@@ -95,34 +93,54 @@ fun SeeAllScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    if (isBooks) {
-                        @Suppress("UNCHECKED_CAST")
-                        val books = list as List<BookDto>
-                        items(books, key = { it.id }) { b ->
-                            CoverCard(
-                                coverUrl = bookCoverUrl(s.baseUrl, b.id),
-                                apiKey = s.apiKey,
-                                title = b.title.ifBlank { b.numberDisplay ?: "Book" },
-                                subtitle = bookSubtitle(b),
-                                unread = null,
-                                onClick = { onOpenBook(b) },
-                                width = null,
-                            )
+                    when (kind) {
+                        SeeAllKind.KEEP_READING -> {
+                            @Suppress("UNCHECKED_CAST")
+                            val entries = list as List<KeepReadingDto>
+                            items(entries, key = { "${it.kind}-${it.bookId ?: it.chapterId}" }) { k ->
+                                CoverCard(
+                                    coverUrl = keepReadingCover(s.baseUrl, k),
+                                    apiKey = s.apiKey,
+                                    title = k.seriesName.ifBlank { k.title.orEmpty() },
+                                    subtitle = k.title,
+                                    unread = null,
+                                    onClick = { openKeepReading(k, onOpenBook, onOpenSeries, onOpenBrowseReader) },
+                                    width = null,
+                                )
+                            }
                         }
-                    } else {
-                        @Suppress("UNCHECKED_CAST")
-                        val series = list as List<SeriesDto>
-                        items(series, key = { it.id }) { sd ->
-                            CoverCard(
-                                coverUrl = seriesCoverUrl(s.baseUrl, sd),
-                                apiKey = s.apiKey,
-                                title = sd.title,
-                                subtitle = seriesSubtitle(sd),
-                                unread = seriesUnreadBadge(sd),
-                                onClick = { onOpenSeries(sd) },
-                                width = null,
-                                source = sourceLabel(sd, sourceNames),
-                            )
+
+                        SeeAllKind.RECENT_BOOKS -> {
+                            @Suppress("UNCHECKED_CAST")
+                            val books = list as List<BookDto>
+                            items(books, key = { it.id }) { b ->
+                                CoverCard(
+                                    coverUrl = bookCoverUrl(s.baseUrl, b.id),
+                                    apiKey = s.apiKey,
+                                    title = b.title.ifBlank { b.numberDisplay ?: "Book" },
+                                    subtitle = bookSubtitle(b),
+                                    unread = null,
+                                    onClick = { onOpenBook(b.id) },
+                                    width = null,
+                                )
+                            }
+                        }
+
+                        SeeAllKind.RECENT_SERIES, SeeAllKind.UPDATED_SERIES -> {
+                            @Suppress("UNCHECKED_CAST")
+                            val series = list as List<SeriesDto>
+                            items(series, key = { it.id }) { sd ->
+                                CoverCard(
+                                    coverUrl = seriesCoverUrl(s.baseUrl, sd),
+                                    apiKey = s.apiKey,
+                                    title = sd.title,
+                                    subtitle = seriesSubtitle(sd),
+                                    unread = seriesUnreadBadge(sd),
+                                    onClick = { onOpenSeries(sd.id) },
+                                    width = null,
+                                    source = sourceLabel(sd, sourceNames),
+                                )
+                            }
                         }
                     }
                 }

@@ -459,7 +459,7 @@ fun LibrarySeriesScreen(
     }
 
     if (sheetOpen) {
-        val sheetState = rememberModalBottomSheetState()
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(onDismissRequest = { sheetOpen = false }, sheetState = sheetState) {
             val tabs = listOf("Sort", "Filter", "Group", "Display")
             val sheetPager = androidx.compose.foundation.pager.rememberPagerState(sheetTab) { tabs.size }
