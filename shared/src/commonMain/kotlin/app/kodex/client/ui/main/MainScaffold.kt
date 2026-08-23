@@ -31,6 +31,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarDefaults
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -62,6 +63,7 @@ import app.kodex.client.ui.nav.LocalRetainedSlot
 import app.kodex.client.ui.nav.RetainedStateStore
 import app.kodex.client.ui.recents.rememberNewUpdateCount
 import app.kodex.client.ui.search.SearchScreen
+import app.kodex.client.ui.theme.SystemNavBarColor
 
 /** Retained-state slot for the search screen; it keeps its query and results while a result is open. */
 private const val SEARCH_SLOT = "search"
@@ -195,6 +197,11 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
       }
         return
     }
+
+    // Continue the bottom bar's colour under the system navigation bar, so the two read as one
+    // surface instead of the bar floating on a lighter slab. Only here: the screens returned above
+    // have no bottom bar, and dropping out of composition restores the default.
+    SystemNavBarColor(NavigationBarDefaults.containerColor)
 
     // The tab area is likewise dropped while a detail screen is open, so each tab keeps its own slot.
     CompositionLocalProvider(LocalRetainedSlot provides retained.slot("tab:${tab.name}")) {

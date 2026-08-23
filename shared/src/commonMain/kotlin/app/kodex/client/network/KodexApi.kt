@@ -650,6 +650,16 @@ class KodexApi(private val client: HttpClient) {
         }
     }
 
+    /**
+     * Deletes every downloaded chapter of a followed series, keeping the follow. Read chapters stay read
+     * (the server carries their progress over to the streamed records) and the chapters go back to
+     * streaming from the source. Returns how many were removed.
+     */
+    suspend fun removeWebSeriesDownloads(baseUrl: String, apiKey: String, libraryId: String, seriesId: String): Int =
+        client.delete("$baseUrl/api/v1/libraries/$libraryId/web-series/$seriesId/download") {
+            header(HEADER_API_KEY, apiKey)
+        }.body<RemovedDownloadsDto>().removed
+
     suspend fun unfollowWebSeries(baseUrl: String, apiKey: String, libraryId: String, seriesId: String, deleteFiles: Boolean) {
         client.delete("$baseUrl/api/v1/libraries/$libraryId/web-series/$seriesId") {
             header(HEADER_API_KEY, apiKey)

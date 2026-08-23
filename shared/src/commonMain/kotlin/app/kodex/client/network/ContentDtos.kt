@@ -111,6 +111,12 @@ data class DownloadWebSeriesRequest(
     val chapterIds: List<String>? = null,
 )
 
+/** Result of `DELETE .../web-series/{id}/download` — how many downloaded chapters were removed. */
+@Serializable
+data class RemovedDownloadsDto(
+    val removed: Int = 0,
+)
+
 /** Body of `POST /series/{id}/chapters/mark-read` — mark the given WEB chapters read/unread. */
 @Serializable
 data class MarkChaptersRequest(

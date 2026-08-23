@@ -158,6 +158,7 @@ fun SeriesDetailScreen(
     var editOpen by remember { mutableStateOf(false) }
     var moveOpen by remember { mutableStateOf(false) }
     var removeOpen by remember { mutableStateOf(false) }
+    var removeDownloadsOpen by remember { mutableStateOf(false) }
 
     fun reload() { selection.clear(); st.forceFull = true; reloadTick++ }
 
@@ -291,6 +292,13 @@ fun SeriesDetailScreen(
                                         DropdownMenuItem(text = { Text("Refresh chapters") }, onClick = {
                                             menuOpen = false; runAction("Chapters refreshed") { api.refreshSeriesChapters(s!!.baseUrl, s.apiKey, seriesId) }
                                         })
+                                        // Only worth offering when something is actually downloaded —
+                                        // on a series that streams everything it would do nothing.
+                                        if (detail.libraryId != null && content.chapters.any { it.downloaded }) {
+                                            DropdownMenuItem(text = { Text("Remove all downloads") }, onClick = {
+                                                menuOpen = false; removeDownloadsOpen = true
+                                            })
+                                        }
                                         val prov = detail.sourceProviderId
                                         val ext = detail.sourceSeriesId
                                         if (prov != null && ext != null) {
@@ -427,6 +435,37 @@ fun SeriesDetailScreen(
                 }) { Text("Remove") }
             },
             dismissButton = { TextButton(onClick = { removeOpen = false }) { Text("Cancel") } },
+        )
+    }
+
+    // Deleting the local copies, not the series: it stays followed and its chapters stream from the
+    // source again, so the confirm says what survives rather than just warning.
+    if (removeDownloadsOpen && s != null && detail != null && detail.libraryId != null) {
+        val downloadLibraryId = detail.libraryId!!
+        AlertDialog(
+            onDismissRequest = { removeDownloadsOpen = false },
+            title = { Text("Remove all downloads?") },
+            text = {
+                Text(
+                    "Every downloaded chapter of \"${detail.title}\" will be deleted from the server. " +
+                        "The series stays in your library, read chapters stay read, and chapters stream from the source.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    removeDownloadsOpen = false
+                    scope.launch {
+                        runCatching { api.removeWebSeriesDownloads(s.baseUrl, s.apiKey, downloadLibraryId, seriesId) }.fold(
+                            onSuccess = { removed ->
+                                snackbar?.show(if (removed == 1) "Removed 1 download" else "Removed $removed downloads")
+                                reload()
+                            },
+                            onFailure = { snackbar?.show("Action failed. Please try again.") },
+                        )
+                    }
+                }) { Text("Remove") }
+            },
+            dismissButton = { TextButton(onClick = { removeDownloadsOpen = false }) { Text("Cancel") } },
         )
     }
 

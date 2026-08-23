@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.res.Configuration
 import android.graphics.Color
+import android.os.Build
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
@@ -24,11 +25,6 @@ private object BarAppearance {
     @Volatile var statusIsDark: Boolean = false
     @Volatile var navIsDark: Boolean = false
 }
-
-// The scrim colours androidx uses for its own default `auto` styles. Only applied on API 28 and
-// below, where the platform cannot enforce system-bar contrast by itself.
-private val DefaultLightScrim = Color.argb(0xe6, 0xFF, 0xFF, 0xFF)
-private val DefaultDarkScrim = Color.argb(0x80, 0x1b, 0x1b, 0x1b)
 
 /**
  * Goes edge-to-edge without letting androidx own the bar icon colours. Call from `onCreate`, before
@@ -52,10 +48,16 @@ fun ComponentActivity.enableKodexEdgeToEdge() {
         statusBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT) {
             BarAppearance.statusIsDark
         },
-        navigationBarStyle = SystemBarStyle.auto(DefaultLightScrim, DefaultDarkScrim) {
+        // Transparent rather than androidx's default scrims: the app paints the strip behind the
+        // navigation bar itself (the bottom bar's colour — see SystemNavBarColor), and a scrim would
+        // only wash that colour out. Same reason for turning contrast enforcement off below.
+        navigationBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT) {
             BarAppearance.navIsDark
         },
     )
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        window.isNavigationBarContrastEnforced = false
+    }
 }
 
 @Composable
