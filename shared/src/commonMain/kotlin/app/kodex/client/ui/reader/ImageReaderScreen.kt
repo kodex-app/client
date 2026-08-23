@@ -99,6 +99,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.key.Key
@@ -927,6 +928,11 @@ private fun PageImage(
         contentDescription = null,
         contentScale = contentScale,
         modifier = modifier,
+        // Coil defaults to FilterQuality.Low — plain bilinear. Reader pages are almost always drawn
+        // scaled (webtoon strips arrive 700-940px wide and get blown up to a 1264px-wide phone
+        // screen), and bilinear turns line art and lettering to mush at that magnification. Cubic
+        // resampling is what the browser does, and is why the same chapter reads sharper on the web.
+        filterQuality = FilterQuality.High,
         loading = { PageSpinner(slot) },
         error = { PageErrorPlate(slot, it.result.throwable.imageErrorText()) { attempt++ } },
     )
