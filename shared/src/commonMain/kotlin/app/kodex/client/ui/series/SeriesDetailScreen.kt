@@ -29,6 +29,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.ManageSearch
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MarkAsUnread
@@ -36,9 +38,11 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DoneAll
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.RemoveDone
+import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -82,6 +86,8 @@ import app.kodex.client.ui.SelectionTopBar
 import app.kodex.client.ui.TooltipIconButton
 import app.kodex.client.ui.catalog.CoverCard
 import app.kodex.client.ui.catalog.CoverImage
+import app.kodex.client.ui.catalog.SeriesAction
+import app.kodex.client.ui.catalog.SeriesActionRow
 import app.kodex.client.ui.catalog.SeriesBackdrop
 import app.kodex.client.ui.nav.retain
 import app.kodex.client.ui.catalog.SeriesDetailList
@@ -108,6 +114,8 @@ private data class SeriesContent(
     val libraryName: String? = null,
     val sourceName: String? = null,
     val libraries: List<app.kodex.client.network.LibraryDto> = emptyList(),
+    /** The source's own site, used to build the "open in origin" link. */
+    val sourceWebsite: String? = null,
 )
 
 /**
@@ -188,9 +196,11 @@ fun SeriesDetailScreen(
             if (st.ancillaryFor != seriesId || st.forceFull) {
                 st.subSeries = runCatching { api.subSeries(s0.baseUrl, s0.apiKey, seriesId) }.getOrDefault(emptyList())
                 st.libraries = runCatching { api.libraries(s0.baseUrl, s0.apiKey) }.getOrDefault(emptyList())
-                st.sourceName = detail.sourceProviderId?.let { pid ->
-                    runCatching { api.contentSources(s0.baseUrl, s0.apiKey).firstOrNull { it.id == pid }?.displayName }.getOrNull()
+                val source = detail.sourceProviderId?.let { pid ->
+                    runCatching { api.contentSources(s0.baseUrl, s0.apiKey).firstOrNull { it.id == pid } }.getOrNull()
                 }
+                st.sourceName = source?.displayName
+                st.sourceWebsite = source?.website
                 st.ancillaryFor = seriesId
                 st.forceFull = false
             }
@@ -200,8 +210,9 @@ fun SeriesDetailScreen(
             // set of libraries, so the name still resolves without re-fetching them.
             val libName = detail.libraryId?.let { lid -> libs.firstOrNull { it.id == lid }?.name }
             val srcName = st.sourceName
-            if (detail.isWeb) SeriesContent(detail, emptyList(), api.seriesChapters(s0.baseUrl, s0.apiKey, seriesId), subs, libName, srcName, libs)
-            else SeriesContent(detail, api.seriesBooks(s0.baseUrl, s0.apiKey, seriesId), emptyList(), subs, libName, srcName, libs)
+            val srcSite = st.sourceWebsite
+            if (detail.isWeb) SeriesContent(detail, emptyList(), api.seriesChapters(s0.baseUrl, s0.apiKey, seriesId), subs, libName, srcName, libs, srcSite)
+            else SeriesContent(detail, api.seriesBooks(s0.baseUrl, s0.apiKey, seriesId), emptyList(), subs, libName, srcName, libs, srcSite)
         }.fold({ SeriesPhase.Ready(it) }, { SeriesPhase.Error(it.friendlyMessage()) })
     }
 
@@ -230,6 +241,39 @@ fun SeriesDetailScreen(
         content == null -> emptyList()
         isWeb -> visibleChapters.map { it.chapterId }
         else -> content.books.map { it.id }
+    }
+
+    val openUrl = app.kodex.client.platform.rememberUrlOpener()
+    // This series on the source's own site (WEB only). sourceSeriesId is the source's path, joined
+    // onto the source's website; an already-absolute id is used as-is — the rule the web UI follows.
+    val sourceWebsite = content?.sourceWebsite
+    val originalUrl = remember(detail?.sourceSeriesId, sourceWebsite) {
+        val sid = detail?.sourceSeriesId?.takeIf { it.isNotBlank() }
+        when {
+            sid == null -> null
+            sid.startsWith("http://", true) || sid.startsWith("https://", true) -> sid
+            else -> sourceWebsite?.takeIf { it.isNotBlank() }?.trimEnd('/')
+                ?.let { base -> base + if (sid.startsWith("/")) sid else "/$sid" }
+        }
+    }
+    // Promoted out of the overflow menu: the maintenance actions worth one tap from the header.
+    val headerActions: @Composable () -> Unit = {
+        SeriesActionRow {
+            SeriesAction(Icons.Outlined.Sync, "Refresh metadata") {
+                runAction("Refreshing metadata…") { api.refreshSeriesMetadata(s!!.baseUrl, s.apiKey, seriesId) }
+            }
+            SeriesAction(Icons.AutoMirrored.Outlined.ManageSearch, "Re-analyze") {
+                runAction("Analyzing…") { api.analyzeSeries(s!!.baseUrl, s.apiKey, seriesId) }
+            }
+            if (originalUrl != null) {
+                SeriesAction(Icons.AutoMirrored.Outlined.OpenInNew, "Open in origin") { openUrl(originalUrl) }
+            }
+            // Removing only unlinks a followed WEB series from its library; LOCAL series live on disk
+            // and are removed by deleting their files.
+            if (detail?.libraryId != null && isWeb) {
+                SeriesAction(Icons.Outlined.Delete, "Remove", tint = MaterialTheme.colorScheme.error) { removeOpen = true }
+            }
+        }
     }
 
     // The resume action (Start Reading / Continue) — surfaced as a floating button.
@@ -313,19 +357,10 @@ fun SeriesDetailScreen(
                                     if (canMove) {
                                         DropdownMenuItem(text = { Text("Move to another library") }, onClick = { menuOpen = false; moveOpen = true })
                                     }
-                                    DropdownMenuItem(text = { Text("Refresh metadata") }, onClick = {
-                                        menuOpen = false; runAction("Refreshing metadata…") { api.refreshSeriesMetadata(s!!.baseUrl, s.apiKey, seriesId) }
-                                    })
-                                    DropdownMenuItem(text = { Text("Re-analyze") }, onClick = {
-                                        menuOpen = false; runAction("Analyzing…") { api.analyzeSeries(s!!.baseUrl, s.apiKey, seriesId) }
-                                    })
                                     DropdownMenuItem(text = { Text("Edit metadata") }, onClick = { menuOpen = false; editOpen = true })
                                     DropdownMenuItem(text = { Text("Bookmarks") }, onClick = { menuOpen = false; bookmarksOpen = true })
-                                    // Removing only unlinks a followed WEB series from its library; LOCAL
-                                    // series live on disk and are removed by deleting their files.
-                                    if (isWeb && detail?.libraryId != null) {
-                                        DropdownMenuItem(text = { Text("Remove from library") }, onClick = { menuOpen = false; removeOpen = true })
-                                    }
+                                    // Refresh metadata / re-analyze / open in origin / remove from library
+                                    // moved to the header's action row — see [SeriesActionRow].
                                 }
                             }
                         },
@@ -402,6 +437,7 @@ fun SeriesDetailScreen(
                         onToggleDir = { sortDesc = !sortDesc }, onSetSortKey = { sortKey = it },
                         translator = translator, onSetTranslator = { translator = it },
                         onRefresh = { runAction("Chapters refreshed") { api.refreshSeriesChapters(s.baseUrl, s.apiKey, seriesId) } },
+                        headerActions = headerActions,
                         selection = selection,
                         onOpenReader = onOpenReader, onOpenSourceReader = onOpenSourceReader,
                         onOpenReaderIncognito = onOpenReaderIncognito, onOpenSourceReaderIncognito = onOpenSourceReaderIncognito,
@@ -412,6 +448,7 @@ fun SeriesDetailScreen(
                         sortDesc = sortDesc, sortKey = sortKey,
                         onToggleDir = { sortDesc = !sortDesc }, onSetSortKey = { sortKey = it },
                         onRefresh = { runAction("Refreshing metadata…") { api.refreshSeriesMetadata(s.baseUrl, s.apiKey, seriesId) } },
+                        headerActions = headerActions,
                         selection = selection, onOpenBook = onOpenBook, onShowBookDetails = onShowBookDetails,
                         onOpenSeries = onOpenSeries,
                         listState = listState, topInset = topInset, bottomInset = bottomInset,
@@ -719,6 +756,7 @@ private fun BooksLayout(
     onToggleDir: () -> Unit,
     onSetSortKey: (SeriesSort) -> Unit,
     onRefresh: () -> Unit,
+    headerActions: @Composable () -> Unit,
     selection: SelectionState<String>,
     onOpenBook: (String) -> Unit,
     onShowBookDetails: (String) -> Unit,
@@ -741,6 +779,7 @@ private fun BooksLayout(
             unread = content.books.count { it.readProgress?.completed != true },
             libraryName = content.libraryName,
             sourceName = content.sourceName,
+            actions = headerActions,
         )
         if (content.subseries.isNotEmpty()) {
             Spacer(Modifier.height(16.dp))
@@ -840,6 +879,7 @@ private fun ChaptersLayout(
     translator: String?,
     onSetTranslator: (String?) -> Unit,
     onRefresh: () -> Unit,
+    headerActions: @Composable () -> Unit,
     selection: SelectionState<String>,
     onOpenReader: (String) -> Unit,
     onOpenSourceReader: OpenSourceReader,
@@ -869,6 +909,7 @@ private fun ChaptersLayout(
             unread = visibleChapters.count { !it.read },
             libraryName = content.libraryName,
             sourceName = content.sourceName,
+            actions = headerActions,
         )
         Spacer(Modifier.height(20.dp))
         SeriesListControls(
@@ -940,6 +981,7 @@ private fun SeriesHeader(
     unread: Int,
     libraryName: String? = null,
     sourceName: String? = null,
+    actions: (@Composable () -> Unit)? = null,
 ) {
     SeriesHeader(
         coverUrl = seriesCoverUrl(baseUrl, detail.id, detail.coverUrl),
@@ -947,6 +989,7 @@ private fun SeriesHeader(
         title = detail.title,
         chips = (detail.genres + detail.tags).distinct(),
         summary = detail.summary,
+        actions = actions,
     ) {
         Spacer(Modifier.height(6.dp))
         // Author / artist (artist shown only when it differs from the author).
@@ -1059,6 +1102,7 @@ private class SeriesDetailState {
     var libraries: List<app.kodex.client.network.LibraryDto> = emptyList()
     var subSeries: List<app.kodex.client.network.SeriesDto> = emptyList()
     var sourceName: String? = null
+    var sourceWebsite: String? = null
 
     /** Set by an explicit reload (pull, bulk action, retry), which refreshes the ancillary data too. */
     var forceFull = false

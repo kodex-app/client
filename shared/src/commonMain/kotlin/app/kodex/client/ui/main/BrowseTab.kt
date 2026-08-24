@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -158,15 +157,18 @@ private fun SourceList(
                 Spacer(Modifier.size(8.dp))
                 Box {
                     val someHidden = shownLangCount < langs.size
+                    IconButton(onClick = { langMenu = true }) {
+                        Icon(
+                            Icons.Filled.Language,
+                            contentDescription = "Filter by language",
+                            tint = if (someHidden) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     // Badge reads "shown of total", the same summary the web's Languages button spells out.
-                    BadgedBox(badge = { if (someHidden) Badge { Text("$shownLangCount/${langs.size}") } }) {
-                        IconButton(onClick = { langMenu = true }) {
-                            Icon(
-                                Icons.Filled.Language,
-                                contentDescription = "Filter by language",
-                                tint = if (someHidden) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                    // Anchored inside the button's bounds rather than with BadgedBox's outward offset,
+                    // which pushed a multi-character badge past the screen edge on this last-in-row button.
+                    if (someHidden) {
+                        Badge(Modifier.align(Alignment.TopEnd)) { Text("$shownLangCount/${langs.size}") }
                     }
                     DropdownMenu(expanded = langMenu, onDismissRequest = { langMenu = false }) {
                         DropdownMenuItem(

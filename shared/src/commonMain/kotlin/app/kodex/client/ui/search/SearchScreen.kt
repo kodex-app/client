@@ -30,6 +30,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -159,12 +160,18 @@ private sealed interface SearchUiState {
 }
 
 /** Online (source) search: results grouped per content source. */
-private data class SourceResults(val source: SourceDescriptor, val items: List<SourceSearchResult>, val error: Boolean)
+private data class SourceResults(
+    val source: SourceDescriptor,
+    val items: List<SourceSearchResult>,
+    val error: Boolean,
+    val favorite: Boolean = false,
+)
 
 private sealed interface OnlineState {
     data object Idle : OnlineState
     data object Loading : OnlineState
-    data class Ready(val perSource: List<SourceResults>) : OnlineState
+    /** [pending] = the favourite sources are in, the rest of the fan-out is still running. */
+    data class Ready(val perSource: List<SourceResults>, val pending: Boolean = false) : OnlineState
 }
 
 /**
@@ -197,6 +204,7 @@ private val READING_STATUSES = listOf("NOT_STARTED" to "Unread", "IN_PROGRESS" t
 fun SearchScreen(
     session: SessionManager,
     api: KodexApi,
+    sourcePrefs: app.kodex.client.data.SourcePrefsStore,
     onClose: () -> Unit,
     onOpenSeries: (SeriesDto) -> Unit = {},
     onOpenBook: (BookDto) -> Unit = {},
@@ -231,6 +239,9 @@ fun SearchScreen(
     // same text (pressing Enter again after a source-level failure) without needing to edit it.
     var onlineQuery by st.onlineQuery
     var onlineToken by st.onlineToken
+    // Favourite sources (server-persisted, shared with Browse) - searched first, see the effect below.
+    val favorites by sourcePrefs.favorites.collectAsStateSafe()
+    val favoriteIds = remember(favorites) { favorites.toSet() }
     val focusRequester = remember { FocusRequester() }
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
 
@@ -259,16 +270,28 @@ fun SearchScreen(
         if (st.loadedOnline == loadKey) return@LaunchedEffect // already on screen — came back from a result
         val targets = if (selectedSources.isEmpty()) sources else sources.filter { it.id in selectedSources }
         if (targets.isEmpty()) { onlineState = OnlineState.Ready(emptyList()); return@LaunchedEffect }
+        // Favourites go first, and in a wave of their own: the sources the user actually cares about
+        // land (and render) without waiting on the slowest of everything else. Within a wave the order
+        // stays the server's, and every source in a wave is still searched in parallel.
+        val (favTargets, restTargets) = targets.partition { it.id in favoriteIds }
         onlineState = OnlineState.Loading
-        val perSource = coroutineScope {
-            targets.map { src ->
+        suspend fun searchAll(batch: List<SourceDescriptor>, favorite: Boolean): List<SourceResults> = coroutineScope {
+            batch.map { src ->
                 async {
                     runCatching { api.sourceSearch(current.baseUrl, current.apiKey, src.id, text, 1) }
-                        .fold({ SourceResults(src, it.items, error = false) }, { SourceResults(src, emptyList(), error = true) })
+                        .fold(
+                            { SourceResults(src, it.items, error = false, favorite = favorite) },
+                            { SourceResults(src, emptyList(), error = true, favorite = favorite) },
+                        )
                 }
             }.map { it.await() }
         }
-        onlineState = OnlineState.Ready(perSource)
+        val favResults = searchAll(favTargets, favorite = true)
+        // Favourite rows go up as soon as they are in; the rest append under them.
+        if (favResults.isNotEmpty() && restTargets.isNotEmpty()) {
+            onlineState = OnlineState.Ready(favResults, pending = true)
+        }
+        onlineState = OnlineState.Ready(favResults + searchAll(restTargets, favorite = false))
         st.loadedOnline = loadKey
     }
 
@@ -404,8 +427,8 @@ fun SearchScreen(
                             else Hint("Type a title and press Enter to search your installed sources.")
                         is OnlineState.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
                         is OnlineState.Ready ->
-                            if (os.perSource.all { it.items.isEmpty() }) Hint("No results.")
-                            else OnlineResults(server?.baseUrl ?: "", server?.apiKey ?: "", os.perSource, st.onlineList, onOpenSourceSeries)
+                            if (!os.pending && os.perSource.all { it.items.isEmpty() }) Hint("No results.")
+                            else OnlineResults(server?.baseUrl ?: "", server?.apiKey ?: "", os.perSource, os.pending, st.onlineList, onOpenSourceSeries)
                     }
                 } else {
                     when (val s = state) {
@@ -442,7 +465,8 @@ fun SearchScreen(
     }
     if (sourceSheetOpen) {
         SourcePickerSheet(
-            sources = sources,
+            sources = remember(sources, favoriteIds) { sources.sortedBy { it.id !in favoriteIds } },
+            favorites = favoriteIds,
             selected = selectedSources,
             onDismiss = { sourceSheetOpen = false },
             onClear = { selectedSources = emptySet() },
@@ -641,6 +665,8 @@ private fun OnlineResults(
     baseUrl: String,
     apiKey: String,
     perSource: List<SourceResults>,
+    /** Favourites are on screen; the remaining sources are still being searched. */
+    pending: Boolean,
     listState: LazyListState,
     onOpen: (SourceDescriptor, SourceSearchResult) -> Unit,
 ) {
@@ -652,12 +678,20 @@ private fun OnlineResults(
     ) {
         items(perSource, key = { it.source.id }) { sr ->
             Column(Modifier.fillMaxWidth()) {
-                Text(
-                    sr.source.displayName.ifBlank { sr.source.id },
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
-                )
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    if (sr.favorite) {
+                        Icon(Icons.Filled.Star, contentDescription = "Favorite source", tint = FavoriteAmber, modifier = Modifier.size(14.dp))
+                    }
+                    Text(
+                        sr.source.displayName.ifBlank { sr.source.id },
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
                 when {
                     sr.error -> RowHint("Couldn't search this source.")
                     sr.items.isEmpty() -> RowHint("No results.")
@@ -680,8 +714,26 @@ private fun OnlineResults(
                 }
             }
         }
+        if (pending) {
+            item(key = "pending") {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                    Text(
+                        "Searching the other sources…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
     }
 }
+
+private val FavoriteAmber = Color(0xFFF59E0B)
 
 @Composable
 private fun RowHint(text: String) {
@@ -698,6 +750,7 @@ private fun RowHint(text: String) {
 @Composable
 private fun SourcePickerSheet(
     sources: List<SourceDescriptor>,
+    favorites: Set<String>,
     selected: Set<String>,
     onDismiss: () -> Unit,
     onClear: () -> Unit,
@@ -708,7 +761,7 @@ private fun SourcePickerSheet(
     ModalBottomSheet(modifier = Modifier.heightIn(min = sheetMinHeight()), onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             Text("Sources", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 4.dp))
-            Text("None selected searches every source.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
+            Text("None selected searches every source; favourites are searched first.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
             Column(Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
                 if (sources.isEmpty()) {
                     Text("No sources installed.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 12.dp))
@@ -718,6 +771,9 @@ private fun SourcePickerSheet(
                             selected = src.id in working,
                             onClick = { working = working.toggle(src.id) },
                             label = { Text(src.displayName.ifBlank { src.id }) },
+                            leadingIcon = if (src.id !in favorites) null else {
+                                { Icon(Icons.Filled.Star, contentDescription = null, tint = FavoriteAmber, modifier = Modifier.size(14.dp)) }
+                            },
                         )
                     }
                 }

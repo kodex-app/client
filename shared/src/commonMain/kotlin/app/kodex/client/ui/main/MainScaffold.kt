@@ -202,7 +202,7 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
       CompositionLocalProvider(LocalRetainedSlot provides retained.slot(SEARCH_SLOT)) {
       WithIncognitoBanner(incognito, turnOffIncognito) {
         SearchScreen(
-            session, api,
+            session, api, sourcePrefs,
             onClose = { closeSearch() },
             onOpenSeries = { openSeries(it.id) },
             onOpenBook = { openBook(it.id) },

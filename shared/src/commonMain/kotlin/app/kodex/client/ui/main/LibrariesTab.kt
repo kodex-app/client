@@ -28,7 +28,6 @@ import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -310,18 +309,21 @@ private fun LibrariesToolbar(
             ),
         )
         Box {
-            BadgedBox(badge = { if (filter.activeCount > 0) Badge { Text("${filter.activeCount}") } }) {
-                IconButton(onClick = { filterMenu = true }) {
-                    Icon(
-                        Icons.Filled.FilterList,
-                        contentDescription = "Filter libraries",
-                        tint = if (filter.activeCount > 0) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
-                }
+            IconButton(onClick = { filterMenu = true }) {
+                Icon(
+                    Icons.Filled.FilterList,
+                    contentDescription = "Filter libraries",
+                    tint = if (filter.activeCount > 0) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
+            // Kept inside the button's bounds: BadgedBox offsets the badge outward, which clipped it
+            // against the screen edge for this trailing toolbar button.
+            if (filter.activeCount > 0) {
+                Badge(Modifier.align(Alignment.TopEnd)) { Text("${filter.activeCount}") }
             }
             DropdownMenu(expanded = filterMenu, onDismissRequest = { filterMenu = false }) {
                 DropdownMenuItem(
