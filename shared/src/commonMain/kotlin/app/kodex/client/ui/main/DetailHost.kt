@@ -7,7 +7,6 @@ import app.kodex.client.network.KodexApi
 import app.kodex.client.network.LibraryDto
 import app.kodex.client.network.SourceDescriptor
 import app.kodex.client.network.SourceSearchResult
-import app.kodex.client.ui.book.BookDetailScreen
 import app.kodex.client.ui.browse.SourceFeedScreen
 import app.kodex.client.ui.browse.SourceSeriesScreen
 import app.kodex.client.ui.downloads.DownloadsScreen
@@ -40,7 +39,6 @@ sealed interface DetailRoute {
     data class SourceFeed(val source: SourceDescriptor, val feed: String = "popular") : DetailRoute
     data class SourceSeries(val source: SourceDescriptor, val seed: SourceSearchResult) : DetailRoute
     data class SeriesDetail(val seriesId: String) : DetailRoute
-    data class BookDetail(val bookId: String) : DetailRoute
     data class Reader(val bookId: String, val startPage: Int? = null, val incognito: Boolean = false) : DetailRoute
     data class SourceReader(
         val providerId: String,
@@ -105,6 +103,8 @@ fun DetailHost(
     appSettings: AppSettings,
     onOpenSeries: (String) -> Unit,
     onOpenBook: (String) -> Unit,
+    /** Opens the book-detail bottom sheet (books have no screen of their own — tapping one reads it). */
+    onShowBookDetails: (String) -> Unit,
     onOpenLibrary: (LibraryDto) -> Unit,
     onOpenSourceSeries: (SourceDescriptor, SourceSearchResult) -> Unit,
     onOpenReader: (String) -> Unit,
@@ -138,6 +138,7 @@ fun DetailHost(
             SeriesDetailScreen(
                 session, api, route.seriesId, onBack,
                 onOpenBook = onOpenBook,
+                onShowBookDetails = onShowBookDetails,
                 onOpenReader = onOpenReader,
                 onOpenSourceReader = onOpenSourceReader,
                 onOpenMigrate = onOpenMigrate,
@@ -146,9 +147,6 @@ fun DetailHost(
                 onOpenReaderIncognito = onOpenReaderIncognito,
                 onOpenSourceReaderIncognito = onOpenSourceReaderIncognito,
             )
-
-        is DetailRoute.BookDetail ->
-            BookDetailScreen(session, api, route.bookId, onBack, onRead = onOpenReader, onOpenReaderAt = onOpenReaderAt)
 
         is DetailRoute.Reader ->
             ReaderScreen(session, api, route.bookId, onBack, route.startPage, route.incognito, onOpenSeriesFromReader)
@@ -212,6 +210,7 @@ fun DetailHost(
                 session, api, route.kind, onBack,
                 onOpenSeries = onOpenSeries,
                 onOpenBook = onOpenBook,
+                onShowBookDetails = onShowBookDetails,
                 onOpenBrowseReader = onOpenBrowseReader,
             )
 

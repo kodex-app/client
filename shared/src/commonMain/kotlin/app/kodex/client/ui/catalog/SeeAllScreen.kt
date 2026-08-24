@@ -50,6 +50,8 @@ fun SeeAllScreen(
     onBack: () -> Unit,
     onOpenSeries: (String) -> Unit,
     onOpenBook: (String) -> Unit,
+    /** Long-press: the book's details, since a tap now reads it. */
+    onShowBookDetails: (String) -> Unit = {},
     onOpenBrowseReader: OpenBrowseReader = { _, _, _ -> },
 ) {
     val server by session.activeServer.collectAsStateSafe()
@@ -106,6 +108,7 @@ fun SeeAllScreen(
                                     unread = null,
                                     onClick = { openKeepReading(k, onOpenBook, onOpenSeries, onOpenBrowseReader) },
                                     width = null,
+                                    onLongClick = k.bookId.takeIf { k.isBook }?.let { id -> { onShowBookDetails(id) } },
                                 )
                             }
                         }
@@ -122,6 +125,7 @@ fun SeeAllScreen(
                                     unread = null,
                                     onClick = { onOpenBook(b.id) },
                                     width = null,
+                                    onLongClick = { onShowBookDetails(b.id) },
                                 )
                             }
                         }

@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -20,8 +19,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -35,12 +34,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -64,31 +60,34 @@ import app.kodex.client.network.UpdateBookMetadataRequest
 import app.kodex.client.ui.MetaChip
 import app.kodex.client.ui.catalog.CoverImage
 import app.kodex.client.ui.catalog.bookCoverUrl
+import app.kodex.client.ui.catalog.formatFileSize
 import app.kodex.client.ui.collectAsStateSafe
-import app.kodex.client.ui.nav.retain
 import app.kodex.client.ui.friendlyMessage
 import app.kodex.client.ui.rememberSnackbar
 import app.kodex.client.ui.sheetMinHeight
 import kotlinx.coroutines.launch
 
-/** A single book: cover + metadata + summary, mark read/unread, and edit / re-analyze / delete. */
+/**
+ * A single book — cover, metadata, summary, mark read/unread, edit / re-analyze / delete — as a bottom
+ * sheet rather than a screen of its own. Tapping a book *reads* it; this is the long-press detour for
+ * everything else about it, so it never sits between the catalogue and the reader.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BookDetailScreen(
+fun BookDetailSheet(
     session: SessionManager,
     api: KodexApi,
     bookId: String,
-    onBack: () -> Unit,
+    onDismiss: () -> Unit,
     onRead: (String) -> Unit = {},
     onOpenReaderAt: (bookId: String, page: Int) -> Unit = { _, _ -> },
 ) {
     val server by session.activeServer.collectAsStateSafe()
     val snackbar = rememberSnackbar()
     val scope = rememberCoroutineScope()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // Retained: opening the reader unmounts this screen, and the book would otherwise be re-fetched
-    // from a spinner on the way back. Held state means the refresh happens underneath what's shown.
-    var book by retain("book") { mutableStateOf<BookDto?>(null) }
+    var book by remember { mutableStateOf<BookDto?>(null) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
     var reloadTick by remember { mutableIntStateOf(0) }
     var busy by remember { mutableStateOf(false) }
@@ -113,60 +112,66 @@ fun BookDetailScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Book", fontWeight = FontWeight.SemiBold) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
-                },
-                actions = {
-                    if (book != null) {
+    // Edit and bookmarks are sheets of their own, so this one steps aside while either is up rather
+    // than stacking two scrims; closing them brings it back with the book still loaded.
+    if (!editOpen && !bookmarksOpen) {
+        ModalBottomSheet(
+            modifier = Modifier.heightIn(min = sheetMinHeight()),
+            onDismissRequest = onDismiss,
+            sheetState = sheetState,
+        ) {
+            val s = server
+            val current = book
+            when {
+                errorMsg != null && current == null ->
+                    Box(Modifier.fillMaxWidth().padding(32.dp), Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(errorMsg!!, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Button(onClick = { reloadTick++ }, Modifier.padding(top = 16.dp)) { Text("Retry") }
+                        }
+                    }
+
+                current == null -> Box(Modifier.fillMaxWidth().padding(48.dp), Alignment.Center) { CircularProgressIndicator() }
+
+                s != null -> Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Book",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.weight(1f),
+                        )
                         IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Book actions") }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(text = { Text("Edit metadata") }, onClick = { menuOpen = false; editOpen = true })
                             DropdownMenuItem(text = { Text("Bookmarks") }, onClick = { menuOpen = false; bookmarksOpen = true })
                             DropdownMenuItem(text = { Text("Re-analyze") }, onClick = {
                                 menuOpen = false
-                                val s = server ?: return@DropdownMenuItem
                                 action("Re-analyzing…") { api.analyzeBook(s.baseUrl, s.apiKey, bookId) }
                             })
                             DropdownMenuItem(text = { Text("Delete") }, onClick = { menuOpen = false; confirmDelete = true })
                         }
                     }
-                },
-            )
-        },
-    ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
-            val s = server
-            val current = book
-            when {
-                errorMsg != null && current == null ->
-                    Box(Modifier.fillMaxSize().padding(32.dp), Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(errorMsg!!, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Button(onClick = { reloadTick++ }, Modifier.padding(top = 16.dp)) { Text("Retry") }
-                        }
-                    }
-                current == null -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
-                s != null -> BookDetailContent(
-                    server = s,
-                    book = current,
-                    busy = busy,
-                    onRead = { onRead(current.id) },
-                    onToggleRead = {
-                        busy = true
-                        scope.launch {
-                            runCatching {
-                                if (current.readProgress?.completed == true) api.markBookUnread(s.baseUrl, s.apiKey, current.id)
-                                else api.markBookRead(s.baseUrl, s.apiKey, current)
+
+                    BookDetailContent(
+                        server = s,
+                        book = current,
+                        busy = busy,
+                        onRead = { onRead(current.id) },
+                        onToggleRead = {
+                            busy = true
+                            scope.launch {
+                                runCatching {
+                                    if (current.readProgress?.completed == true) api.markBookUnread(s.baseUrl, s.apiKey, current.id)
+                                    else api.markBookRead(s.baseUrl, s.apiKey, current)
+                                }
+                                busy = false
+                                reloadTick++
                             }
-                            busy = false
-                            reloadTick++
-                        }
-                    },
-                )
+                        },
+                    )
+                    Spacer(Modifier.height(24.dp))
+                }
             }
         }
     }
@@ -193,7 +198,7 @@ fun BookDetailScreen(
                         id = bm.id,
                         title = bm.label?.takeIf { it.isNotBlank() } ?: (bm.page?.let { "Page $it" } ?: "Bookmark"),
                         subtitle = bm.page?.let { "Page $it" }.takeIf { bm.label != null && bm.label.isNotBlank() },
-                        onOpen = { bookmarksOpen = false; bm.page?.let { onOpenReaderAt(bookId, it) } ?: onRead(bookId) },
+                        onOpen = { bookmarksOpen = false; onDismiss(); bm.page?.let { onOpenReaderAt(bookId, it) } ?: onRead(bookId) },
                         onDelete = { api.deleteBookmark(s.baseUrl, s.apiKey, bookId, bm.id) },
                     )
                 }
@@ -211,7 +216,7 @@ fun BookDetailScreen(
                     confirmDelete = false
                     scope.launch {
                         runCatching { api.deleteBook(s.baseUrl, s.apiKey, bookId) }.fold(
-                            onSuccess = { snackbar?.show("Book deleted"); onBack() },
+                            onSuccess = { snackbar?.show("Book deleted"); onDismiss() },
                             onFailure = { snackbar?.show("Couldn't delete (need manage permission).") },
                         )
                     }
@@ -345,9 +350,8 @@ private fun BookDetailContent(
     onRead: () -> Unit,
     onToggleRead: () -> Unit,
 ) {
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-    ) {
+    Column(Modifier.fillMaxWidth()) {
+        Spacer(Modifier.height(8.dp))
         Row {
             Box(Modifier.width(120.dp).height(180.dp).clip(RoundedCornerShape(12.dp))) {
                 CoverImage(bookCoverUrl(server.baseUrl, book.id), server.apiKey, Modifier.fillMaxSize())
@@ -385,7 +389,7 @@ private fun BookDetailContent(
         MetaSection("Released", book.releaseDate)
         MetaSection("Pages", if (book.pageCount > 0) book.pageCount.toString() else null)
         MetaSection("Format", book.mediaType)
-        MetaSection("Size", humanSize(book.fileSize))
+        MetaSection("Size", formatFileSize(book.fileSize))
 
         if (book.tags.isNotEmpty()) {
             Spacer(Modifier.height(14.dp))
@@ -453,17 +457,4 @@ private fun readStatus(book: BookDto): String = when {
     book.readProgress?.completed == true -> "Completed"
     book.readProgress != null -> "In progress · page ${book.readProgress.page}"
     else -> "Not started"
-}
-
-private fun humanSize(bytes: Long): String? {
-    if (bytes <= 0) return null
-    val units = listOf("B", "KB", "MB", "GB")
-    var value = bytes.toDouble()
-    var unit = 0
-    while (value >= 1024 && unit < units.lastIndex) {
-        value /= 1024
-        unit++
-    }
-    val rounded = (value * 10).toLong() / 10.0
-    return "$rounded ${units[unit]}"
 }

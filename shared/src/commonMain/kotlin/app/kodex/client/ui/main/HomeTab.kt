@@ -71,6 +71,8 @@ fun HomeTab(
     session: SessionManager,
     api: KodexApi,
     onOpenBook: (String) -> Unit = {},
+    /** Long-press: the book's details, since a tap now reads it. */
+    onShowBookDetails: (String) -> Unit = {},
     onOpenSeries: (String) -> Unit = {},
     onOpenBrowseReader: OpenBrowseReader = { _, _, _ -> },
     onSeeAll: (app.kodex.client.ui.catalog.SeeAllKind) -> Unit = {},
@@ -135,7 +137,7 @@ fun HomeTab(
                             key = { "${it.kind}-${it.bookId ?: it.chapterId}" },
                             onSeeAll = { onSeeAll(app.kodex.client.ui.catalog.SeeAllKind.KEEP_READING) },
                         ) { k ->
-                            KeepReadingCard(baseUrl, apiKey, k, onOpenBook, onOpenSeries, onOpenBrowseReader)
+                            KeepReadingCard(baseUrl, apiKey, k, onOpenBook, onShowBookDetails, onOpenSeries, onOpenBrowseReader)
                         }
                     }
                     if (s.data.recentSeries.isNotEmpty()) item {
@@ -157,6 +159,7 @@ fun HomeTab(
                                 subtitle = bookSubtitle(b),
                                 unread = null,
                                 onClick = { onOpenBook(b.id) },
+                                onLongClick = { onShowBookDetails(b.id) },
                             )
                         }
                     }
@@ -177,9 +180,11 @@ private fun KeepReadingCard(
     apiKey: String,
     entry: KeepReadingDto,
     onOpenBook: (String) -> Unit,
+    onShowBookDetails: (String) -> Unit,
     onOpenSeries: (String) -> Unit,
     onOpenBrowseReader: OpenBrowseReader,
 ) {
+    val bookId = entry.bookId.takeIf { entry.isBook }
     CoverCard(
         coverUrl = keepReadingCover(baseUrl, entry),
         apiKey = apiKey,
@@ -187,6 +192,7 @@ private fun KeepReadingCard(
         subtitle = entry.title,
         unread = null,
         onClick = { openKeepReading(entry, onOpenBook, onOpenSeries, onOpenBrowseReader) },
+        onLongClick = bookId?.let { { onShowBookDetails(it) } },
     )
 }
 

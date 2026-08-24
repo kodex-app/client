@@ -92,6 +92,43 @@ fun openKeepReading(
 fun bookSubtitle(book: BookDto): String =
     "${book.pageCount} ${if (book.pageCount == 1) "page" else "pages"}"
 
+/** A file size in the largest unit that keeps it above 1, e.g. "31.4 MB". Null when unknown (0). */
+fun formatFileSize(bytes: Long): String? {
+    if (bytes <= 0) return null
+    val units = listOf("B", "KB", "MB", "GB")
+    var value = bytes.toDouble()
+    var unit = 0
+    while (value >= 1024 && unit < units.lastIndex) {
+        value /= 1024
+        unit++
+    }
+    val rounded = (value * 10).toLong() / 10.0
+    return "$rounded ${units[unit]}"
+}
+
+/**
+ * Short, human-facing file-type label for a MIME type, e.g. "CBZ". Unknown types fall back to their
+ * subtype (minus the `vnd.`/`x-` prefix and any `+zip` suffix); null when there is no type at all.
+ */
+fun formatMediaType(mediaType: String?): String? {
+    if (mediaType.isNullOrBlank()) return null
+    KNOWN_MEDIA_TYPES[mediaType]?.let { return it }
+    val subtype = mediaType.substringAfter('/', "").substringBefore('+')
+    if (subtype.isBlank()) return null
+    return subtype.removePrefix("vnd.").removePrefix("x-").uppercase()
+}
+
+private val KNOWN_MEDIA_TYPES = mapOf(
+    "application/vnd.comicbook+zip" to "CBZ",
+    "application/vnd.comicbook-rar" to "CBR",
+    "application/zip" to "ZIP",
+    "application/pdf" to "PDF",
+    "application/epub+zip" to "EPUB",
+    "application/x-mobipocket-ebook" to "MOBI",
+    "application/x-mobi8-ebook" to "AZW3",
+    "application/x-fictionbook+xml" to "FB2",
+)
+
 /** Subtitle under a series cover: chapters for WEB series, otherwise book count. */
 fun seriesSubtitle(series: SeriesDto): String =
     if (series.totalChapters != null) {

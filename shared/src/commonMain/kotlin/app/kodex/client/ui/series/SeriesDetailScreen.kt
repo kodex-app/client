@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.DoneAll
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.RemoveDone
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -134,6 +135,8 @@ fun SeriesDetailScreen(
     seriesId: String,
     onBack: () -> Unit,
     onOpenBook: (String) -> Unit,
+    /** The book-detail sheet — a book row opens the reader, its info button opens this. */
+    onShowBookDetails: (String) -> Unit = {},
     onOpenReader: (String) -> Unit,
     onOpenSourceReader: OpenSourceReader,
     onOpenMigrate: (seriesId: String, providerId: String, sourceSeriesId: String, title: String) -> Unit = { _, _, _, _ -> },
@@ -409,7 +412,8 @@ fun SeriesDetailScreen(
                         sortDesc = sortDesc, sortKey = sortKey,
                         onToggleDir = { sortDesc = !sortDesc }, onSetSortKey = { sortKey = it },
                         onRefresh = { runAction("Refreshing metadata…") { api.refreshSeriesMetadata(s.baseUrl, s.apiKey, seriesId) } },
-                        selection = selection, onOpenBook = onOpenBook, onOpenSeries = onOpenSeries,
+                        selection = selection, onOpenBook = onOpenBook, onShowBookDetails = onShowBookDetails,
+                        onOpenSeries = onOpenSeries,
                         listState = listState, topInset = topInset, bottomInset = bottomInset,
                     )
                 }
@@ -717,6 +721,7 @@ private fun BooksLayout(
     onRefresh: () -> Unit,
     selection: SelectionState<String>,
     onOpenBook: (String) -> Unit,
+    onShowBookDetails: (String) -> Unit,
     onOpenSeries: (String) -> Unit,
     listState: LazyListState,
     topInset: androidx.compose.ui.unit.Dp,
@@ -760,7 +765,7 @@ private fun BooksLayout(
         )
     }) {
         items(display, key = { it.id }) { book ->
-            BookRow(baseUrl, apiKey, book, selection, onOpenBook)
+            BookRow(baseUrl, apiKey, book, selection, onOpenBook, onShowBookDetails)
             HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
         }
     }
@@ -774,6 +779,7 @@ private fun BookRow(
     book: BookDto,
     selection: SelectionState<String>,
     onOpenBook: (String) -> Unit,
+    onShowBookDetails: (String) -> Unit,
 ) {
     val selected = selection.isSelected(book.id)
     val read = book.readProgress?.completed == true
@@ -782,6 +788,9 @@ private fun BookRow(
         meta = listOfNotNull(
             "#" + (if (book.number % 1.0 == 0.0) book.number.toInt().toString() else book.number.toString()),
             "${book.pageCount} pages".takeIf { book.pageCount > 0 },
+            // These are local files, so what one *is* and what it costs belong beside its page count.
+            app.kodex.client.ui.catalog.formatMediaType(book.mediaType),
+            app.kodex.client.ui.catalog.formatFileSize(book.fileSize),
             book.releaseDate?.takeIf { it.isNotBlank() },
         ).joinToString(" · "),
         onClick = { if (selection.active) selection.toggle(book.id) else onOpenBook(book.id) },
@@ -794,6 +803,15 @@ private fun BookRow(
                 CoverImage(bookCoverUrl(baseUrl, book.id), apiKey, Modifier.fillMaxSize())
             }
             Spacer(Modifier.width(12.dp))
+        },
+        // Tapping the row reads the book, so its details need a control of their own — long-press is
+        // already spoken for by selection here.
+        trailing = if (selection.active) null else {
+            {
+                IconButton(onClick = { onShowBookDetails(book.id) }) {
+                    Icon(Icons.Outlined.Info, contentDescription = "Book details")
+                }
+            }
         },
     )
 }

@@ -14,10 +14,11 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Per-user Browse source preferences — favourite sources and recently-opened sources — persisted
- * **server-side** in the generic user-settings store (keys `browse.favorites` / `browse.recents`),
- * so they follow the user across devices (matching the web). Loaded when the active server binds;
- * writes are optimistic (update the flow immediately, then PUT).
+ * Per-user Browse source preferences — favourite sources, recently-opened sources and the language
+ * groups the user has hidden — persisted **server-side** in the generic user-settings store (keys
+ * `browse.favorites` / `browse.recents` / `browse.hiddenLanguages`), so they follow the user across
+ * devices and stay in step with the web UI, which reads and writes the very same keys. Loaded when
+ * the active server binds; writes are optimistic (update the flow immediately, then PUT).
  */
 class SourcePrefsStore(private val api: KodexApi, private val scope: CoroutineScope) {
 
@@ -26,6 +27,10 @@ class SourcePrefsStore(private val api: KodexApi, private val scope: CoroutineSc
 
     private val _recents = MutableStateFlow<List<String>>(emptyList())
     val recents: StateFlow<List<String>> = _recents.asStateFlow()
+
+    /** Hidden language groups, as raw language tags — `""` is the multi-language bucket (web parity). */
+    private val _hiddenLanguages = MutableStateFlow<Set<String>>(emptySet())
+    val hiddenLanguages: StateFlow<Set<String>> = _hiddenLanguages.asStateFlow()
 
     private var baseUrl: String? = null
     private var apiKey: String? = null
@@ -37,12 +42,14 @@ class SourcePrefsStore(private val api: KodexApi, private val scope: CoroutineSc
             val settings = runCatching { api.userSettings(baseUrl, apiKey) }.getOrNull() ?: JsonObject(emptyMap())
             _favorites.value = settings[FAVORITES_KEY].asStringList()
             _recents.value = settings[RECENTS_KEY].asStringList()
+            _hiddenLanguages.value = settings[HIDDEN_LANGUAGES_KEY].asStringList().toSet()
         }
     }
 
     fun clear() {
         baseUrl = null; apiKey = null
         _favorites.value = emptyList(); _recents.value = emptyList()
+        _hiddenLanguages.value = emptySet()
     }
 
     fun isFavorite(id: String): Boolean = id in _favorites.value
@@ -62,6 +69,21 @@ class SourcePrefsStore(private val api: KodexApi, private val scope: CoroutineSc
         save(b, k, RECENTS_KEY, next)
     }
 
+    /** Show/hide one language group; `key` is the raw tag (`""` = multi-language). */
+    fun toggleHiddenLanguage(key: String) {
+        val b = baseUrl ?: return; val k = apiKey ?: return
+        val next = if (key in _hiddenLanguages.value) _hiddenLanguages.value - key else _hiddenLanguages.value + key
+        _hiddenLanguages.value = next
+        save(b, k, HIDDEN_LANGUAGES_KEY, next.toList())
+    }
+
+    /** Replace the whole hidden set — backs the menu's "All" (empty) / "None" (every key) shortcuts. */
+    fun setHiddenLanguages(keys: Collection<String>) {
+        val b = baseUrl ?: return; val k = apiKey ?: return
+        _hiddenLanguages.value = keys.toSet()
+        save(b, k, HIDDEN_LANGUAGES_KEY, keys.toList())
+    }
+
     private fun save(baseUrl: String, apiKey: String, key: String, value: List<String>) {
         scope.launch {
             runCatching { api.saveUserSetting(baseUrl, apiKey, key, JsonArray(value.map { JsonPrimitive(it) })) }
@@ -74,6 +96,7 @@ class SourcePrefsStore(private val api: KodexApi, private val scope: CoroutineSc
     private companion object {
         const val FAVORITES_KEY = "browse.favorites"
         const val RECENTS_KEY = "browse.recents"
+        const val HIDDEN_LANGUAGES_KEY = "browse.hiddenLanguages"
         const val RECENTS_MAX = 4
     }
 }

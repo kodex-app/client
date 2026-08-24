@@ -200,6 +200,8 @@ fun SearchScreen(
     onClose: () -> Unit,
     onOpenSeries: (SeriesDto) -> Unit = {},
     onOpenBook: (BookDto) -> Unit = {},
+    /** Long-press: the book's details, since a tap now reads it. */
+    onShowBookDetails: (BookDto) -> Unit = {},
     onOpenSourceSeries: (SourceDescriptor, SourceSearchResult) -> Unit = { _, _ -> },
 ) {
     val server by session.activeServer.collectAsStateSafe()
@@ -418,7 +420,10 @@ fun SearchScreen(
                             if (s.series.isEmpty() && s.books.isEmpty() && s.partialFailure == null) Hint("No results.")
                             else Column(Modifier.fillMaxSize()) {
                                 s.partialFailure?.let { InlineLoadError(it) { reloadKey++ } }
-                                Results(server?.baseUrl ?: "", server?.apiKey ?: "", s, sourceNames, st.localGrid, onOpenSeries, onOpenBook)
+                                Results(
+                                    server?.baseUrl ?: "", server?.apiKey ?: "", s, sourceNames, st.localGrid,
+                                    onOpenSeries, onOpenBook, onShowBookDetails,
+                                )
                             }
                     }
                 }
@@ -587,6 +592,7 @@ private fun Results(
     gridState: LazyGridState,
     onOpenSeries: (SeriesDto) -> Unit,
     onOpenBook: (BookDto) -> Unit,
+    onShowBookDetails: (BookDto) -> Unit,
 ) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(112.dp),
@@ -622,6 +628,7 @@ private fun Results(
                     unread = null,
                     onClick = { onOpenBook(book) },
                     width = null,
+                    onLongClick = { onShowBookDetails(book) },
                 )
             }
         }

@@ -58,6 +58,7 @@ import app.kodex.client.network.KodexApi
 import app.kodex.client.network.LibraryDto
 import app.kodex.client.platform.AppBackHandler
 import app.kodex.client.platform.nowMillis
+import app.kodex.client.ui.book.BookDetailSheet
 import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.nav.LocalRetainedSlot
 import app.kodex.client.ui.nav.RetainedStateStore
@@ -115,7 +116,11 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
     }
 
     val openSeries: (String) -> Unit = { backStack.add(DetailRoute.SeriesDetail(it)) }
-    val openBook: (String) -> Unit = { backStack.add(DetailRoute.BookDetail(it)) }
+    // Tapping a book reads it — there is no book screen any more. Everything else about a book (its
+    // metadata, bookmarks, edit/delete) lives in a bottom sheet, opened by long-press from anywhere.
+    val openBook: (String) -> Unit = { backStack.add(DetailRoute.Reader(it, incognito = incognito)) }
+    var detailsBookId by remember { mutableStateOf<String?>(null) }
+    val showBookDetails: (String) -> Unit = { detailsBookId = it }
     val openLibrary: (LibraryDto) -> Unit = { backStack.add(DetailRoute.LibrarySeries(it)) }
 
     /**
@@ -139,6 +144,15 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
         }
     }
 
+    detailsBookId?.let { id ->
+        BookDetailSheet(
+            session, api, id,
+            onDismiss = { detailsBookId = null },
+            onRead = { detailsBookId = null; openBook(it) },
+            onOpenReaderAt = { bookId, page -> detailsBookId = null; backStack.add(DetailRoute.Reader(bookId, page, incognito = incognito)) },
+        )
+    }
+
     val immersive = backStack.lastOrNull().let { it is DetailRoute.Reader || it is DetailRoute.SourceReader }
     val turnOffIncognito = { appSettings.setIncognitoMode(false) }
 
@@ -152,6 +166,7 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
             appSettings = appSettings,
             onOpenSeries = openSeries,
             onOpenBook = openBook,
+            onShowBookDetails = showBookDetails,
             onOpenLibrary = openLibrary,
             onOpenSourceSeries = { source, seed -> backStack.add(DetailRoute.SourceSeries(source, seed)) },
             onOpenReader = { backStack.add(DetailRoute.Reader(it, incognito = incognito)) },
@@ -191,6 +206,7 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
             onClose = { closeSearch() },
             onOpenSeries = { openSeries(it.id) },
             onOpenBook = { openBook(it.id) },
+            onShowBookDetails = { showBookDetails(it.id) },
             onOpenSourceSeries = { source, seed -> backStack.add(DetailRoute.SourceSeries(source, seed)) },
         )
       }
@@ -244,6 +260,7 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
                 BottomTab.Home -> HomeTab(
                     session, api,
                     onOpenBook = openBook,
+                    onShowBookDetails = showBookDetails,
                     onOpenSeries = openSeries,
                     onOpenBrowseReader = { source, chapterId, chapterName ->
                         backStack.add(DetailRoute.SourceReader(source.providerId, chapterId, null, chapterName, source, incognito = incognito))

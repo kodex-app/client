@@ -97,7 +97,9 @@ private fun SourceList(
     val recents by sourcePrefs.recents.collectAsStateSafe()
     var filter by remember { mutableStateOf("") }
     var kind by remember { mutableStateOf<String?>(null) }
-    var selectedLangs by remember { mutableStateOf<Set<String>>(emptySet()) } // empty = all languages
+    // Which language groups are hidden — server-persisted with the other Browse prefs, so the web UI
+    // and this screen always agree on what's filtered out. Empty = every language shown.
+    val hiddenLangs by sourcePrefs.hiddenLanguages.collectAsStateSafe()
     var langMenu by remember { mutableStateOf(false) }
 
     val byId = remember(sources) { sources.associateBy { it.id } }
@@ -105,19 +107,23 @@ private fun SourceList(
     val recentSources = remember(sources, recents) { recents.mapNotNull { byId[it] } }
 
     val kinds = remember(sources) { sources.map { it.kind }.distinct().sorted() }
+    // One entry per language present, the multi-language bucket included and pinned last, so every
+    // group the list can render is toggleable (web parity).
     val langs = remember(sources) {
-        sources.mapNotNull { it.language }.distinct().sortedBy { languageLabel(it) }
+        sources.map { langKey(it.language) }.distinct()
+            .sortedWith(compareBy({ it.isEmpty() }, { languageLabel(it) }))
     }
-    val groups = remember(sources, filter, kind, selectedLangs) {
+    val shownLangCount = langs.count { it !in hiddenLangs }
+    val groups = remember(sources, filter, kind, hiddenLangs) {
         val f = filter.trim().lowercase()
         val visible = sources
             .filter { kind == null || it.kind == kind }
-            .filter { selectedLangs.isEmpty() || it.language in selectedLangs }
+            .filter { langKey(it.language) !in hiddenLangs }
             .filter { f.isEmpty() || it.displayName.lowercase().contains(f) }
         visible
-            .groupBy { it.language }
+            .groupBy { langKey(it.language) }
             .toList()
-            .sortedWith(compareBy({ it.first == null }, { it.first ?: "" }))
+            .sortedWith(compareBy({ it.first.isEmpty() }, { languageLabel(it.first) }))
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -151,26 +157,34 @@ private fun SourceList(
             if (langs.size > 1) {
                 Spacer(Modifier.size(8.dp))
                 Box {
-                    BadgedBox(badge = { if (selectedLangs.isNotEmpty()) Badge { Text("${selectedLangs.size}") } }) {
+                    val someHidden = shownLangCount < langs.size
+                    // Badge reads "shown of total", the same summary the web's Languages button spells out.
+                    BadgedBox(badge = { if (someHidden) Badge { Text("$shownLangCount/${langs.size}") } }) {
                         IconButton(onClick = { langMenu = true }) {
                             Icon(
                                 Icons.Filled.Language,
                                 contentDescription = "Filter by language",
-                                tint = if (selectedLangs.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                tint = if (someHidden) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
                     DropdownMenu(expanded = langMenu, onDismissRequest = { langMenu = false }) {
                         DropdownMenuItem(
                             text = { Text("All languages") },
-                            onClick = { selectedLangs = emptySet() },
-                            leadingIcon = { if (selectedLangs.isEmpty()) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary) },
+                            onClick = { sourcePrefs.setHiddenLanguages(emptyList()) },
+                            leadingIcon = { if (!someHidden) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary) },
                         )
+                        DropdownMenuItem(
+                            text = { Text("None") },
+                            onClick = { sourcePrefs.setHiddenLanguages(langs) },
+                            leadingIcon = { if (shownLangCount == 0) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary) },
+                        )
+                        // A tick means "shown", matching the web menu's checkboxes; tapping hides the group.
                         langs.forEach { l ->
                             DropdownMenuItem(
                                 text = { Text(languageLabel(l)) },
-                                onClick = { selectedLangs = if (l in selectedLangs) selectedLangs - l else selectedLangs + l },
-                                leadingIcon = { if (l in selectedLangs) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary) },
+                                onClick = { sourcePrefs.toggleHiddenLanguage(l) },
+                                leadingIcon = { if (l !in hiddenLangs) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary) },
                             )
                         }
                     }
@@ -217,7 +231,7 @@ private fun SourceList(
                 sourceItems(recentSources, "recent", showLanguage = true)
             }
             groups.forEach { (language, list) ->
-                item(key = "hdr-${language ?: "multi"}") { SourceSectionHeader(languageLabel(language), list.size) }
+                item(key = "hdr-${language.ifEmpty { "multi" }}") { SourceSectionHeader(languageLabel(language), list.size) }
                 sourceItems(list, "grp")
             }
         }
@@ -359,6 +373,9 @@ private fun Chip(text: String) {
  */
 private fun languageBadge(code: String?): String =
     if (code.isNullOrBlank()) "Multi" else code.uppercase()
+
+/** Grouping/filter key for a source's language tag — null or blank collapses to "" (web parity). */
+private fun langKey(code: String?): String = if (code.isNullOrBlank()) "" else code
 
 /** Friendly name for a BCP-47 language tag; falls back to the uppercased code, or "Multi-language". */
 private fun languageLabel(code: String?): String {
