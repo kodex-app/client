@@ -8,6 +8,6 @@ import androidx.compose.runtime.remember
 actual fun rememberOrientationController(): OrientationController = remember {
     object : OrientationController {
         override val orientation = ScreenOrientation.AUTO
-        override fun cycle() {}
+        override fun set(orientation: ScreenOrientation) {}
     }
 }

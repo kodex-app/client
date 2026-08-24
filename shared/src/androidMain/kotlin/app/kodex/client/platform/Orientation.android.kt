@@ -26,13 +26,10 @@ actual fun rememberOrientationController(): OrientationController {
     return remember(activity) {
         object : OrientationController {
             override val orientation: ScreenOrientation get() = mode
-            override fun cycle() {
-                mode = when (mode) {
-                    ScreenOrientation.AUTO -> ScreenOrientation.PORTRAIT
-                    ScreenOrientation.PORTRAIT -> ScreenOrientation.LANDSCAPE
-                    ScreenOrientation.LANDSCAPE -> ScreenOrientation.AUTO
-                }
-                activity?.requestedOrientation = when (mode) {
+
+            override fun set(orientation: ScreenOrientation) {
+                mode = orientation
+                activity?.requestedOrientation = when (orientation) {
                     ScreenOrientation.AUTO -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                     ScreenOrientation.PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                     ScreenOrientation.LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE

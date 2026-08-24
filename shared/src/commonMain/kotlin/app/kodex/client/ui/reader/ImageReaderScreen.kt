@@ -52,17 +52,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.ViewList
+import androidx.compose.material.icons.outlined.ArrowDownward
+import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.Book
 import androidx.compose.material.icons.outlined.Bookmark
 import androidx.compose.material.icons.outlined.BrokenImage
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Public
-import androidx.compose.material.icons.outlined.ScreenRotation
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
@@ -70,6 +73,8 @@ import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -504,12 +509,13 @@ fun ImageReaderScreen(
                     canPrevChapter = source.nav?.prev != null,
                     canNextChapter = source.nav?.next != null,
                     webEnabled = source.webUrl != null,
-                    orientation = orientation.orientation,
+                    mode = p.mode,
+                    direction = p.direction,
                     onPrevChapter = { source.nav?.prev?.open(ReaderEdge.FIRST) },
                     onNextChapter = { source.nav?.next?.open(ReaderEdge.FIRST) },
                     onOpenChapters = { chaptersOpen = true },
                     onOpenWeb = { source.webUrl?.let { openUrl(it) } },
-                    onCycleOrientation = { orientation.cycle() },
+                    onSetReadMode = { m, d -> update(p.copy(mode = m, direction = d)) },
                     onOpenSettings = { settingsOpen = true },
                     onOpenSeries = onOpenSeries,
                     onToggleAutoScroll = { autoScroll = !autoScroll },
@@ -540,6 +546,8 @@ fun ImageReaderScreen(
             SettingsSheet(
                 prefs = p,
                 effectiveMode = effectiveMode ?: MODE_PAGED,
+                orientation = orientation.orientation,
+                onOrientation = orientation::set,
                 autoScroll = autoScroll,
                 onToggleAutoScroll = { autoScroll = !autoScroll },
                 preload = preload,
@@ -1082,12 +1090,13 @@ private fun BottomBar(
     canPrevChapter: Boolean,
     canNextChapter: Boolean,
     webEnabled: Boolean,
-    orientation: app.kodex.client.platform.ScreenOrientation,
+    mode: String,
+    direction: String,
     onPrevChapter: () -> Unit,
     onNextChapter: () -> Unit,
     onOpenChapters: () -> Unit,
     onOpenWeb: () -> Unit,
-    onCycleOrientation: () -> Unit,
+    onSetReadMode: (mode: String, direction: String) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenSeries: (() -> Unit)?,
     onToggleAutoScroll: () -> Unit,
@@ -1108,7 +1117,7 @@ private fun BottomBar(
             onSeek = onSeek,
             onOpenPicker = onOpenPicker,
         )
-        // Toolbar row: auto-scroll (continuous only) · chapter list · open in web · orientation · settings.
+        // Toolbar row: auto-scroll (continuous only) · chapter list · open in web · read mode · settings.
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -1125,12 +1134,7 @@ private fun BottomBar(
             onOpenSeries?.let { open -> ToolbarButton(Icons.Outlined.Book, "Series details", onClick = open) }
             ToolbarButton(Icons.AutoMirrored.Outlined.ViewList, "Books", enabled = hasChapters, onClick = onOpenChapters)
             ToolbarButton(Icons.Outlined.Public, "Open in web", enabled = webEnabled, onClick = onOpenWeb)
-            ToolbarButton(
-                Icons.Outlined.ScreenRotation,
-                "Screen orientation",
-                tint = if (orientation == app.kodex.client.platform.ScreenOrientation.AUTO) content else MaterialTheme.colorScheme.primary,
-                onClick = onCycleOrientation,
-            )
+            ReadModeButton(mode, direction, onSetReadMode)
             ToolbarButton(Icons.Outlined.Settings, "Settings", onClick = onOpenSettings)
         }
     }
@@ -1222,6 +1226,74 @@ private fun ChapterNavigator(
  */
 private const val SLIDER_TICK_LIMIT = 40
 private fun sliderSteps(pageCount: Int): Int = if (pageCount in 2..SLIDER_TICK_LIMIT) pageCount - 2 else 0
+
+@Composable
+private fun ReadModeButton(mode: String, direction: String, onSelect: (mode: String, direction: String) -> Unit) {
+    val current = READ_MODES.firstOrNull { it.mode == mode && (mode != MODE_PAGED || it.direction == direction) }
+        ?: READ_MODES.first()
+    ReadModeButton(READ_MODES.map { ReaderModeOption(it.key, it.label, it.icon) }, current.key) { id ->
+        val picked = READ_MODES.first { it.key == id }
+        // Auto and continuous don't read a direction, so leave the paged one as it was rather than
+        // resetting it every time the reader passes through them.
+        onSelect(picked.mode, if (picked.mode == MODE_PAGED) picked.direction else direction)
+    }
+}
+
+/** One entry of the reading-mode menu: a layout, plus the page direction when the layout has one. */
+private data class ReadMode(
+    val mode: String,
+    val direction: String,
+    val label: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+) {
+    /** Identifies the entry in the menu — the direction only tells two entries apart when paged. */
+    val key: String get() = if (mode == MODE_PAGED) "$mode:$direction" else mode
+}
+
+/**
+ * The reading modes worth a toolbar tap — the layout/direction combinations that actually differ.
+ * Direction only applies to paged, so continuous and auto appear once each. Everything finer (fit,
+ * spread, background) stays in the settings sheet.
+ */
+private val READ_MODES = listOf(
+    ReadMode(MODE_AUTO, DIR_LTR, "Auto", Icons.Outlined.AutoStories),
+    ReadMode(MODE_PAGED, DIR_LTR, "Paged · L → R", Icons.AutoMirrored.Outlined.ArrowForward),
+    ReadMode(MODE_PAGED, DIR_RTL, "Paged · R → L", Icons.AutoMirrored.Outlined.ArrowBack),
+    ReadMode(MODE_CONTINUOUS, DIR_LTR, "Continuous", Icons.Outlined.ArrowDownward),
+)
+
+/** One choice in a reader's reading-mode menu — see [ReadModeButton]. */
+internal data class ReaderModeOption(
+    val id: String,
+    val label: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+)
+
+/**
+ * The toolbar's reading-mode picker, shared by both readers: the current mode as the button's icon,
+ * opening a menu of the modes that reader offers. What counts as a mode differs (page layout and
+ * direction for images, paginated vs scrolled for text), so the options come from the caller.
+ */
+@Composable
+internal fun ReadModeButton(options: List<ReaderModeOption>, selected: String, onSelect: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val current = options.firstOrNull { it.id == selected } ?: options.first()
+    Box {
+        ToolbarButton(current.icon, "Reading mode", onClick = { open = true })
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            options.forEach { o ->
+                DropdownMenuItem(
+                    text = { Text(o.label) },
+                    leadingIcon = { Icon(o.icon, contentDescription = null) },
+                    trailingIcon = {
+                        if (o.id == current.id) Icon(Icons.Outlined.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    },
+                    onClick = { open = false; onSelect(o.id) },
+                )
+            }
+        }
+    }
+}
 
 @Composable
 internal fun ToolbarButton(
@@ -1392,6 +1464,8 @@ private fun PagePickerDialog(source: ReaderSource, current: Int, onPick: (Int) -
 private fun SettingsSheet(
     prefs: ReaderPrefs,
     effectiveMode: String,
+    orientation: app.kodex.client.platform.ScreenOrientation,
+    onOrientation: (app.kodex.client.platform.ScreenOrientation) -> Unit,
     autoScroll: Boolean,
     onToggleAutoScroll: () -> Unit,
     preload: Int,
@@ -1440,6 +1514,15 @@ private fun SettingsSheet(
         }
         SegRow("Background", prefs.bg, listOf(BG_WHITE to "White", BG_GRAY to "Gray", BG_BLACK to "Black")) {
             onChange(prefs.copy(bg = it))
+        }
+        // Lives here now that the toolbar's rotation button became the reading-mode picker. Unlike the
+        // rest of the sheet this isn't a stored preference — it lasts as long as the reader is open.
+        SegRow(
+            "Screen orientation",
+            orientation.name,
+            app.kodex.client.platform.ScreenOrientation.entries.map { it.name to it.name.lowercase().replaceFirstChar(Char::uppercase) },
+        ) { picked ->
+            onOrientation(app.kodex.client.platform.ScreenOrientation.valueOf(picked))
         }
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Preload pages", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)

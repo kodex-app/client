@@ -35,12 +35,13 @@ import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.ViewList
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.ArrowDownward
+import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.Book
 import androidx.compose.material.icons.outlined.Bookmark
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Remove
-import androidx.compose.material.icons.outlined.ScreenRotation
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
@@ -86,7 +87,9 @@ import app.kodex.client.ui.reader.ChapterListSheet
 import app.kodex.client.ui.reader.ChapterTransitionPage
 import app.kodex.client.ui.reader.IncognitoBadge
 import app.kodex.client.ui.reader.ReaderChapterNav
+import app.kodex.client.ui.reader.ReadModeButton
 import app.kodex.client.ui.reader.ReaderEdge
+import app.kodex.client.ui.reader.ReaderModeOption
 import app.kodex.client.ui.reader.ToolbarButton
 import app.kodex.client.ui.reader.disabled
 import app.kodex.client.ui.reader.readerBarColor
@@ -517,7 +520,7 @@ fun EbookReaderScreen(
                 hasChapters = !source.nav?.chapters.isNullOrEmpty(),
                 hasToc = toc.isNotEmpty(),
                 webEnabled = source.webUrl != null,
-                orientation = orientation.orientation,
+                flow = (prefs ?: EbookPrefs()).flow,
                 onPrevPage = { goPrev() },
                 onNextPage = { goNext() },
                 onPrevChapter = { source.nav?.prev?.open(ReaderEdge.FIRST) },
@@ -531,7 +534,7 @@ fun EbookReaderScreen(
                 onOpenToc = { tocOpen = true },
                 onOpenChapters = { chaptersOpen = true },
                 onOpenWeb = { source.webUrl?.let(openUrl) },
-                onCycleOrientation = { orientation.cycle() },
+                onSetFlow = { update((prefs ?: EbookPrefs()).copy(flow = it)) },
                 onOpenSettings = { settingsOpen = true },
                 onOpenSeries = onOpenSeries,
             )
@@ -591,6 +594,8 @@ fun EbookReaderScreen(
             EbookSettingsSheet(
                 prefs = prefs ?: EbookPrefs(),
                 fonts = fonts,
+                orientation = orientation.orientation,
+                onOrientation = orientation::set,
                 onChange = ::update,
                 onSaveDefault = {
                     val s = server ?: return@EbookSettingsSheet
@@ -700,7 +705,7 @@ private fun EbookBottomBar(
     hasChapters: Boolean,
     hasToc: Boolean,
     webEnabled: Boolean,
-    orientation: app.kodex.client.platform.ScreenOrientation,
+    flow: String,
     onPrevPage: () -> Unit,
     onNextPage: () -> Unit,
     onPrevChapter: () -> Unit,
@@ -710,7 +715,7 @@ private fun EbookBottomBar(
     onOpenToc: () -> Unit,
     onOpenChapters: () -> Unit,
     onOpenWeb: () -> Unit,
-    onCycleOrientation: () -> Unit,
+    onSetFlow: (String) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenSeries: (() -> Unit)?,
 ) {
@@ -755,7 +760,7 @@ private fun EbookBottomBar(
                 Icon(Icons.Outlined.SkipNext, "Next book")
             }
         }
-        // Toolbar row: contents · chapter list · open in web · orientation · settings.
+        // Toolbar row: contents · chapter list · open in web · read mode · settings.
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -767,16 +772,21 @@ private fun EbookBottomBar(
             ToolbarButton(Icons.AutoMirrored.Outlined.ChromeReaderMode, "Book contents", enabled = hasToc, onClick = onOpenToc)
             ToolbarButton(Icons.AutoMirrored.Outlined.ViewList, "Books", enabled = hasChapters, onClick = onOpenChapters)
             ToolbarButton(Icons.Outlined.Public, "Open in web", enabled = webEnabled, onClick = onOpenWeb)
-            ToolbarButton(
-                Icons.Outlined.ScreenRotation,
-                "Screen orientation",
-                tint = if (orientation == app.kodex.client.platform.ScreenOrientation.AUTO) content else MaterialTheme.colorScheme.primary,
-                onClick = onCycleOrientation,
-            )
+            ReadModeButton(EBOOK_READ_MODES, flow, onSetFlow)
             ToolbarButton(Icons.Outlined.Settings, "Settings", onClick = onOpenSettings)
         }
     }
 }
+
+/**
+ * A reflowable book's reading modes: foliate lays the text out either in pages or as one scroll.
+ * Column count is a paginated sub-choice, so it stays in the settings sheet rather than doubling the
+ * length of this menu.
+ */
+private val EBOOK_READ_MODES = listOf(
+    ReaderModeOption(FLOW_PAGINATED, "Paged", Icons.Outlined.AutoStories),
+    ReaderModeOption(FLOW_SCROLLED, "Scrolled", Icons.Outlined.ArrowDownward),
+)
 
 /** The book's own table of contents (foliate's), flattened; indent carries the nesting. */
 @Composable
@@ -855,6 +865,8 @@ private fun BookmarksSheet(
 private fun EbookSettingsSheet(
     prefs: EbookPrefs,
     fonts: List<CustomFontDto>,
+    orientation: app.kodex.client.platform.ScreenOrientation,
+    onOrientation: (app.kodex.client.platform.ScreenOrientation) -> Unit,
     onChange: (EbookPrefs) -> Unit,
     onSaveDefault: () -> Unit,
     onReset: () -> Unit,
@@ -918,6 +930,16 @@ private fun EbookSettingsSheet(
                 valueRange = MARGIN_MIN.toFloat()..MARGIN_MAX.toFloat(),
                 steps = (MARGIN_MAX / 8) - 1,
             )
+        }
+
+        // Lives here now that the toolbar's rotation button became the reading-mode picker. Unlike the
+        // rest of the sheet this isn't a stored preference — it lasts as long as the reader is open.
+        ChipRow(
+            "Screen orientation",
+            orientation.name,
+            app.kodex.client.platform.ScreenOrientation.entries.map { it.name to it.name.lowercase().replaceFirstChar(Char::uppercase) },
+        ) { picked ->
+            onOrientation(app.kodex.client.platform.ScreenOrientation.valueOf(picked))
         }
 
         Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
