@@ -134,6 +134,7 @@ import androidx.compose.ui.window.Dialog
 import app.kodex.client.auth.SessionManager
 import app.kodex.client.network.KodexApi
 import app.kodex.client.platform.StatusBarIcons
+import app.kodex.client.platform.SystemBarsHidden
 import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.catalog.imageErrorText
 import app.kodex.client.ui.sheetMaxHeight
@@ -415,6 +416,10 @@ fun ImageReaderScreen(
     // deciding from the background alone left white icons on a near-white bar in a light theme.
     val barIsLight = MaterialTheme.colorScheme.readerBarColor.luminance() > 0.5f
     StatusBarIcons(darkIcons = if (chrome) barIsLight else p?.bg == BG_WHITE)
+
+    // The system bars ride along with the reader's own: once the chrome auto-hides, the page has the
+    // whole screen and a swipe from either edge brings the bars back transiently.
+    SystemBarsHidden(hidden = !chrome)
 
     // Physical keyboard navigation (hardware keyboards, Chromebooks). Arrows/space turn pages, Esc exits.
     val focusRequester = remember { FocusRequester() }

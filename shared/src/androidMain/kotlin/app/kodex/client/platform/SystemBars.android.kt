@@ -6,13 +6,16 @@ import android.content.ContextWrapper
 import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Build
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 
 /**
@@ -74,6 +77,55 @@ actual fun StatusBarIcons(darkIcons: Boolean, navDarkIcons: Boolean) {
             val prevNav = BarAppearance.navIsDark
             controller.applyAppearance(statusIsDark = !darkIcons, navIsDark = !navDarkIcons)
             onDispose { controller.applyAppearance(prevStatus, prevNav) }
+        }
+    }
+}
+
+@Composable
+actual fun SystemBarsHidden(hidden: Boolean) {
+    val view = LocalView.current
+    if (view.isInEditMode) return
+    val window = remember(view) { view.context.findActivity()?.window }
+
+    DisposableEffect(window, hidden) {
+        if (window != null) {
+            val controller = WindowCompat.getInsetsController(window, view)
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            if (hidden) {
+                controller.hide(WindowInsetsCompat.Type.systemBars())
+            } else {
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
+            // With the bars gone the display cutout would otherwise letterbox the page in landscape,
+            // leaving a black band where the notch is; SHORT_EDGES lets the reader paint under it.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                window.attributes = window.attributes.apply {
+                    layoutInDisplayCutoutMode = if (hidden) {
+                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                    } else {
+                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+                    }
+                }
+            }
+        }
+        onDispose {}
+    }
+
+    // Leaving the reader (or any other caller) must not strand the app without its bars, whatever
+    // the last [hidden] value was.
+    DisposableEffect(window) {
+        onDispose {
+            if (window != null) {
+                WindowCompat.getInsetsController(window, view)
+                    .show(WindowInsetsCompat.Type.systemBars())
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    window.attributes = window.attributes.apply {
+                        layoutInDisplayCutoutMode =
+                            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+                    }
+                }
+            }
         }
     }
 }

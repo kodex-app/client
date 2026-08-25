@@ -83,6 +83,7 @@ import app.kodex.client.network.BookmarkDto
 import app.kodex.client.network.CustomFontDto
 import app.kodex.client.network.KodexApi
 import app.kodex.client.platform.StatusBarIcons
+import app.kodex.client.platform.SystemBarsHidden
 import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.reader.ChapterListSheet
 import app.kodex.client.ui.reader.ChapterTransitionPage
@@ -404,6 +405,9 @@ fun EbookReaderScreen(
             pageBg.luminance() > 0.5f
         },
     )
+
+    // As in the image reader: the system bars hide and show with the reader's own chrome.
+    SystemBarsHidden(hidden = !chrome)
 
     Box(Modifier.fillMaxSize().background(pageBg)) {
         val url = handle?.readerUrl

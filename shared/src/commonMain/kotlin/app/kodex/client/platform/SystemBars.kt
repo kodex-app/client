@@ -13,3 +13,12 @@ import androidx.compose.runtime.Composable
  */
 @Composable
 expect fun StatusBarIcons(darkIcons: Boolean, navDarkIcons: Boolean = darkIcons)
+
+/**
+ * Hides the status and navigation bars while [hidden] is true. The readers pass their own chrome
+ * flag, so the system bars come and go with the reader's bars instead of floating over the page.
+ * The bars still slide in transiently on a swipe from either edge, and are restored for good when
+ * the caller leaves composition. No-op off Android.
+ */
+@Composable
+expect fun SystemBarsHidden(hidden: Boolean)

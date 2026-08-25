@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.heightIn
@@ -29,8 +30,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -55,6 +58,7 @@ import app.kodex.client.ui.daysAgoIsoUtc
 import app.kodex.client.ui.isoAtEndOfDay
 import app.kodex.client.ui.isoAtStartOfDay
 import app.kodex.client.ui.isoDayKey
+import app.kodex.client.ui.isoEpochMillis
 import app.kodex.client.ui.main.OpenBrowseReader
 import app.kodex.client.ui.main.OpenSourceReader
 import app.kodex.client.ui.main.SourceSeriesContext
@@ -86,54 +90,80 @@ fun UpdatesList(
     // Retained with the rows, so opening a chapter and coming back lands where you left off.
     val listState = retain("updates:scroll") { LazyListState() }
 
+    // Bumped alongside the feed so the "last updated" line below re-reads with it.
+    var lastCheckReload by remember { mutableIntStateOf(0) }
+
     // Live: new chapters arrive when a WEB library finishes updating or books are imported.
     app.kodex.client.ui.OnServerEvent(
         app.kodex.client.network.ServerEvent.LIBRARY_SCAN_COMPLETED,
         app.kodex.client.network.ServerEvent.BOOK_ADDED,
-    ) { paged.silentRefresh() }
+    ) { paged.silentRefresh(); lastCheckReload++ }
+
+    // When the server last checked the sources: the newest refresh stamp across the WEB libraries —
+    // updates only ever come from those. It sits above the feed whether or not the feed has anything in
+    // it, because "nothing new since 20m ago" and "never checked" are very different answers to why a
+    // day looks empty.
+    var lastRefreshed by remember(current.id) { mutableStateOf<String?>(null) }
+    var anyWebLibrary by remember(current.id) { mutableStateOf(false) }
+    LaunchedEffect(current.id, lastCheckReload) {
+        val webLibraries = runCatching { api.libraries(baseUrl, apiKey) }.getOrDefault(emptyList()).filter { it.isWeb }
+        anyWebLibrary = webLibraries.isNotEmpty()
+        lastRefreshed = webLibraries.mapNotNull { it.lastRefreshedDate }.maxByOrNull { isoEpochMillis(it) ?: 0L }
+    }
 
     val collapsed = rememberCollapsedGroups("updates")
-    PagedList(
-        paged,
-        emptyText = "No updates yet.\nFollow a series in Browse to see new chapters here.",
-        listState = listState,
-    ) { items ->
-        val groups = groupByDayThenSeries(
-            items,
-            dayKeyOf = { isoDayKey(it.foundDate) },
-            // Followed series have an id; a series without one still groups by its name.
-            seriesKeyOf = { it.seriesId ?: it.seriesName },
-            labelOf = { it.seriesName },
-        )
-        groupedByDayAndSeries(
-            groups,
-            collapsed = collapsed,
-            // A series folds shut by default: the newest chapter is already on the header line, so the
-            // whole day's series fit on screen and only a series you actually want the backlog of costs
-            // a tap.
-            seriesCollapsedByDefault = true,
-            header = { group ->
-                // Feed order is newest-first, so the first item is the latest chapter found.
-                val latest = group.items.first()
-                MediaRow(
-                    coverUrl = sourceCoverUrl(baseUrl, latest.providerId ?: "", latest.coverUrl),
-                    apiKey = apiKey,
-                    title = group.label,
-                    subtitle = latest.chapterName ?: "New chapter",
-                    caption = updateCaption(latest) +
-                        (if (group.items.size > 1) " · +${group.items.size - 1} more" else ""),
-                    // The title line is the chapter you'd read next, so it opens the reader; the
-                    // series detail hangs off the cover instead.
-                    onClick = { openUpdate(latest, onOpenReader, onOpenSourceReader) },
-                    onCoverClick = latest.seriesId?.let { sid -> { onOpenSeries(sid) } },
-                )
-            },
-        ) { u ->
-            ChapterSubRow(
-                title = u.chapterName ?: "New chapter",
-                caption = updateCaption(u),
-                onClick = { openUpdate(u, onOpenReader, onOpenSourceReader) },
+    Column(Modifier.fillMaxSize()) {
+        if (anyWebLibrary) {
+            Text(
+                lastRefreshed?.let { "Last updated · ${relativeTime(it)}" } ?: "Not checked for updates yet",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
             )
+        }
+        PagedList(
+            paged,
+            emptyText = "No updates yet.\nFollow a series in Browse to see new chapters here.",
+            modifier = Modifier.weight(1f),
+            listState = listState,
+        ) { items ->
+            val groups = groupByDayThenSeries(
+                items,
+                dayKeyOf = { isoDayKey(it.foundDate) },
+                // Followed series have an id; a series without one still groups by its name.
+                seriesKeyOf = { it.seriesId ?: it.seriesName },
+                labelOf = { it.seriesName },
+            )
+            groupedByDayAndSeries(
+                groups,
+                collapsed = collapsed,
+                // A series folds shut by default: the newest chapter is already on the header line, so the
+                // whole day's series fit on screen and only a series you actually want the backlog of costs
+                // a tap.
+                seriesCollapsedByDefault = true,
+                header = { group ->
+                    // Feed order is newest-first, so the first item is the latest chapter found.
+                    val latest = group.items.first()
+                    MediaRow(
+                        coverUrl = sourceCoverUrl(baseUrl, latest.providerId ?: "", latest.coverUrl),
+                        apiKey = apiKey,
+                        title = group.label,
+                        subtitle = latest.chapterName ?: "New chapter",
+                        caption = updateCaption(latest) +
+                            (if (group.items.size > 1) " · +${group.items.size - 1} more" else ""),
+                        // The title line is the chapter you'd read next, so it opens the reader; the
+                        // series detail hangs off the cover instead.
+                        onClick = { openUpdate(latest, onOpenReader, onOpenSourceReader) },
+                        onCoverClick = latest.seriesId?.let { sid -> { onOpenSeries(sid) } },
+                    )
+                },
+            ) { u ->
+                ChapterSubRow(
+                    title = u.chapterName ?: "New chapter",
+                    caption = updateCaption(u),
+                    onClick = { openUpdate(u, onOpenReader, onOpenSourceReader) },
+                )
+            }
         }
     }
 }
