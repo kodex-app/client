@@ -22,6 +22,16 @@ const val ALIGN_AUTO = "auto"
 const val ALIGN_LEFT = "left"
 const val ALIGN_JUSTIFY = "justify"
 
+/**
+ * Page-turn animations, as `reader.js` names them. Not part of [EbookPrefs]: this one is the app's
+ * own (the web reader has no such choice) and is stored device-side by `AppSettings.ebookPageAnim`.
+ */
+const val PAGE_ANIM_SLIDE = "slide"
+const val PAGE_ANIM_FLIP = "flip"
+const val PAGE_ANIM_NONE = "none"
+
+val EBOOK_ANIMS = listOf(PAGE_ANIM_SLIDE, PAGE_ANIM_FLIP, PAGE_ANIM_NONE)
+
 /** `publisher` keeps the book's own fonts; otherwise `serif`/`sans`/`mono` or `custom:<fontId>`. */
 const val FONT_PUBLISHER = "publisher"
 

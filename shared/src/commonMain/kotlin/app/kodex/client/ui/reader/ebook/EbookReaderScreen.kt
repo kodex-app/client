@@ -78,6 +78,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
+import app.kodex.client.data.AppSettings
 import app.kodex.client.network.BookmarkDto
 import app.kodex.client.network.CustomFontDto
 import app.kodex.client.network.KodexApi
@@ -172,6 +173,7 @@ private val eventJson = Json { ignoreUnknownKeys = true }
 fun EbookReaderScreen(
     session: SessionManager,
     api: KodexApi,
+    appSettings: AppSettings,
     source: EbookSource,
     onBack: () -> Unit,
     /** Open this book's series; null when there's no series to open (or no host to navigate). */
@@ -181,6 +183,8 @@ fun EbookReaderScreen(
     val scope = rememberCoroutineScope()
     val orientation = app.kodex.client.platform.rememberOrientationController()
     val openUrl = app.kodex.client.platform.rememberUrlOpener()
+
+    val pageAnim by appSettings.ebookPageAnim.collectAsStateSafe()
 
     var prefs by remember { mutableStateOf<EbookPrefs?>(null) }
     var defaultPrefs by remember { mutableStateOf(EbookPrefs()) }
@@ -242,6 +246,7 @@ fun EbookReaderScreen(
             put("initialLocator", source.initialLocator)
             put("initialFraction", source.initialFraction)
             putJsonObject("prefs") { p.putInto(this) }
+            put("pageAnim", pageAnim)
             put(
                 "fonts",
                 buildJsonArray {
@@ -596,6 +601,8 @@ fun EbookReaderScreen(
                 fonts = fonts,
                 orientation = orientation.orientation,
                 onOrientation = orientation::set,
+                pageAnim = pageAnim,
+                onPageAnim = { appSettings.setEbookPageAnim(it); call(animCommand(it)) },
                 onChange = ::update,
                 onSaveDefault = {
                     val s = server ?: return@EbookSettingsSheet
@@ -867,6 +874,8 @@ private fun EbookSettingsSheet(
     fonts: List<CustomFontDto>,
     orientation: app.kodex.client.platform.ScreenOrientation,
     onOrientation: (app.kodex.client.platform.ScreenOrientation) -> Unit,
+    pageAnim: String,
+    onPageAnim: (String) -> Unit,
     onChange: (EbookPrefs) -> Unit,
     onSaveDefault: () -> Unit,
     onReset: () -> Unit,
@@ -882,11 +891,19 @@ private fun EbookSettingsSheet(
         ChipRow("Layout", prefs.flow, listOf(FLOW_PAGINATED to "Paged", FLOW_SCROLLED to "Scrolled")) {
             onChange(prefs.copy(flow = it))
         }
-        // Column count only means anything when the text is paginated.
+        // Column count and the turn animation only mean anything when the text is paginated.
         if (prefs.flow == FLOW_PAGINATED) {
             ChipRow("Columns", prefs.columns, listOf(COLUMNS_AUTO to "Auto", COLUMNS_ONE to "One", COLUMNS_TWO to "Two")) {
                 onChange(prefs.copy(columns = it))
             }
+            // Unlike the rest of the sheet this one is a device setting, not a per-series override —
+            // hence its own callback rather than a copy() of the prefs.
+            ChipRow(
+                "Page turn",
+                pageAnim,
+                listOf(PAGE_ANIM_SLIDE to "Slide", PAGE_ANIM_FLIP to "Flip", PAGE_ANIM_NONE to "None"),
+                onSelect = onPageAnim,
+            )
         }
 
         val fontOptions = buildList {
@@ -1047,6 +1064,12 @@ private fun prefsCommand(prefs: EbookPrefs): String =
     buildJsonObject {
         put("cmd", "prefs")
         putJsonObject("prefs") { prefs.putInto(this) }
+    }.toString()
+
+private fun animCommand(value: String): String =
+    buildJsonObject {
+        put("cmd", "anim")
+        put("value", value)
     }.toString()
 
 private fun fractionCommand(fraction: Double): String =

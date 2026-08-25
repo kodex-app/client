@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
+import app.kodex.client.data.AppSettings
 import app.kodex.client.data.model.ServerConnection
 import app.kodex.client.network.BookDto
 import app.kodex.client.network.BookmarkDto
@@ -65,6 +66,7 @@ private data class BookTarget(val id: String, val edge: ReaderEdge? = null)
 fun ReaderScreen(
     session: SessionManager,
     api: KodexApi,
+    appSettings: AppSettings,
     bookId: String,
     onBack: () -> Unit,
     startPage: Int? = null,
@@ -150,7 +152,7 @@ fun ReaderScreen(
                         onBookmarksChanged = { reloadBookmarks(s, book.id) },
                     )
                     // The reader keeps its own position state, so a book swap has to remount it.
-                    key(current.id) { EbookReaderScreen(session, api, source, onBack, openSeries) }
+                    key(current.id) { EbookReaderScreen(session, api, appSettings, source, onBack, openSeries) }
                 }
 
                 book.pageCount <= 0 -> ReaderShell(onBack) { ReaderMessage("This book has no readable pages.") }

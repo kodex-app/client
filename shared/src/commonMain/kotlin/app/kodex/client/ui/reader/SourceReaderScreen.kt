@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import app.kodex.client.auth.SessionManager
+import app.kodex.client.data.AppSettings
 import app.kodex.client.data.model.ServerConnection
 import app.kodex.client.network.KodexApi
 import app.kodex.client.network.ReadProgressDto
@@ -71,6 +72,7 @@ private data class NavChapter(
 fun SourceReaderScreen(
     session: SessionManager,
     api: KodexApi,
+    appSettings: AppSettings,
     providerId: String,
     chapterId: String,
     seriesId: String?,
@@ -234,7 +236,7 @@ fun SourceReaderScreen(
                             bookmarks = null,
                         )
                     }
-                    key(current.id) { EbookReaderScreen(session, api, ebook, onBack, openSeries) }
+                    key(current.id) { EbookReaderScreen(session, api, appSettings, ebook, onBack, openSeries) }
                 }
 
                 st.pageCount <= 0 -> ReaderShell(onBack) {

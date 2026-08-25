@@ -29,6 +29,10 @@ function post(payload) {
 
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n))
 
+// Page-turn animations. The values are the ones stored device-side by `AppSettings.ebookPageAnim`.
+const ANIM_SLIDE = 'slide'
+const ANIM_FLIP = 'flip'
+
 // ── Theming / typography ─────────────────────────────────────────────────────────────────────────
 // Kept identical to the web reader so a book looks the same in both, and so the prefs written by one
 // are meaningful to the other.
@@ -194,6 +198,8 @@ async function openWholeFile(format) {
 
 let view = null
 let prefs = CONFIG.prefs || {}
+/** Page-turn animation: 'slide' (foliate's own), 'flip' (a page swinging over) or 'none'. */
+let pageAnim = CONFIG.pageAnim || ANIM_SLIDE
 let sectionTotal = 1
 let atStart = false
 let atEnd = false
@@ -215,8 +221,34 @@ function applyPrefs(next) {
   view.renderer.setAttribute('max-column-count', next.columns === 'one' ? '1' : '2')
   view.renderer.setAttribute('margin-left', `${next.margin}px`)
   view.renderer.setAttribute('margin-right', `${next.margin}px`)
-  if (next.flow === 'paginated') view.renderer.setAttribute('animated', '')
-  else view.renderer.removeAttribute('animated')
+  // The host document is normally hidden behind the book, but the flip rotates the page away from
+  // it — so it has to carry the theme's colour rather than the boot page's white.
+  document.body.style.background = (THEME_COLORS[next.theme] || THEME_COLORS.light).bg
+  applyMotion()
+}
+
+/**
+ * The renderer attributes that decide how a turn moves, derived from [pageAnim].
+ *
+ * `slide` is foliate's own: it tracks the finger and animates the scroll. The other two take the
+ * gesture off it (`no-swipe`) and make its scroll instant (`eink`), because both are drawn here —
+ * `flip` as a rotation of the whole page, `none` as no animation at all. Turning is then driven by
+ * [turn] alone, from the swipe handler in [bindDocument] as well as from the native chrome, so there
+ * is exactly one path a page turn can take.
+ */
+function applyMotion() {
+  if (!view || !view.renderer) return
+  const r = view.renderer
+  if (prefs.flow !== 'paginated' || pageAnim === ANIM_SLIDE) {
+    if (prefs.flow === 'paginated') r.setAttribute('animated', '')
+    else r.removeAttribute('animated')
+    r.removeAttribute('eink')
+    r.removeAttribute('no-swipe')
+    return
+  }
+  r.removeAttribute('animated')
+  r.setAttribute('eink', '')
+  r.setAttribute('no-swipe', '')
 }
 
 function onRelocate(e) {
@@ -269,6 +301,101 @@ function onRelocate(e) {
   })
 }
 
+// ── Turning pages ────────────────────────────────────────────────────────────────────────────────
+
+/** Half a flip. Both halves run back to back, so a turn costs twice this. */
+const FLIP_MS = 190
+/** How far the page tilts before the swap happens — short of 90° so it never disappears entirely. */
+const FLIP_DEG = 88
+const FLIP_SHADE = 0.42
+
+let flipping = false
+
+/**
+ * Turn one page. `next`/`prev` are geometric, matching foliate's own goRight/goLeft: `next` shows
+ * what lies to the right and so swings the page leftwards, in an RTL book as much as an LTR one.
+ */
+async function turn(dir) {
+  if (!view) return
+  const go = () => (dir === 'next' ? view.goRight() : view.goLeft())
+  if (pageAnim !== ANIM_FLIP || prefs.flow !== 'paginated') return go()
+  // A second turn arriving mid-flip would rotate from a half-turned state and leave the stage
+  // stranded if its cleanup ran second. Dropping it costs one page press at most.
+  if (flipping) return
+  flipping = true
+  try {
+    await flipPage(dir, go)
+  } finally {
+    flipping = false
+  }
+}
+
+/**
+ * The overlay that darkens the page as it tilts away, the way a lifted leaf shades itself. Lives
+ * inside `#view` so the rotation carries it, and is created once per reader.
+ */
+function flipShade() {
+  let el = document.getElementById('shade')
+  if (!el) {
+    el = document.createElement('div')
+    el.id = 'shade'
+    el.style.cssText = 'position:absolute;inset:0;background:#000;opacity:0;pointer-events:none'
+    document.getElementById('view').appendChild(el)
+  }
+  return el
+}
+
+/**
+ * A page turn drawn as a leaf swinging over: the whole page tilts away around the spine edge, the
+ * turn happens while it is edge-on and invisible, and the new page swings back in from the far side.
+ *
+ * The page is rotated as a whole rather than a real curl of one leaf: what foliate paints is a
+ * single scrolling column strip inside an iframe, and a browser gives no way to take a picture of a
+ * page and animate that copy separately (this reader has no compositing surface of its own to draw
+ * a curl on either). Rotating the stage is the one flip that needs no such copy — and because the
+ * swap lands while the page is edge-on, what the eye gets is the same: a page leaving, then a
+ * different one arriving.
+ */
+async function flipPage(dir, go) {
+  const stage = document.getElementById('view')
+  if (!stage || typeof stage.animate !== 'function') return go()
+  // Turning towards the right-hand page lifts it at the left edge, and the reverse going back.
+  const leftwards = dir === 'next'
+  const out = leftwards ? -FLIP_DEG : FLIP_DEG
+  const shade = flipShade()
+  const spin = (from, to, easing) => stage.animate(
+    [{ transform: `rotateY(${from}deg)` }, { transform: `rotateY(${to}deg)` }],
+    { duration: FLIP_MS, easing, fill: 'forwards' },
+  ).finished
+  const shading = (from, to) => shade.animate(
+    [{ opacity: from }, { opacity: to }],
+    { duration: FLIP_MS, easing: 'linear', fill: 'forwards' },
+  ).finished
+
+  document.body.style.perspective = '1400px'
+  stage.style.transformOrigin = leftwards ? 'left center' : 'right center'
+  stage.style.backfaceVisibility = 'hidden'
+  stage.style.willChange = 'transform'
+  try {
+    await Promise.all([spin(0, out, 'cubic-bezier(.4,0,1,.65)'), shading(0, FLIP_SHADE)])
+    await go()
+    // Two frames: one for the paginator's instant scroll to land, one for it to paint. Swapping
+    // pages a frame early shows the change through the last sliver of the outgoing page.
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    await Promise.all([spin(-out, 0, 'cubic-bezier(0,.35,.6,1)'), shading(FLIP_SHADE, 0)])
+  } catch {
+    // An animation cancelled out from under us (the reader closing) still has to un-tilt the page.
+  } finally {
+    for (const a of stage.getAnimations()) a.cancel()
+    for (const a of shade.getAnimations()) a.cancel()
+    stage.style.transform = ''
+    stage.style.transformOrigin = ''
+    stage.style.backfaceVisibility = ''
+    stage.style.willChange = ''
+    document.body.style.perspective = ''
+  }
+}
+
 // A tap toggles the native bars; a swipe belongs to foliate and must not. Distinguished by distance
 // and duration, because the two gestures start identically — reporting on touchstart (as this once
 // did) made every page swipe pop the toolbar open.
@@ -277,6 +404,26 @@ const TAP_MAX_MS = 400
 
 /** How far a swipe has to travel before it counts as an attempt to leave the book. */
 const EDGE_SWIPE_PX = 48
+
+/** How far a swipe has to travel to turn a page when this file, not foliate, owns the gesture. */
+const SWIPE_TURN_PX = 40
+
+/**
+ * Turn on a swipe in the modes that took the gesture off foliate (`flip`/`none` — see [applyMotion]).
+ * Returns whether the swipe was spent: a swipe running off either end is not, so it falls through to
+ * [reportEdgeSwipe] and becomes the native side's chapter change.
+ */
+function handleSwipeTurn(dx, dy, wasAtStart, wasAtEnd) {
+  if (!view || prefs.flow !== 'paginated' || pageAnim === ANIM_SLIDE) return false
+  if (Math.abs(dx) < SWIPE_TURN_PX || Math.abs(dx) <= Math.abs(dy)) return false
+  // Dragging the page leftwards asks for what lies to its right. Whether that is forwards through
+  // the book depends on its direction — the boundary flags are about the book, not the screen.
+  const rtl = !!(view.book && view.book.dir === 'rtl')
+  const forward = (dx < 0) !== rtl
+  if (forward ? wasAtEnd : wasAtStart) return false
+  turn(dx < 0 ? 'next' : 'prev')
+  return true
+}
 
 /**
  * foliate swallows a swipe that would run off the first or last page: the drag is clamped to the
@@ -343,7 +490,7 @@ function bindDocument(doc) {
       const dy = t.screenY - sy
       const moved = Math.hypot(dx, dy)
       if (moved <= TAP_SLOP_PX && ev.timeStamp - st <= TAP_MAX_MS) post({ type: 'tap' })
-      else reportEdgeSwipe(dx, dy, sAtStart, sAtEnd)
+      else if (!handleSwipeTurn(dx, dy, sAtStart, sAtEnd)) reportEdgeSwipe(dx, dy, sAtStart, sAtEnd)
       // Leave `touching` set briefly so the synthetic click below doesn't double-fire.
       setTimeout(() => {
         touching = false
@@ -423,9 +570,12 @@ async function dispatch(c) {
   if (!view) return
   switch (c.cmd) {
     case 'prev':
-      return view.goLeft && view.goLeft()
+      return turn('prev')
     case 'next':
-      return view.goRight && view.goRight()
+      return turn('next')
+    case 'anim':
+      pageAnim = c.value || ANIM_SLIDE
+      return applyMotion()
     case 'goToFraction':
       return view.goToFraction && view.goToFraction(clamp(c.fraction, 0, 1))
     case 'goTo':

@@ -149,11 +149,11 @@ fun DetailHost(
             )
 
         is DetailRoute.Reader ->
-            ReaderScreen(session, api, route.bookId, onBack, route.startPage, route.incognito, onOpenSeriesFromReader)
+            ReaderScreen(session, api, appSettings, route.bookId, onBack, route.startPage, route.incognito, onOpenSeriesFromReader)
 
         is DetailRoute.SourceReader ->
             SourceReaderScreen(
-                session, api, route.providerId, route.chapterId, route.seriesId, route.chapterName,
+                session, api, appSettings, route.providerId, route.chapterId, route.seriesId, route.chapterName,
                 onBack, route.sourceSeries, route.incognito, onOpenSeriesFromReader,
             )
 
