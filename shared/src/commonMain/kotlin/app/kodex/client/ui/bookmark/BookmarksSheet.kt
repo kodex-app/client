@@ -30,7 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import app.kodex.client.ui.sheetMinHeight
+import app.kodex.client.ui.sheetMaxHeight
 import kotlinx.coroutines.launch
 
 /** A single row rendered in the bookmarks sheet. */
@@ -67,7 +67,7 @@ fun BookmarksSheet(
         )
     }
 
-    ModalBottomSheet(modifier = Modifier.heightIn(min = sheetMinHeight()), onDismissRequest = onDismiss, sheetState = sheetState) {
+    ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
             Text("Bookmarks", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             when (val list = rows) {

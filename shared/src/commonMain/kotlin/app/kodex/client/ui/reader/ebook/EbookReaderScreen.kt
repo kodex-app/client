@@ -95,7 +95,7 @@ import app.kodex.client.ui.reader.disabled
 import app.kodex.client.ui.reader.readerBarColor
 import app.kodex.client.ui.reader.readerBarContentColor
 import app.kodex.client.ui.reader.readerBarRaisedColor
-import app.kodex.client.ui.sheetMinHeight
+import app.kodex.client.ui.sheetMaxHeight
 import com.multiplatform.webview.web.WebView
 import com.multiplatform.webview.web.rememberWebViewNavigator
 import com.multiplatform.webview.web.rememberWebViewState
@@ -590,7 +590,7 @@ fun EbookReaderScreen(
     }
 
     if (settingsOpen) {
-        ModalBottomSheet(modifier = Modifier.heightIn(min = sheetMinHeight()), onDismissRequest = { settingsOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = { settingsOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             EbookSettingsSheet(
                 prefs = prefs ?: EbookPrefs(),
                 fonts = fonts,
@@ -613,7 +613,7 @@ fun EbookReaderScreen(
     }
 
     if (tocOpen) {
-        ModalBottomSheet(modifier = Modifier.heightIn(min = sheetMinHeight()), onDismissRequest = { tocOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = { tocOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             TocSheet(toc, current = chapterLabel) { href ->
                 call(hrefCommand(href))
                 tocOpen = false
@@ -622,7 +622,7 @@ fun EbookReaderScreen(
     }
 
     if (chaptersOpen) {
-        ModalBottomSheet(modifier = Modifier.heightIn(min = sheetMinHeight()), onDismissRequest = { chaptersOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = { chaptersOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             ChapterListSheet(source.nav?.chapters.orEmpty()) { chaptersOpen = false }
         }
     }
@@ -632,7 +632,7 @@ fun EbookReaderScreen(
         if (marks == null) {
             bookmarksOpen = false
         } else {
-            ModalBottomSheet(modifier = Modifier.heightIn(min = sheetMinHeight()), onDismissRequest = { bookmarksOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+            ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = { bookmarksOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
                 BookmarksSheet(
                     items = marks.items,
                     onAdd = {

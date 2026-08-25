@@ -44,7 +44,7 @@ import app.kodex.client.network.ConfigFieldDto
 import app.kodex.client.network.KodexApi
 import app.kodex.client.network.SourceConfigDto
 import app.kodex.client.ui.friendlyMessage
-import app.kodex.client.ui.sheetMinHeight
+import app.kodex.client.ui.sheetMaxHeight
 import kotlinx.coroutines.launch
 
 /**
@@ -80,7 +80,7 @@ fun SourceConfigSheet(
             .onFailure { failed = true }
     }
 
-    ModalBottomSheet(modifier = Modifier.heightIn(min = sheetMinHeight()), onDismissRequest = onDismiss, sheetState = sheetState) {
+    ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(16.dp)) {
             val current = config
             Text(

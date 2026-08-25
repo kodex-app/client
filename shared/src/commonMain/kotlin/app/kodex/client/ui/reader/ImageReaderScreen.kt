@@ -136,7 +136,7 @@ import app.kodex.client.network.KodexApi
 import app.kodex.client.platform.StatusBarIcons
 import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.catalog.imageErrorText
-import app.kodex.client.ui.sheetMinHeight
+import app.kodex.client.ui.sheetMaxHeight
 import coil3.SingletonImageLoader
 import coil3.compose.LocalPlatformContext
 import coil3.compose.SubcomposeAsyncImage
@@ -532,7 +532,7 @@ fun ImageReaderScreen(
     }
 
     if (chaptersOpen && p != null && source.nav != null) {
-        ModalBottomSheet(modifier = Modifier.heightIn(min = sheetMinHeight()), onDismissRequest = { chaptersOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = { chaptersOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             ChapterListSheet(source.nav.chapters) { chaptersOpen = false }
         }
     }
@@ -542,7 +542,7 @@ fun ImageReaderScreen(
     }
 
     if (settingsOpen && p != null) {
-        ModalBottomSheet(modifier = Modifier.heightIn(min = sheetMinHeight()), onDismissRequest = { settingsOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = { settingsOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             SettingsSheet(
                 prefs = p,
                 effectiveMode = effectiveMode ?: MODE_PAGED,

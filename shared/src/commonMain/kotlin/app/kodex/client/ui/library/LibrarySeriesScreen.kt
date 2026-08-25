@@ -90,7 +90,7 @@ import app.kodex.client.ui.catalog.SeriesListView
 import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.rememberSelection
 import app.kodex.client.ui.rememberSnackbar
-import app.kodex.client.ui.sheetMinHeight
+import app.kodex.client.ui.sheetMaxHeight
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -461,7 +461,7 @@ fun LibrarySeriesScreen(
 
     if (sheetOpen) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(modifier = Modifier.heightIn(min = sheetMinHeight()), onDismissRequest = { sheetOpen = false }, sheetState = sheetState) {
+        ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = { sheetOpen = false }, sheetState = sheetState) {
             val tabs = listOf("Sort", "Filter", "Group", "Display")
             val sheetPager = androidx.compose.foundation.pager.rememberPagerState(sheetTab) { tabs.size }
             // Transparent container so the tab strip blends with the sheet (no mismatched white band/seam).

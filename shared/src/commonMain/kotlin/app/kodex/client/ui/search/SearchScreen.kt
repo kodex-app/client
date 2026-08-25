@@ -70,7 +70,7 @@ import androidx.compose.ui.unit.dp
 import app.kodex.client.auth.SessionManager
 import app.kodex.client.ui.catalog.rememberSourceNames
 import app.kodex.client.ui.catalog.sourceLabel
-import app.kodex.client.ui.sheetMinHeight
+import app.kodex.client.ui.sheetMaxHeight
 import kotlinx.coroutines.launch
 import app.kodex.client.network.BookDto
 import app.kodex.client.network.KodexApi
@@ -487,7 +487,7 @@ private fun FacetSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var working by remember(facets) { mutableStateOf(facets) }
 
-    ModalBottomSheet(modifier = Modifier.heightIn(min = sheetMinHeight()), onDismissRequest = onDismiss, sheetState = sheetState) {
+    ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             Text("Filter", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 4.dp))
             // Scrollable filter body — capped so the fixed footer stays visible in the half-height sheet.
@@ -758,7 +758,7 @@ private fun SourcePickerSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var working by remember(selected) { mutableStateOf(selected) }
-    ModalBottomSheet(modifier = Modifier.heightIn(min = sheetMinHeight()), onDismissRequest = onDismiss, sheetState = sheetState) {
+    ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             Text("Sources", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 4.dp))
             Text("None selected searches every source; favourites are searched first.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))

@@ -65,7 +65,7 @@ import app.kodex.client.ui.catalog.formatFileSize
 import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.friendlyMessage
 import app.kodex.client.ui.rememberSnackbar
-import app.kodex.client.ui.sheetMinHeight
+import app.kodex.client.ui.sheetMaxHeight
 import kotlinx.coroutines.launch
 
 /**
@@ -117,7 +117,7 @@ fun BookDetailSheet(
     // than stacking two scrims; closing them brings it back with the book still loaded.
     if (!editOpen && !bookmarksOpen) {
         ModalBottomSheet(
-            modifier = Modifier.heightIn(min = sheetMinHeight()),
+            modifier = Modifier.heightIn(max = sheetMaxHeight()),
             onDismissRequest = onDismiss,
             sheetState = sheetState,
         ) {
@@ -260,7 +260,7 @@ private fun EditMetadataSheet(
     val authors = remember { book.authors.toMutableStateList() }
     var locked by remember { mutableStateOf(book.lockedFields) }
 
-    ModalBottomSheet(modifier = Modifier.heightIn(min = sheetMinHeight()), onDismissRequest = onDismiss, sheetState = sheetState) {
+    ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(16.dp)) {
             Text("Edit metadata", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(12.dp))

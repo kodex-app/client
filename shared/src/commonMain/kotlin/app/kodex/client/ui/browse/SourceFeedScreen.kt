@@ -96,7 +96,7 @@ import app.kodex.client.ui.friendlyMessage
 import app.kodex.client.ui.rememberSelection
 import app.kodex.client.ui.nav.retain
 import app.kodex.client.ui.rememberSnackbar
-import app.kodex.client.ui.sheetMinHeight
+import app.kodex.client.ui.sheetMaxHeight
 import kotlinx.coroutines.launch
 
 /**
@@ -386,7 +386,7 @@ fun SourceFeedScreen(
 
     // Library picker for "Add to libraries" when the user has more than one WEB library.
     libraryPicker?.let { libs ->
-        ModalBottomSheet(modifier = Modifier.heightIn(min = sheetMinHeight()), onDismissRequest = { libraryPicker = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = { libraryPicker = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
                 Text(
                     "Add ${selection.count} to library",
@@ -433,7 +433,7 @@ private fun FilterSheet(
     onApply: (List<SourceFilter>, String) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(modifier = Modifier.heightIn(min = sheetMinHeight()), onDismissRequest = onDismiss, sheetState = sheetState) {
+    ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = onDismiss, sheetState = sheetState) {
         if (filters == null) {
             Box(Modifier.fillMaxWidth().padding(48.dp), Alignment.Center) { CircularProgressIndicator() }
             return@ModalBottomSheet
