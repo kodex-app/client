@@ -6,6 +6,7 @@ import android.content.ContextWrapper
 import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Build
+import android.view.Window
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -87,6 +88,19 @@ actual fun SystemBarsHidden(hidden: Boolean) {
     if (view.isInEditMode) return
     val window = remember(view) { view.context.findActivity()?.window }
 
+    // Deliberately *not* keyed on [hidden]: the cutout mode is pinned for as long as the caller is on
+    // screen. In DEFAULT mode the window stops overlapping the display cutout as soon as the status
+    // bar no longer covers it, so flipping the mode with the chrome resized the window on every
+    // toggle and the page visibly jumped up and down by the cutout's height. Held at SHORT_EDGES the
+    // reader's geometry never changes, and the notch still can't letterbox the page in landscape.
+    DisposableEffect(window) {
+        val previous = window?.cutoutMode()
+        window?.setCutoutMode(WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES)
+        onDispose {
+            window?.setCutoutMode(previous ?: WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT)
+        }
+    }
+
     DisposableEffect(window, hidden) {
         if (window != null) {
             val controller = WindowCompat.getInsetsController(window, view)
@@ -96,17 +110,6 @@ actual fun SystemBarsHidden(hidden: Boolean) {
                 controller.hide(WindowInsetsCompat.Type.systemBars())
             } else {
                 controller.show(WindowInsetsCompat.Type.systemBars())
-            }
-            // With the bars gone the display cutout would otherwise letterbox the page in landscape,
-            // leaving a black band where the notch is; SHORT_EDGES lets the reader paint under it.
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                window.attributes = window.attributes.apply {
-                    layoutInDisplayCutoutMode = if (hidden) {
-                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-                    } else {
-                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
-                    }
-                }
             }
         }
         onDispose {}
@@ -119,15 +122,19 @@ actual fun SystemBarsHidden(hidden: Boolean) {
             if (window != null) {
                 WindowCompat.getInsetsController(window, view)
                     .show(WindowInsetsCompat.Type.systemBars())
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    window.attributes = window.attributes.apply {
-                        layoutInDisplayCutoutMode =
-                            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
-                    }
-                }
             }
         }
     }
+}
+
+/** The window's current cutout mode, or null below API 28 where there is no such thing. */
+private fun Window.cutoutMode(): Int? =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) attributes.layoutInDisplayCutoutMode else null
+
+private fun Window.setCutoutMode(mode: Int) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
+    if (attributes.layoutInDisplayCutoutMode == mode) return
+    attributes = attributes.apply { layoutInDisplayCutoutMode = mode }
 }
 
 /**
