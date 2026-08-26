@@ -968,7 +968,7 @@ private fun ChapterRow(
 /** Mihon-style backdrop: the cover, blurred, fading into the page background under the header. */
 @Composable
 private fun SeriesBackdrop(baseUrl: String, apiKey: String, detail: SeriesDetailDto, height: androidx.compose.ui.unit.Dp) {
-    SeriesBackdrop(seriesCoverUrl(baseUrl, detail.id, detail.coverUrl), apiKey, height)
+    SeriesBackdrop(seriesCoverUrl(baseUrl, detail.id, detail.coverUrl, detail.sourceProviderId), apiKey, height)
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -984,7 +984,7 @@ private fun SeriesHeader(
     actions: (@Composable () -> Unit)? = null,
 ) {
     SeriesHeader(
-        coverUrl = seriesCoverUrl(baseUrl, detail.id, detail.coverUrl),
+        coverUrl = seriesCoverUrl(baseUrl, detail.id, detail.coverUrl, detail.sourceProviderId),
         apiKey = apiKey,
         title = detail.title,
         chips = (detail.genres + detail.tags).distinct(),

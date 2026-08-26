@@ -28,15 +28,26 @@ fun sourcePageUrl(baseUrl: String, providerId: String, chapterId: String, index:
     "$baseUrl/api/v1/content-sources/$providerId/page?chapterId=${chapterId.encodeURLParameter()}&index=$index"
 
 /**
- * Series cover, mirroring the web `coverSrc`: a custom [SeriesDto.coverUrl] wins (absolute URLs are
- * used as-is, server-relative ones are prefixed), otherwise fall back to the series thumbnail.
+ * Series cover, mirroring the web `coverSrc`: a custom [SeriesDto.coverUrl] wins (server-relative URLs
+ * are prefixed, an absolute source cover goes through the core's cover proxy when [providerId] is
+ * known), otherwise fall back to the series thumbnail.
+ *
+ * The proxy matters even though the image loader sends no Referer of its own: hotlink-protected CDNs
+ * (MangaDex answers a foreign Referer with a "read this at mangadex.org" decoy image) are only reliably
+ * satisfied by the source's own headers, which only the core can send.
  */
 fun seriesCoverUrl(baseUrl: String, series: SeriesDto): String =
-    seriesCoverUrl(baseUrl, series.id, series.coverUrl)
+    seriesCoverUrl(baseUrl, series.id, series.coverUrl, series.sourceProviderId)
 
-fun seriesCoverUrl(baseUrl: String, seriesId: String, coverUrl: String?): String = when {
+fun seriesCoverUrl(
+    baseUrl: String,
+    seriesId: String,
+    coverUrl: String?,
+    providerId: String? = null,
+): String = when {
     coverUrl.isNullOrBlank() -> "$baseUrl/api/v1/series/$seriesId/thumbnail"
     coverUrl.startsWith("/") -> "$baseUrl$coverUrl"
+    !providerId.isNullOrBlank() -> sourceCoverUrl(baseUrl, providerId, coverUrl)
     else -> coverUrl
 }
 

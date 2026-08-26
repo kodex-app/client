@@ -84,7 +84,7 @@ fun UpdatesList(
     val baseUrl = current.baseUrl
     val apiKey = current.apiKey
 
-    val paged = app.kodex.client.ui.rememberPagedList(current.id, retainKey = "updates") { page ->
+    val paged = app.kodex.client.ui.rememberPagedList(current.id, retainKey = "updates", keyOf = { it.id }) { page ->
         api.updates(baseUrl, apiKey, page)
     }
     // Retained with the rows, so opening a chapter and coming back lands where you left off.
@@ -219,7 +219,7 @@ fun HistoryList(
     var rangePicker by remember { mutableStateOf(false) }
     val collapsed = rememberCollapsedGroups("history")
 
-    val paged = app.kodex.client.ui.rememberPagedList(current.id, retainKey = "history") { page ->
+    val paged = app.kodex.client.ui.rememberPagedList(current.id, retainKey = "history", keyOf = { it.id }) { page ->
         api.history(baseUrl, apiKey, page)
     }
     val listState = retain("history:scroll") { LazyListState() }

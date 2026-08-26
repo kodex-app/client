@@ -56,7 +56,7 @@ fun DownloadsScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) 
     var menuOpen by remember { mutableStateOf(false) }
 
     val snackbar = app.kodex.client.ui.rememberSnackbar()
-    val paged = rememberPagedList(current.id) { page -> api.downloads(baseUrl, apiKey, page) }
+    val paged = rememberPagedList(current.id, keyOf = { it.id }) { page -> api.downloads(baseUrl, apiKey, page) }
 
     // Live: refresh on any download state change (new job, completed, failed, paused…).
     app.kodex.client.ui.OnServerEvent(app.kodex.client.network.ServerEvent.DOWNLOAD_STATUS_CHANGED) {

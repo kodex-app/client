@@ -50,6 +50,12 @@ import kotlinx.coroutines.launch
 class PagedListState<T>(
     scope: CoroutineScope,
     fetch: suspend (page: Int) -> PageResponse<T>,
+    /**
+     * Stable identity of a row, when the list has one. Only [silentRefresh] and the append de-dupe
+     * need it, so it stays optional: without it a background refresh falls back to replacing the list
+     * with page 0.
+     */
+    private val keyOf: ((T) -> Any?)? = null,
 ) {
     /**
      * Both are rebound by [rememberPagedList] on every composition, because a *retained* list outlives
@@ -99,10 +105,48 @@ class PagedListState<T>(
         reload(initial = false)
     }
 
-    /** Background poll: silently re-fetch the first page in place (no spinner). Used by Downloads. */
+    /**
+     * Background poll: silently re-fetch the first page in place (no spinner).
+     *
+     * When the rows have an identity ([keyOf]) the fresh first page is *merged* over what is already
+     * loaded instead of replacing it. A plain reload would throw away every page the user had scrolled
+     * in: on Updates, a `LIBRARY_SCAN_COMPLETED` arriving right after a scan cut the feed back to the
+     * 50 newest rows — which are exactly the chapters that scan just found, all stamped today — so the
+     * list appeared to lose every earlier day.
+     */
     fun silentRefresh() {
         if (loading || refreshing) return
-        reload(initial = false)
+        if (keyOf != null && loadedOnce) mergeFirstPage() else reload(initial = false)
+    }
+
+    /**
+     * Re-fetches page 0 and puts it at the head of the list, dropping the copies of those rows further
+     * down, and keeps everything else that was already loaded. New rows are prepended (the feeds are
+     * newest-first), which shifts the server-side offsets: [nextPage] is re-derived from how many rows
+     * are now held, and [loadMore] de-dupes, so the overlap that shift causes costs at most a few
+     * repeated rows rather than a gap in the feed.
+     */
+    private fun mergeFirstPage() {
+        val key = keyOf ?: return
+        scope.launch {
+            runCatching { fetch(0) }.fold(
+                onSuccess = { pageResp ->
+                    error = null
+                    val seen = HashSet<Any?>(items.size + pageResp.content.size)
+                    val merged = ArrayList<T>(items.size + pageResp.content.size)
+                    for (row in pageResp.content) if (seen.add(key(row))) merged.add(row)
+                    for (row in items) if (seen.add(key(row))) merged.add(row)
+                    // Only the first page exists server-side and we hold nothing beyond it: the feed
+                    // really has ended. Otherwise leave the flag as paging left it.
+                    if (pageResp.last && merged.size <= pageResp.content.size) endReached = true
+                    val pageSize = pageResp.size
+                    if (pageSize > 0) nextPage = merged.size / pageSize
+                    items.clear()
+                    items.addAll(merged)
+                },
+                onFailure = { error = it.friendlyMessage() },
+            )
+        }
     }
 
     private fun reload(initial: Boolean) {
@@ -141,7 +185,15 @@ class PagedListState<T>(
             appendError = null
             runCatching { fetch(nextPage) }.fold(
                 onSuccess = { pageResp ->
-                    items.addAll(pageResp.content)
+                    // De-duped against what is on screen: a merge in silentRefresh can leave the next
+                    // page overlapping the rows it kept, and appending them again would double them up.
+                    val key = keyOf
+                    if (key == null) {
+                        items.addAll(pageResp.content)
+                    } else {
+                        val seen = items.mapTo(HashSet<Any?>(items.size)) { key(it) }
+                        items.addAll(pageResp.content.filter { seen.add(key(it)) })
+                    }
                     endReached = pageResp.last
                     nextPage += 1
                 },
@@ -178,15 +230,16 @@ class PagedListState<T>(
 fun <T> rememberPagedList(
     key: Any?,
     retainKey: String? = null,
+    keyOf: ((T) -> Any?)? = null,
     fetch: suspend (page: Int) -> PageResponse<T>,
 ): PagedListState<T> {
     val scope = rememberCoroutineScope()
     // [key] is folded into the retained entry rather than passed to `retain`, so switching server
     // still starts a fresh list instead of showing the previous server's rows.
     val state = if (retainKey == null) {
-        remember(key) { PagedListState(scope, fetch) }
+        remember(key) { PagedListState(scope, fetch, keyOf) }
     } else {
-        retain("$retainKey/$key") { PagedListState(scope, fetch) }
+        retain("$retainKey/$key") { PagedListState(scope, fetch, keyOf) }
     }
     SideEffect {
         state.scope = scope
