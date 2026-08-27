@@ -18,11 +18,11 @@
 }
 
 # Our own @Serializable DTOs (network/**) and settings models.
--keep,includedescriptorclasses class app.kodex.client.**$$serializer { *; }
--keepclassmembers class app.kodex.client.** {
+-keep,includedescriptorclasses class dev.icedtea.kodex.**$$serializer { *; }
+-keepclassmembers class dev.icedtea.kodex.** {
     *** Companion;
 }
--keepclasseswithmembers class app.kodex.client.** {
+-keepclasseswithmembers class dev.icedtea.kodex.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
 

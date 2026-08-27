@@ -8,24 +8,24 @@ plugins {
 }
 
 android {
-    namespace = "app.kodex.client"
+    namespace = "dev.icedtea.kodex"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "app.kodex.client"
+        applicationId = "dev.icedtea.kodex"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
         versionName = "0.1.0"
 
-        // Dev-channel builds ship as a separate package (app.kodex.client.dev) so they install
+        // Dev-channel builds ship as a separate package (dev.icedtea.kodex.dev) so they install
         // alongside the production app instead of fighting it for the same applicationId. CI sets
         // APP_ID_SUFFIX=.dev on the dev branch; empty everywhere else.
         val appIdSuffix = System.getenv("APP_ID_SUFFIX")?.trim().orEmpty()
         applicationIdSuffix = appIdSuffix.takeIf { it.isNotEmpty() }
         // Same reason the package differs: two identically-named launcher icons are unusable.
         manifestPlaceholders["appLabel"] =
-            if (appIdSuffix.isEmpty()) "Kodex" else "Kodex ${appIdSuffix.removePrefix(".").uppercase()}"
+            if (appIdSuffix.isEmpty()) "Kodex" else "Kodex (${appIdSuffix.removePrefix(".").lowercase()})"
 
         // The one native dependency (androidx.graphics.path) otherwise ships a copy per ABI. 32-bit
         // x86 is dropped — no current device or emulator image uses it — while x86_64 stays, since

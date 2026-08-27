@@ -5,9 +5,9 @@ name: Build & publish APK
 # Telegram.
 #
 # Three channels, decided by the ref:
-#   tag v*      → release → app.kodex.client      → release key → GitHub Release <v*>
-#   branch dev  → dev     → app.kodex.client.dev  → *_DEV key   → rolling prerelease `dev`
-#   branch main → main    → app.kodex.client      → release key → workflow artifact only
+#   tag v*      → release → dev.icedtea.kodex      → release key → GitHub Release <v*>
+#   branch dev  → dev     → dev.icedtea.kodex.dev  → *_DEV key   → rolling prerelease `dev`
+#   branch main → main    → dev.icedtea.kodex      → release key → workflow artifact only
 # main is a build check: it proves the release build still assembles and signs, but publishing is
 # reserved for tags — a green main is not by itself something to hand people.
 # The dev channel is a separate package signed with its own key, so it installs alongside the

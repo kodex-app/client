@@ -1,0 +1,16 @@
+package dev.icedtea.kodex.platform
+
+import androidx.compose.runtime.Composable
+
+/** Requested screen orientation for the reader. AUTO follows the device sensor/system setting. */
+enum class ScreenOrientation { AUTO, PORTRAIT, LANDSCAPE }
+
+/** Locks/unlocks the screen orientation. Both readers pick one from their settings sheet. */
+interface OrientationController {
+    val orientation: ScreenOrientation
+    fun set(orientation: ScreenOrientation)
+}
+
+/** Platform orientation control. On Android it drives the Activity; elsewhere it's a no-op (AUTO). */
+@Composable
+expect fun rememberOrientationController(): OrientationController

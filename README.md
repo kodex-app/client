@@ -17,7 +17,7 @@ and the Kotlin Multiplatform plugin.
 
 ```
 shared/src/       Kotlin Multiplatform library — all shared UI + logic
-  commonMain/       app/kodex/client/…
+  commonMain/       dev/icedtea/kodex/…
     auth/           SessionManager — servers, active session, current user
     data/           ServerStore (persistence) + models
     network/        KodexApi (Ktor) + DTOs
