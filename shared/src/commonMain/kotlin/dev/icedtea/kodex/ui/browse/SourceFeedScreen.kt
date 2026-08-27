@@ -40,7 +40,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -85,6 +84,7 @@ import dev.icedtea.kodex.network.SourceSearchResult
 import dev.icedtea.kodex.network.TextFilterDto
 import dev.icedtea.kodex.network.TriStateFilter
 import dev.icedtea.kodex.ui.EmptyMessage
+import dev.icedtea.kodex.ui.KodexBottomSheet
 import dev.icedtea.kodex.ui.SelectionActionBar
 import dev.icedtea.kodex.ui.SelectionState
 import dev.icedtea.kodex.ui.SelectionTopBar
@@ -96,7 +96,6 @@ import dev.icedtea.kodex.ui.friendlyMessage
 import dev.icedtea.kodex.ui.rememberSelection
 import dev.icedtea.kodex.ui.nav.retain
 import dev.icedtea.kodex.ui.rememberSnackbar
-import dev.icedtea.kodex.ui.sheetMaxHeight
 import kotlinx.coroutines.launch
 
 /**
@@ -386,7 +385,7 @@ fun SourceFeedScreen(
 
     // Library picker for "Add to libraries" when the user has more than one WEB library.
     libraryPicker?.let { libs ->
-        ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = { libraryPicker = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        KodexBottomSheet(onDismissRequest = { libraryPicker = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
                 Text(
                     "Add ${selection.count} to library",
@@ -433,10 +432,10 @@ private fun FilterSheet(
     onApply: (List<SourceFilter>, String) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = onDismiss, sheetState = sheetState) {
+    KodexBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         if (filters == null) {
             Box(Modifier.fillMaxWidth().padding(48.dp), Alignment.Center) { CircularProgressIndicator() }
-            return@ModalBottomSheet
+            return@KodexBottomSheet
         }
         val working = remember(filters) { filters.toMutableStateList() }
         var query by remember(initialQuery) { mutableStateOf(initialQuery) }

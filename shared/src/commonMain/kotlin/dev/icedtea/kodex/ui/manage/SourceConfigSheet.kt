@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -19,7 +18,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -43,8 +41,8 @@ import androidx.compose.ui.unit.dp
 import dev.icedtea.kodex.network.ConfigFieldDto
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.network.SourceConfigDto
+import dev.icedtea.kodex.ui.KodexBottomSheet
 import dev.icedtea.kodex.ui.friendlyMessage
-import dev.icedtea.kodex.ui.sheetMaxHeight
 import kotlinx.coroutines.launch
 
 /**
@@ -80,7 +78,7 @@ fun SourceConfigSheet(
             .onFailure { failed = true }
     }
 
-    ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = onDismiss, sheetState = sheetState) {
+    KodexBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(16.dp)) {
             val current = config
             Text(

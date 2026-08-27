@@ -38,7 +38,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -68,9 +67,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.icedtea.kodex.auth.SessionManager
+import dev.icedtea.kodex.ui.KodexBottomSheet
 import dev.icedtea.kodex.ui.catalog.rememberSourceNames
 import dev.icedtea.kodex.ui.catalog.sourceLabel
-import dev.icedtea.kodex.ui.sheetMaxHeight
 import kotlinx.coroutines.launch
 import dev.icedtea.kodex.network.BookDto
 import dev.icedtea.kodex.network.KodexApi
@@ -487,7 +486,7 @@ private fun FacetSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var working by remember(facets) { mutableStateOf(facets) }
 
-    ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = onDismiss, sheetState = sheetState) {
+    KodexBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             Text("Filter", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 4.dp))
             // Scrollable filter body — capped so the fixed footer stays visible in the half-height sheet.
@@ -758,7 +757,7 @@ private fun SourcePickerSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var working by remember(selected) { mutableStateOf(selected) }
-    ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = onDismiss, sheetState = sheetState) {
+    KodexBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             Text("Sources", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 4.dp))
             Text("None selected searches every source; favourites are searched first.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))

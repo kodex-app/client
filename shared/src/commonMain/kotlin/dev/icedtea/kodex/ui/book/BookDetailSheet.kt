@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -32,7 +31,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -58,6 +56,7 @@ import dev.icedtea.kodex.network.AuthorDto
 import dev.icedtea.kodex.network.BookDto
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.network.UpdateBookMetadataRequest
+import dev.icedtea.kodex.ui.KodexBottomSheet
 import dev.icedtea.kodex.ui.MetaChip
 import dev.icedtea.kodex.ui.catalog.CoverImage
 import dev.icedtea.kodex.ui.catalog.bookCoverUrl
@@ -65,7 +64,6 @@ import dev.icedtea.kodex.ui.catalog.formatFileSize
 import dev.icedtea.kodex.ui.collectAsStateSafe
 import dev.icedtea.kodex.ui.friendlyMessage
 import dev.icedtea.kodex.ui.rememberSnackbar
-import dev.icedtea.kodex.ui.sheetMaxHeight
 import kotlinx.coroutines.launch
 
 /**
@@ -116,8 +114,7 @@ fun BookDetailSheet(
     // Edit and bookmarks are sheets of their own, so this one steps aside while either is up rather
     // than stacking two scrims; closing them brings it back with the book still loaded.
     if (!editOpen && !bookmarksOpen) {
-        ModalBottomSheet(
-            modifier = Modifier.heightIn(max = sheetMaxHeight()),
+        KodexBottomSheet(
             onDismissRequest = onDismiss,
             sheetState = sheetState,
         ) {
@@ -260,7 +257,7 @@ private fun EditMetadataSheet(
     val authors = remember { book.authors.toMutableStateList() }
     var locked by remember { mutableStateOf(book.lockedFields) }
 
-    ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = onDismiss, sheetState = sheetState) {
+    KodexBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(16.dp)) {
             Text("Edit metadata", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(12.dp))

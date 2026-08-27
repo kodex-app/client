@@ -53,7 +53,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -84,6 +83,7 @@ import dev.icedtea.kodex.network.CustomFontDto
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.platform.StatusBarIcons
 import dev.icedtea.kodex.platform.SystemBarsHidden
+import dev.icedtea.kodex.ui.KodexBottomSheet
 import dev.icedtea.kodex.ui.collectAsStateSafe
 import dev.icedtea.kodex.ui.reader.ChapterListSheet
 import dev.icedtea.kodex.ui.reader.ChapterTransitionPage
@@ -97,7 +97,6 @@ import dev.icedtea.kodex.ui.reader.disabled
 import dev.icedtea.kodex.ui.reader.readerBarColor
 import dev.icedtea.kodex.ui.reader.readerBarContentColor
 import dev.icedtea.kodex.ui.reader.readerBarRaisedColor
-import dev.icedtea.kodex.ui.sheetMaxHeight
 import com.multiplatform.webview.web.WebView
 import com.multiplatform.webview.web.rememberWebViewNavigator
 import com.multiplatform.webview.web.rememberWebViewState
@@ -599,7 +598,7 @@ fun EbookReaderScreen(
     }
 
     if (settingsOpen) {
-        ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = { settingsOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        KodexBottomSheet(onDismissRequest = { settingsOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             EbookSettingsSheet(
                 prefs = prefs ?: EbookPrefs(),
                 fonts = fonts,
@@ -624,7 +623,7 @@ fun EbookReaderScreen(
     }
 
     if (tocOpen) {
-        ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = { tocOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        KodexBottomSheet(onDismissRequest = { tocOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             TocSheet(toc, current = chapterLabel) { href ->
                 call(hrefCommand(href))
                 tocOpen = false
@@ -633,7 +632,7 @@ fun EbookReaderScreen(
     }
 
     if (chaptersOpen) {
-        ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = { chaptersOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        KodexBottomSheet(onDismissRequest = { chaptersOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             ChapterListSheet(source.nav?.chapters.orEmpty()) { chaptersOpen = false }
         }
     }
@@ -643,7 +642,7 @@ fun EbookReaderScreen(
         if (marks == null) {
             bookmarksOpen = false
         } else {
-            ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = { bookmarksOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+            KodexBottomSheet(onDismissRequest = { bookmarksOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
                 BookmarksSheet(
                     items = marks.items,
                     onAdd = {

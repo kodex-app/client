@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -21,7 +20,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -39,7 +37,7 @@ import androidx.compose.ui.unit.dp
 import dev.icedtea.kodex.network.LabelDto
 import dev.icedtea.kodex.network.SeriesDetailDto
 import dev.icedtea.kodex.network.UpdateSeriesMetadataRequest
-import dev.icedtea.kodex.ui.sheetMaxHeight
+import dev.icedtea.kodex.ui.KodexBottomSheet
 
 private val STATUSES = listOf("UNKNOWN", "ONGOING", "COMPLETED", "PUBLISHING_FINISHED", "LICENSED", "CANCELLED", "ON_HIATUS")
 
@@ -78,7 +76,7 @@ fun SeriesMetadataSheet(
     var labelIds by remember { mutableStateOf(detail.labels.map { it.id }.toSet()) }
     var locked by remember { mutableStateOf(detail.lockedFields) }
 
-    ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = onDismiss, sheetState = sheetState) {
+    KodexBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(16.dp)) {
             Text("Edit series", style = androidx.compose.material3.MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.size(12.dp))

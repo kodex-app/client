@@ -81,7 +81,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -135,9 +134,9 @@ import dev.icedtea.kodex.auth.SessionManager
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.platform.StatusBarIcons
 import dev.icedtea.kodex.platform.SystemBarsHidden
+import dev.icedtea.kodex.ui.KodexBottomSheet
 import dev.icedtea.kodex.ui.collectAsStateSafe
 import dev.icedtea.kodex.ui.catalog.imageErrorText
-import dev.icedtea.kodex.ui.sheetMaxHeight
 import coil3.SingletonImageLoader
 import coil3.compose.LocalPlatformContext
 import coil3.compose.SubcomposeAsyncImage
@@ -537,7 +536,7 @@ fun ImageReaderScreen(
     }
 
     if (chaptersOpen && p != null && source.nav != null) {
-        ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = { chaptersOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        KodexBottomSheet(onDismissRequest = { chaptersOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             ChapterListSheet(source.nav.chapters) { chaptersOpen = false }
         }
     }
@@ -547,7 +546,7 @@ fun ImageReaderScreen(
     }
 
     if (settingsOpen && p != null) {
-        ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = { settingsOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        KodexBottomSheet(onDismissRequest = { settingsOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             SettingsSheet(
                 prefs = p,
                 effectiveMode = effectiveMode ?: MODE_PAGED,

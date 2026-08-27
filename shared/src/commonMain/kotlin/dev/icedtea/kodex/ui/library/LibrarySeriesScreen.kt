@@ -39,7 +39,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
@@ -78,6 +77,7 @@ import dev.icedtea.kodex.network.SeriesDto
 import dev.icedtea.kodex.network.SeriesGroupCount
 import dev.icedtea.kodex.network.ServerEvent
 import dev.icedtea.kodex.ui.EmptyMessage
+import dev.icedtea.kodex.ui.KodexBottomSheet
 import dev.icedtea.kodex.ui.LoadedContent
 import dev.icedtea.kodex.ui.OnServerEvent
 import dev.icedtea.kodex.ui.SelectionActionBar
@@ -90,7 +90,6 @@ import dev.icedtea.kodex.ui.catalog.SeriesListView
 import dev.icedtea.kodex.ui.collectAsStateSafe
 import dev.icedtea.kodex.ui.rememberSelection
 import dev.icedtea.kodex.ui.rememberSnackbar
-import dev.icedtea.kodex.ui.sheetMaxHeight
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -461,7 +460,7 @@ fun LibrarySeriesScreen(
 
     if (sheetOpen) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(modifier = Modifier.heightIn(max = sheetMaxHeight()), onDismissRequest = { sheetOpen = false }, sheetState = sheetState) {
+        KodexBottomSheet(onDismissRequest = { sheetOpen = false }, sheetState = sheetState) {
             val tabs = listOf("Sort", "Filter", "Group", "Display")
             val sheetPager = androidx.compose.foundation.pager.rememberPagerState(sheetTab) { tabs.size }
             // Transparent container so the tab strip blends with the sheet (no mismatched white band/seam).
