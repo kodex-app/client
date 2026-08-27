@@ -28,6 +28,7 @@ import app.kodex.client.ui.collectAsStateSafe
 import app.kodex.client.ui.login.LoginScreen
 import app.kodex.client.ui.main.MainScaffold
 import app.kodex.client.ui.theme.KodexTheme
+import app.kodex.client.ui.theme.LocalImmersiveContent
 import app.kodex.client.ui.theme.LocalSystemNavBarColor
 import coil3.ImageLoader
 import coil3.compose.setSingletonImageLoaderFactory
@@ -54,6 +55,9 @@ fun App() {
     // Written by whichever screen owns the bottom bar; read by the strip painted below.
     val systemNavBarColor = remember { mutableStateOf<Color?>(null) }
 
+    // Written by a full-window screen (the readers) through ImmersiveContent; read just below.
+    val immersiveContent = remember { mutableStateOf(false) }
+
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarController(snackbarHostState, scope) }
@@ -63,13 +67,18 @@ fun App() {
             LocalEventBus provides graph.eventBus,
             LocalSnackbar provides snackbar,
             LocalSystemNavBarColor provides systemNavBarColor,
+            LocalImmersiveContent provides immersiveContent,
         ) {
             Surface(Modifier.fillMaxSize()) {
               Box(Modifier.fillMaxSize()) {
                 // Reserve the system navigation-bar space app-wide so bottom content (nav bar, FABs,
                 // last list rows) is never hidden under it. Bottom-only, so top backdrops stay edge-to-edge.
                 // Consuming the inset here also prevents descendant Scaffolds from double-padding it.
-                Box(Modifier.fillMaxSize().navigationBarsPadding()) {
+                //
+                // Skipped for an immersive screen: the readers hide the system bars with their chrome,
+                // and a reserved strip that collapses and reappears with the bars resizes the page under
+                // them on every toggle. See ImmersiveContent.
+                Box(Modifier.fillMaxSize().then(if (immersiveContent.value) Modifier else Modifier.navigationBarsPadding())) {
                     val activeServer by graph.session.activeServer.collectAsStateSafe()
                     if (activeServer == null) {
                         LoginScreen(graph.session)

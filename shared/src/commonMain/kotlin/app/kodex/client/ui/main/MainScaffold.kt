@@ -64,6 +64,7 @@ import app.kodex.client.ui.nav.LocalRetainedSlot
 import app.kodex.client.ui.nav.RetainedStateStore
 import app.kodex.client.ui.recents.rememberNewUpdateCount
 import app.kodex.client.ui.search.SearchScreen
+import app.kodex.client.ui.theme.ImmersiveContent
 import app.kodex.client.ui.theme.SystemNavBarColor
 
 /** Retained-state slot for the search screen; it keeps its query and results while a result is open. */
@@ -154,6 +155,9 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
     }
 
     val immersive = backStack.lastOrNull().let { it is DetailRoute.Reader || it is DetailRoute.SourceReader }
+    // A reader owns the whole window: it hides the system bars with its chrome, so the app-wide
+    // navigation-bar strip has to go with them or the page resizes on every toggle.
+    ImmersiveContent(immersive)
     val turnOffIncognito = { appSettings.setIncognitoMode(false) }
 
     if (backStack.isNotEmpty()) {
