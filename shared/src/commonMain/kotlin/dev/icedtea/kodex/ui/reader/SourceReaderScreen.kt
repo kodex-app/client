@@ -4,8 +4,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import dev.icedtea.kodex.auth.SessionManager
 import dev.icedtea.kodex.data.AppSettings
@@ -20,6 +22,9 @@ import dev.icedtea.kodex.ui.reader.ebook.EbookOrigin
 import dev.icedtea.kodex.ui.reader.ebook.EbookReaderScreen
 import dev.icedtea.kodex.ui.reader.ebook.EbookSource
 import io.ktor.http.encodeURLParameter
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /** [dev.icedtea.kodex.network.SourceDescriptor.kind] of a novel source — its chapters are text, not page images. */
@@ -28,7 +33,23 @@ private const val KIND_BOOK = "BOOK"
 private sealed interface SourceReaderState {
     data object Loading : SourceReaderState
     data class Error(val message: String) : SourceReaderState
-    data class Ready(val pageCount: Int, val progress: ReadProgressDto?) : SourceReaderState
+    data class Ready(val chapterId: String, val pageCount: Int, val progress: ReadProgressDto?) : SourceReaderState
+}
+
+/**
+ * Page count + resume position for one streamed chapter, fetched in parallel: the count makes the
+ * server reach out to the remote source, so running the two in series doubled the wait before the
+ * reader could draw anything.
+ */
+private suspend fun loadChapter(
+    api: KodexApi,
+    s: ServerConnection,
+    providerId: String,
+    chapterId: String,
+): SourceReaderState.Ready = coroutineScope {
+    val pageCount = async { api.sourceChapterPageCount(s.baseUrl, s.apiKey, providerId, chapterId) }
+    val progress = async { runCatching { api.sourceProgress(s.baseUrl, s.apiKey, providerId, chapterId) }.getOrNull() }
+    SourceReaderState.Ready(chapterId, pageCount.await(), progress.await())
 }
 
 /** Kodex web UI source-reader deep link for this chapter (mirrors the web's `/source-read` route). */
@@ -83,8 +104,28 @@ fun SourceReaderScreen(
     onOpenSeriesFromReader: ((dev.icedtea.kodex.ui.main.DetailRoute) -> Unit)? = null,
 ) {
     val server by session.activeServer.collectAsStateSafe()
+    val scope = rememberCoroutineScope()
     var target by remember(chapterId) { mutableStateOf(ChapterTarget(chapterId, chapterName)) }
     var state by remember(chapterId) { mutableStateOf<SourceReaderState>(SourceReaderState.Loading) }
+    // Prefs and the detected reading mode belong to the series, so they are held above the per-chapter
+    // remount below instead of being refetched and re-probed on every turn. See ReaderSeriesState.
+    val seriesState = rememberReaderSeriesState(providerId, seriesId, sourceSeries?.externalId)
+
+    // Neighbouring chapters already resolved, so committing the between-chapters page swaps straight
+    // into pages. Warmed by [ReaderChapterRef.preload] near either end of the current chapter, the way
+    // Mihon's ReaderViewModel.preload warms its adjacent chapters while you read.
+    val loaded = remember(chapterId) { mutableStateMapOf<String, SourceReaderState.Ready>() }
+    val loading = remember(chapterId) { mutableSetOf<String>() }
+
+    fun preloadChapter(id: String) {
+        val s = server ?: return
+        if (loaded.containsKey(id) || !loading.add(id)) return
+        scope.launch {
+            runCatching { loadChapter(api, s, providerId, id) }
+                .onSuccess { loaded[id] = it }
+                .onFailure { loading.remove(id) } // opening it for real will try again, and report why
+        }
+    }
 
     // Sibling chapters for cross-chapter navigation. Both entry points have a chapter list available:
     // a Browse read carries the source series' identity and queries the source live, while a followed
@@ -155,35 +196,41 @@ fun SourceReaderScreen(
 
     LaunchedEffect(target.id, server?.id, isNovel) {
         val s = server ?: return@LaunchedEffect
+        // Already seeded from the preload cache by openChapter - refetching would only put the spinner
+        // back for the length of a round trip that has already happened.
+        if ((state as? SourceReaderState.Ready)?.chapterId == target.id) return@LaunchedEffect
         // A novel chapter has no page images to count; the ebook reader resolves it from its manifest.
         when (isNovel) {
             null -> return@LaunchedEffect
             true -> {
                 state = SourceReaderState.Loading
                 state = runCatching {
-                    SourceReaderState.Ready(0, api.sourceProgress(s.baseUrl, s.apiKey, providerId, target.id))
+                    SourceReaderState.Ready(target.id, 0, api.sourceProgress(s.baseUrl, s.apiKey, providerId, target.id))
                 }.getOrElse { SourceReaderState.Error(it.friendlyMessage()) }
             }
 
             false -> {
                 state = SourceReaderState.Loading
-                state = runCatching {
-                    val pageCount = api.sourceChapterPageCount(s.baseUrl, s.apiKey, providerId, target.id)
-                    val progress = api.sourceProgress(s.baseUrl, s.apiKey, providerId, target.id)
-                    SourceReaderState.Ready(pageCount, progress)
-                }.getOrElse { SourceReaderState.Error(it.friendlyMessage()) }
+                state = runCatching { loadChapter(api, s, providerId, target.id) }
+                    .onSuccess { loaded[target.id] = it }
+                    .getOrElse { SourceReaderState.Error(it.friendlyMessage()) }
             }
         }
     }
 
-    // Swap the open chapter. State drops back to Loading here (not just in the effect above) so the
-    // reader never renders the new chapter's pages against the old one's page count.
+    // Swap the open chapter, in one frame when it has been preloaded: seeding the new state alongside
+    // the new target is what turns the swap into a page turn instead of a trip through the black
+    // loading shell. An un-warmed chapter still falls back to Loading rather than rendering its pages
+    // against the previous chapter's page count.
     fun openChapter(chapter: NavChapter, edge: ReaderEdge) {
-        state = SourceReaderState.Loading
+        val ready = loaded[chapter.id]
         target = ChapterTarget(chapter.id, chapter.name.takeIf { it.isNotBlank() }, edge)
+        state = ready ?: SourceReaderState.Loading
     }
 
-    val nav = server?.let { s -> rememberChapterNav(s, providerId, siblings, target.id, ::openChapter) }
+    val nav = server?.let { s ->
+        rememberChapterNav(s, providerId, siblings, target.id, ::openChapter, ::preloadChapter)
+    }
 
     when (val st = state) {
         is SourceReaderState.Error -> ReaderShell(onBack) { ReaderMessage(st.message) }
@@ -283,8 +330,9 @@ fun SourceReaderScreen(
                             webUrl = sourceReadUrl(s.baseUrl, providerId, current.id, current.name, seriesId),
                         )
                     }
-                    // The reader keeps its own page state, so a chapter swap has to remount it.
-                    key(current.id) { ImageReaderScreen(session, api, source, onBack, openSeries) }
+                    // The reader keeps its own page state, so a chapter swap has to remount it - but its
+                    // prefs and detected mode belong to the series, so they are held out here.
+                    key(current.id) { ImageReaderScreen(session, api, source, onBack, openSeries, seriesState) }
                 }
             }
         }
@@ -302,6 +350,7 @@ private fun rememberChapterNav(
     siblings: List<NavChapter>,
     currentId: String,
     open: (NavChapter, ReaderEdge) -> Unit,
+    preload: (String) -> Unit,
 ): ReaderChapterNav? = remember(server.baseUrl, providerId, siblings, currentId) {
     if (siblings.size < 2) return@remember null
     val sorted = siblings.sortedByDescending { it.number ?: Double.NEGATIVE_INFINITY }
@@ -314,6 +363,7 @@ private fun rememberChapterNav(
             title = label(it),
             open = { edge -> open(it, edge) },
             preloadPageUrl = { pg -> sourcePageUrl(server.baseUrl, providerId, it.id, pg - 1) },
+            preload = { preload(it.id) },
         )
     }
     ReaderChapterNav(

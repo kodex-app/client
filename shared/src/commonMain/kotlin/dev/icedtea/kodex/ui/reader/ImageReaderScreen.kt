@@ -62,6 +62,8 @@ import androidx.compose.material.icons.outlined.Book
 import androidx.compose.material.icons.outlined.Bookmark
 import androidx.compose.material.icons.outlined.BrokenImage
 import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
@@ -94,6 +96,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -190,6 +193,15 @@ class ReaderChapterRef(
     val title: String,
     val open: (ReaderEdge) -> Unit,
     val preloadPageUrl: ((page: Int) -> String)? = null, // 1-based; for cross-chapter prefetch
+    /**
+     * Fetch this chapter's metadata now, so [open] has nothing left to wait for. Called while there
+     * is still reading left in the current chapter — Mihon's `requestPreloadChapter`, which its
+     * viewers fire once you are within five pages of an end (`PagerViewer.onReaderPageSelected`) and
+     * again when the between-chapters page itself comes into view (`onTransitionSelected`).
+     *
+     * Idempotent by contract: the reader calls it on every page turn inside that window.
+     */
+    val preload: (() -> Unit)? = null,
 )
 
 /** One entry in the chapter-list menu. */
@@ -218,6 +230,40 @@ class ReaderChapterNav(
 /** Which end of the chapter the between-chapters page is showing. */
 private enum class Boundary { START, END }
 
+/** How close to an end starts warming the neighbouring chapter. Mihon: `pages.size - page.number < 5`. */
+private const val CHAPTER_PRELOAD_PAGES = 5
+
+/**
+ * Reader state that belongs to the *series* rather than to the chapter open right now: the resolved
+ * display prefs, the user's default (for "reset"), the global preload count, and the auto-detected
+ * paged/continuous mode.
+ *
+ * Hoisted above the `key(chapterId)` that remounts the reader on a chapter swap. Every one of these
+ * costs a round trip to rebuild — prefs fetch the user's settings, and the mode probe downloads and
+ * decodes several pages at full size — and rebuilding them on each turn left the reader sitting on a
+ * spinner well after the pages themselves were already cached, which is most of what made turning a
+ * chapter feel like leaving the reader and opening a new screen. None of them can differ between two
+ * chapters of one series: prefs are stored per series, and the reading mode is a property of the
+ * strip shape, not of the chapter. Mihon keeps the equivalent state on `ReaderViewModel`, above the
+ * viewer that swaps chapters underneath it.
+ */
+@Stable
+class ReaderSeriesState {
+    internal val prefs = mutableStateOf<ReaderPrefs?>(null)
+    // Real defaults arrive with the first resolve, which also learns the kind; nothing reads this
+    // before then (the settings sheet, its only consumer, needs resolved prefs to open at all).
+    internal val defaultPrefs = mutableStateOf(ReaderPrefs())
+    internal val autoMode = mutableStateOf<String?>(null)
+    internal val preload = mutableStateOf(PRELOAD_DEFAULT)
+
+    /** Which series/kind/server the values above were resolved for; a mismatch re-resolves them. */
+    internal var resolvedKey: String? = null
+}
+
+/** [keys] should identify the reader route, not the open chapter — that is the whole point of it. */
+@Composable
+fun rememberReaderSeriesState(vararg keys: Any?): ReaderSeriesState = remember(*keys) { ReaderSeriesState() }
+
 private fun bgColor(bg: String): Color = when (bg) {
     BG_WHITE -> Color(0xFFFFFFFF)
     BG_BLACK -> Color(0xFF0B0B0C)
@@ -238,6 +284,8 @@ fun ImageReaderScreen(
     onBack: () -> Unit,
     /** Open this book's series; null when there's no series to open (or no host to navigate). */
     onOpenSeries: (() -> Unit)? = null,
+    /** Hoist this above the caller's chapter `key(...)` so a chapter swap keeps it. */
+    seriesState: ReaderSeriesState = rememberReaderSeriesState(),
 ) {
     val server by session.activeServer.collectAsStateSafe()
     val context = LocalPlatformContext.current
@@ -245,20 +293,28 @@ fun ImageReaderScreen(
     val orientation = dev.icedtea.kodex.platform.rememberOrientationController()
     val openUrl = dev.icedtea.kodex.platform.rememberUrlOpener()
 
-    var prefs by remember { mutableStateOf<ReaderPrefs?>(null) }
-    var defaultPrefs by remember { mutableStateOf(defaultReaderPrefs(source.kind)) }
-    var autoMode by remember { mutableStateOf<String?>(null) } // resolved paged/continuous when mode==auto
-    var preload by remember { mutableStateOf(PRELOAD_DEFAULT) }
+    // Series-scoped, so a chapter swap doesn't refetch prefs or re-probe the mode. See [ReaderSeriesState].
+    var prefs by seriesState.prefs
+    var defaultPrefs by seriesState.defaultPrefs
+    var autoMode by seriesState.autoMode // resolved paged/continuous when mode==auto
+    var preload by seriesState.preload
     var autoScroll by remember { mutableStateOf(false) }
     var pickerOpen by remember { mutableStateOf(false) }
     var transition by remember { mutableStateOf<Boundary?>(null) } // between-chapters overlay
     var chaptersOpen by remember { mutableStateOf(false) }
     var viewport by remember { mutableStateOf(IntSize.Zero) } // reader area in px; sizes the prefetch decode
 
-    // Load persisted prefs (series override → user default → built-in) + global preload count.
+    // Load persisted prefs (series override → user default → built-in) + global preload count. Runs
+    // once per series: on a chapter swap the holder already carries them, and refetching would put
+    // the reader back on its spinner for a round trip on every turn.
     LaunchedEffect(source.seriesId, source.kind, server?.id) {
         val s = server ?: return@LaunchedEffect
+        val key = "${source.kind}|${source.seriesId}|${s.id}"
+        if (seriesState.resolvedKey == key) return@LaunchedEffect
+        // A different series inherits nothing: its mode has to be probed against its own pages.
+        autoMode = null
         val resolved = resolveReaderPrefs(api, s.baseUrl, s.apiKey, source.kind, source.seriesId)
+        seriesState.resolvedKey = key
         defaultPrefs = resolved.default
         prefs = resolved.effective
         preload = resolved.preload
@@ -353,6 +409,18 @@ fun ImageReaderScreen(
         if (nextUrl != null && count < preload) {
             for (n in 1..(preload - count)) prefetch(nextUrl(n))
         }
+    }
+
+    // Warm the neighbouring chapters' metadata while there is still reading left in this one, so
+    // committing the between-chapters page swaps straight into pages. Without it the swap starts from
+    // nothing: the reader unmounts to a black spinner and stays there for the chapter fetch, which is
+    // what makes a turn read as a screen change rather than a page turn. Mihon fires the same preload
+    // from its viewers within five pages of an end, and again once the transition page is showing.
+    LaunchedEffect(page, source.pageCount, transition, source.nav) {
+        val nav = source.nav ?: return@LaunchedEffect
+        val nearEnd = source.pageCount > 0 && source.pageCount - page < CHAPTER_PRELOAD_PAGES
+        if (nearEnd || transition == Boundary.END) nav.next?.preload?.invoke()
+        if (page <= CHAPTER_PRELOAD_PAGES || transition == Boundary.START) nav.prev?.preload?.invoke()
     }
 
     fun updatePreload(v: Int) {
@@ -501,6 +569,11 @@ fun ImageReaderScreen(
                     bookmarked = source.bookmarks?.pages?.contains(page),
                     onToggleBookmark = { source.bookmarks?.toggle(page) },
                     onBack = onBack,
+                    hasAutoScroll = effectiveMode == MODE_CONTINUOUS,
+                    autoScroll = autoScroll,
+                    scrollSpeed = p.scrollSpeed,
+                    onToggleAutoScroll = { autoScroll = !autoScroll },
+                    onScrollSpeed = { update(p.copy(scrollSpeed = it)) },
                 )
             }
             AnimatedVisibility(chrome, modifier = Modifier.align(Alignment.BottomCenter), enter = bottomBarEnter, exit = bottomBarExit) {
@@ -554,8 +627,6 @@ fun ImageReaderScreen(
                 effectiveMode = effectiveMode ?: MODE_PAGED,
                 orientation = orientation.orientation,
                 onOrientation = orientation::set,
-                autoScroll = autoScroll,
-                onToggleAutoScroll = { autoScroll = !autoScroll },
                 preload = preload,
                 onPreload = ::updatePreload,
                 onChange = ::update,
@@ -1075,6 +1146,15 @@ internal val ColorScheme.readerBarContentColor: Color get() = onSurface
 /** M3 disabled-content alpha, for page-turn arrows at the first/last page. */
 internal fun Color.disabled() = copy(alpha = 0.38f)
 
+/**
+ * Reader top bar, and — in continuous mode — the auto-scroll controls that drop out of it.
+ *
+ * Auto-scroll lives here rather than in the settings sheet because it is the one reader control you
+ * reach for *while* reading: it needs starting, stopping and its speed nudged mid-chapter, and a
+ * modal sheet covers the very pages you are judging the speed against. Mihon puts it in the same
+ * place, as a panel that expands under the top bar. The bottom toolbar keeps its play/pause button
+ * as the one-tap version; this panel is where the speed is set.
+ */
 @Composable
 private fun TopBar(
     title: String,
@@ -1082,36 +1162,106 @@ private fun TopBar(
     bookmarked: Boolean?, // null → this source has no bookmarks, so the action is hidden
     onToggleBookmark: () -> Unit,
     onBack: () -> Unit,
+    hasAutoScroll: Boolean, // continuous mode only — nothing scrolls itself in the paged reader
+    autoScroll: Boolean,
+    scrollSpeed: Int,
+    onToggleAutoScroll: () -> Unit,
+    onScrollSpeed: (Int) -> Unit,
 ) {
     val content = MaterialTheme.colorScheme.readerBarContentColor
-    Row(
-        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.readerBarColor).statusBarsPadding().padding(horizontal = 4.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    // Collapses itself when the reader leaves continuous mode, so switching back doesn't reopen a
+    // panel the user never asked for.
+    var expanded by remember(hasAutoScroll) { mutableStateOf(false) }
+    Column(
+        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.readerBarColor).statusBarsPadding(),
     ) {
-        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = content) }
-        // Series on top, this chapter beneath it — the chapter is the line that changes as you read,
-        // so it gets the quieter treatment and the title keeps the top-bar weight.
-        Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
-            Text(title, color = content, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
-            if (!subtitle.isNullOrBlank()) {
-                Text(
-                    subtitle,
-                    color = content.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodySmall,
-                )
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = content) }
+            // Series on top, this chapter beneath it — the chapter is the line that changes as you read,
+            // so it gets the quieter treatment and the title keeps the top-bar weight.
+            Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
+                Text(title, color = content, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
+                if (!subtitle.isNullOrBlank()) {
+                    Text(
+                        subtitle,
+                        color = content.copy(alpha = 0.7f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+            if (hasAutoScroll) {
+                IconButton(onClick = { expanded = !expanded }) {
+                    Icon(
+                        if (expanded) Icons.Outlined.KeyboardArrowUp else Icons.Outlined.KeyboardArrowDown,
+                        contentDescription = if (expanded) "Hide auto-scroll" else "Auto-scroll",
+                        // Tinted while running, so a collapsed panel still says whether it is on.
+                        tint = if (autoScroll) MaterialTheme.colorScheme.primary else content,
+                    )
+                }
+            }
+            if (bookmarked != null) {
+                IconButton(onClick = onToggleBookmark) {
+                    Icon(
+                        if (bookmarked) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,
+                        contentDescription = if (bookmarked) "Remove bookmark" else "Bookmark this page",
+                        tint = if (bookmarked) MaterialTheme.colorScheme.primary else content,
+                    )
+                }
             }
         }
-        if (bookmarked != null) {
-            IconButton(onClick = onToggleBookmark) {
-                Icon(
-                    if (bookmarked) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,
-                    contentDescription = if (bookmarked) "Remove bookmark" else "Bookmark this page",
-                    tint = if (bookmarked) MaterialTheme.colorScheme.primary else content,
-                )
+        if (hasAutoScroll) {
+            // ColumnScope defaults: fade + expand/shrink vertically, so the bar grows into the panel
+            // rather than the page jumping under a full-height block that only fades.
+            AnimatedVisibility(expanded) {
+                AutoScrollPanel(autoScroll, scrollSpeed, onToggleAutoScroll, onScrollSpeed, content)
             }
         }
+    }
+}
+
+/** Auto-scroll switch + speed, laid out to sit under the top bar without widening it. */
+@Composable
+private fun AutoScrollPanel(
+    running: Boolean,
+    speed: Int,
+    onToggle: () -> Unit,
+    onSpeed: (Int) -> Unit,
+    content: Color,
+) {
+    var dragged by remember { mutableStateOf<Float?>(null) }
+    Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "Auto-scroll",
+                color = content,
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "${dragged?.toInt() ?: speed} dp/s",
+                color = content.copy(alpha = 0.7f),
+                style = MaterialTheme.typography.labelLarge,
+            )
+            Spacer(Modifier.width(12.dp))
+            Switch(checked = running, onCheckedChange = { onToggle() })
+        }
+        // Committed on release, not per frame: [onSpeed] writes the series' stored prefs, and a live
+        // slider would fire one save request per pixel dragged. The label above tracks the drag, so
+        // the number still moves under your thumb.
+        Slider(
+            value = dragged ?: speed.toFloat(),
+            onValueChange = { dragged = it },
+            onValueChangeFinished = {
+                dragged?.let { onSpeed(it.toInt().coerceIn(SCROLL_SPEED_MIN, SCROLL_SPEED_MAX)) }
+                dragged = null
+            },
+            valueRange = SCROLL_SPEED_MIN.toFloat()..SCROLL_SPEED_MAX.toFloat(),
+        )
     }
 }
 
@@ -1503,8 +1653,6 @@ private fun SettingsSheet(
     effectiveMode: String,
     orientation: dev.icedtea.kodex.platform.ScreenOrientation,
     onOrientation: (dev.icedtea.kodex.platform.ScreenOrientation) -> Unit,
-    autoScroll: Boolean,
-    onToggleAutoScroll: () -> Unit,
     preload: Int,
     onPreload: (Int) -> Unit,
     onChange: (ReaderPrefs) -> Unit,
@@ -1533,20 +1681,6 @@ private fun SettingsSheet(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("Tap to turn", Modifier.weight(1f))
                 Switch(checked = prefs.tapToTurn, onCheckedChange = { onChange(prefs.copy(tapToTurn = it)) })
-            }
-        }
-        if (effectiveMode == MODE_CONTINUOUS) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("Auto-scroll", Modifier.weight(1f))
-                Switch(checked = autoScroll, onCheckedChange = { onToggleAutoScroll() })
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Scroll speed", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
-                Slider(
-                    value = prefs.scrollSpeed.toFloat(),
-                    onValueChange = { onChange(prefs.copy(scrollSpeed = it.toInt().coerceIn(SCROLL_SPEED_MIN, SCROLL_SPEED_MAX))) },
-                    valueRange = SCROLL_SPEED_MIN.toFloat()..SCROLL_SPEED_MAX.toFloat(),
-                )
             }
         }
         SegRow("Background", prefs.bg, listOf(BG_WHITE to "White", BG_GRAY to "Gray", BG_BLACK to "Black")) {

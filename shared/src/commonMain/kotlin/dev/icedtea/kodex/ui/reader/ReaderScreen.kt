@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -40,6 +41,8 @@ import dev.icedtea.kodex.ui.reader.ebook.EbookOrigin
 import dev.icedtea.kodex.ui.reader.ebook.EbookReaderScreen
 import dev.icedtea.kodex.ui.reader.ebook.EbookSource
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -56,6 +59,20 @@ private sealed interface ReaderState {
 
 /** The book currently open; [edge] is set when arriving from a sibling (start of it / end of it). */
 private data class BookTarget(val id: String, val edge: ReaderEdge? = null)
+
+/** Everything a book needs before its first page can be drawn, loaded as one unit. */
+private data class BookBundle(val book: BookDto, val progress: ReadProgressDto?, val bookmarks: List<BookmarkDto>)
+
+/**
+ * The three requests in parallel rather than one after another - they are independent, and run in
+ * series they turned every chapter turn into three sequential round trips.
+ */
+private suspend fun loadBundle(api: KodexApi, s: ServerConnection, id: String): BookBundle = coroutineScope {
+    val book = async { api.book(s.baseUrl, s.apiKey, id) }
+    val progress = async { runCatching { api.readProgress(s.baseUrl, s.apiKey, id) }.getOrNull() }
+    val bookmarks = async { runCatching { api.bookBookmarks(s.baseUrl, s.apiKey, id) }.getOrDefault(emptyList()) }
+    BookBundle(book.await(), progress.await(), bookmarks.await())
+}
 
 /**
  * Reader for a downloaded local book (comic/DIVINA + PDF). EPUB is gated with a message. The series'
@@ -82,43 +99,66 @@ fun ReaderScreen(
     // Page bookmarks for the open book, keyed by target so a chapter swap reloads them.
     var bookmarks by remember(bookId) { mutableStateOf<List<BookmarkDto>>(emptyList()) }
     val scope = rememberCoroutineScope()
+    // Survives the per-book remount below; see ReaderSeriesState.
+    val seriesState = rememberReaderSeriesState(bookId)
 
-    suspend fun reloadBookmarks(s: ServerConnection, id: String) {
-        bookmarks = runCatching { api.bookBookmarks(s.baseUrl, s.apiKey, id) }.getOrDefault(emptyList())
-    }
-    LaunchedEffect(target.id, server?.id) {
-        val s = server ?: return@LaunchedEffect
-        bookmarks = emptyList()
-        reloadBookmarks(s, target.id)
-    }
+    // Sibling books already loaded, so turning into one is instant. Filled by [ReaderChapterRef.preload]
+    // while you are still reading the tail of the current book - the same trick Mihon's
+    // ReaderViewModel.preload plays, and what keeps a chapter turn from starting at a blank screen.
+    val loaded = remember(bookId) { mutableStateMapOf<String, BookBundle>() }
+    val loading = remember(bookId) { mutableSetOf<String>() }
 
-    LaunchedEffect(target.id, server?.id) {
-        val s = server ?: return@LaunchedEffect
-        state = ReaderState.Loading
-        state = runCatching {
-            val book = api.book(s.baseUrl, s.apiKey, target.id)
-            val progress = runCatching { api.readProgress(s.baseUrl, s.apiKey, target.id) }.getOrNull()
-            ReaderState.Ready(book, progress)
-        }.getOrElse { ReaderState.Error(it.friendlyMessage()) }
-    }
-    // Sibling books for cross-chapter navigation (ordered by number ascending by the API).
-    val loadedSeriesId = (state as? ReaderState.Ready)?.book?.seriesId
-    LaunchedEffect(loadedSeriesId, server?.id) {
-        val s = server ?: return@LaunchedEffect
-        siblings = if (loadedSeriesId != null) runCatching { api.seriesBooks(s.baseUrl, s.apiKey, loadedSeriesId) }.getOrDefault(emptyList()) else emptyList()
-        seriesTitle = if (loadedSeriesId != null) {
-            runCatching { api.seriesDetail(s.baseUrl, s.apiKey, loadedSeriesId) }.getOrNull()
-                ?.let { it.title.ifBlank { it.name } }?.takeIf { it.isNotBlank() }
-        } else {
-            null
+    fun preloadBook(id: String) {
+        val s = server ?: return
+        if (loaded.containsKey(id) || !loading.add(id)) return
+        scope.launch {
+            runCatching { loadBundle(api, s, id) }
+                .onSuccess { loaded[id] = it }
+                .onFailure { loading.remove(id) } // opening it for real will try again, and report why
         }
     }
 
-    // Swap the open book. Drop to Loading here (not only in the effect) so the reader never renders the
-    // new book's pages against the old page count.
-    fun openBook(b: BookDto, edge: ReaderEdge) {
+    suspend fun reloadBookmarks(s: ServerConnection, id: String) {
+        bookmarks = runCatching { api.bookBookmarks(s.baseUrl, s.apiKey, id) }.getOrDefault(emptyList())
+        loaded[id]?.let { loaded[id] = it.copy(bookmarks = bookmarks) }
+    }
+
+    LaunchedEffect(target.id, server?.id) {
+        val s = server ?: return@LaunchedEffect
+        // Already seeded from the preload cache by openBook - refetching would only put the spinner
+        // back for the length of a round trip that has already happened.
+        if ((state as? ReaderState.Ready)?.book?.id == target.id) return@LaunchedEffect
         state = ReaderState.Loading
+        bookmarks = emptyList()
+        runCatching { loadBundle(api, s, target.id) }
+            .onSuccess { loaded[target.id] = it; bookmarks = it.bookmarks; state = ReaderState.Ready(it.book, it.progress) }
+            .onFailure { state = ReaderState.Error(it.friendlyMessage()) }
+    }
+    // Sibling books for cross-chapter navigation (ordered by number ascending by the API).
+    //
+    // Latched rather than read live off the open book: a swap passes through Loading, where there is
+    // no book and so no series id, and keying the fetch on that emptied the sibling list and fetched
+    // it again on every chapter turn. Every book here belongs to one series, so once is enough.
+    val loadedSeriesId = (state as? ReaderState.Ready)?.book?.seriesId
+    var seriesKey by remember(bookId) { mutableStateOf<String?>(null) }
+    LaunchedEffect(loadedSeriesId) { if (loadedSeriesId != null) seriesKey = loadedSeriesId }
+    LaunchedEffect(seriesKey, server?.id) {
+        val s = server ?: return@LaunchedEffect
+        val sid = seriesKey ?: return@LaunchedEffect
+        siblings = runCatching { api.seriesBooks(s.baseUrl, s.apiKey, sid) }.getOrDefault(emptyList())
+        seriesTitle = runCatching { api.seriesDetail(s.baseUrl, s.apiKey, sid) }.getOrNull()
+            ?.let { it.title.ifBlank { it.name } }?.takeIf { it.isNotBlank() }
+    }
+
+    // Swap the open book, in one frame when it has been preloaded: seeding the new state alongside the
+    // new target is what turns the swap into a page turn instead of a trip through the black loading
+    // shell. A book nobody warmed still falls back to Loading rather than rendering the new book's
+    // pages against the old page count.
+    fun openBook(b: BookDto, edge: ReaderEdge) {
+        val ready = loaded[b.id]
         target = BookTarget(b.id, edge)
+        state = if (ready != null) ReaderState.Ready(ready.book, ready.progress) else ReaderState.Loading
+        bookmarks = ready?.bookmarks.orEmpty()
     }
 
     when (val st = state) {
@@ -178,7 +218,12 @@ fun ReaderScreen(
                         val idx = siblings.indexOfFirst { it.id == book.id }
                         val nav = if (siblings.size > 1 && idx >= 0) {
                             fun ref(b: BookDto?) = b?.let { sib ->
-                                ReaderChapterRef(chapterTitle(sib), { edge -> openBook(sib, edge) }, { pg -> bookPageUrl(s.baseUrl, sib.id, pg) })
+                                ReaderChapterRef(
+                                    title = chapterTitle(sib),
+                                    open = { edge -> openBook(sib, edge) },
+                                    preloadPageUrl = { pg -> bookPageUrl(s.baseUrl, sib.id, pg) },
+                                    preload = { preloadBook(sib.id) },
+                                )
                             }
                             ReaderChapterNav(
                                 prev = ref(siblings.getOrNull(idx - 1)),
@@ -209,8 +254,9 @@ fun ReaderScreen(
                             bookmarks = ReaderBookmarks(bookmarkPages, toggleBookmark),
                         )
                     }
-                    // The reader keeps its own page state, so a book swap has to remount it.
-                    key(current.id) { ImageReaderScreen(session, api, source, onBack, openSeries) }
+                    // The reader keeps its own page state, so a book swap has to remount it - but its
+                    // prefs and detected mode belong to the series, so they are held out here.
+                    key(current.id) { ImageReaderScreen(session, api, source, onBack, openSeries, seriesState) }
                 }
             }
         }
