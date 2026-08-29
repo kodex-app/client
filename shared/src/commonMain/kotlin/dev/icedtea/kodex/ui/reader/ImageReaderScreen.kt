@@ -144,6 +144,7 @@ import coil3.network.NetworkHeaders
 import coil3.network.httpHeaders
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
+import coil3.request.maxBitmapSize
 import coil3.size.Dimension
 import coil3.size.Precision
 import coil3.size.Scale
@@ -338,6 +339,7 @@ fun ImageReaderScreen(
                     .size(size)
                     .scale(scale)
                     .precision(Precision.INEXACT) // what AsyncImagePainter applies to the on-screen request
+                    .readerBitmapSize() // must match the on-screen decode; see readerBitmapSize
                     .build(),
             )
         }
@@ -897,6 +899,36 @@ private fun ContinuousNextTile(title: String, onClick: () -> Unit) {
 // ── Shared image ───────────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Widest bitmap a page is ever decoded to. Only a fit-original request (which asks for [Size.ORIGINAL])
+ * can reach it; every other viewer already asks for the viewport width, which is far smaller.
+ */
+private const val READER_MAX_BITMAP_WIDTH = 4_096
+
+/**
+ * Lifts Coil's height cap for reader pages.
+ *
+ * Coil caps every decode at `maxBitmapSize`, 4096x4096 by default, and the cap is applied per axis
+ * against the *source* pixels rather than against what the page is drawn at
+ * (`DecodeUtils.computeSizeMultiplier`). A webtoon strip is the one page shape that trips it: an
+ * 800x8000 strip is sampled to 4096/8000 = 0.51, decoding 410px wide, and the continuous viewer then
+ * blows those 410px back up to the full screen width. Every long strip taller than 4096px arrives
+ * soft, and the taller the strip the softer it gets — while the same chapter is sharp in the web UI,
+ * which has no such cap.
+ *
+ * Capping the width alone is enough. [Precision.INEXACT] never upscales, so the decode is bounded by
+ * `min(source width, viewport width)` and the strip's own pixel count — the same bitmap a browser
+ * holds for that page — with the height simply following the aspect ratio.
+ *
+ * Mihon sidesteps the whole problem instead of tuning it: pages are drawn by SubsamplingScaleImageView
+ * (`WebtoonPageHolder` → `ReaderPageImageView`), which region-decodes tiles at the on-screen scale and
+ * so never allocates a full-strip bitmap, and downloads run through `ImageUtil.splitTallImage`, which
+ * slices anything taller than 2x the display into parts. Both keep horizontal resolution independent
+ * of strip height, which is the property this restores.
+ */
+private fun ImageRequest.Builder.readerBitmapSize() =
+    maxBitmapSize(Size(Dimension(READER_MAX_BITMAP_WIDTH), Dimension.Undefined))
+
+/**
  * One page of the reader.
  *
  * A failed page shows why and offers a retry rather than leaving the reader background bare — a
@@ -929,6 +961,7 @@ private fun PageImage(
             // Only a retry gets its own cache key. The first attempt must keep the default (the URL)
             // or it would miss everything the preloader put in the memory cache under that key.
             .memoryCacheKey(if (attempt == 0) null else "$url#$attempt")
+            .readerBitmapSize()
             .build()
     }
     val slot = if (placeholderHeight != null) {
@@ -1620,6 +1653,9 @@ private suspend fun imageSize(context: coil3.PlatformContext, url: String, apiKe
         // The width/height comparisons need the source's real pixels — without this a downsampled
         // decode would rescale each tile independently and break the constant-width test.
         .size(Size.ORIGINAL)
+        // ...and Size.ORIGINAL alone does not give them: the default 4096px height cap samples each
+        // tile by its own height, so a sliced strip comes back at several different widths.
+        .readerBitmapSize()
         .build()
     val result = SingletonImageLoader.get(context).execute(request)
     val image = (result as? SuccessResult)?.image ?: return null
