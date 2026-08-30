@@ -53,6 +53,7 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.Speed
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
@@ -61,6 +62,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -239,6 +241,11 @@ fun EbookReaderScreen(
     var ttsOffset by remember { mutableStateOf(0) }
     /** Shown in the panel in place of the usual readout — currently only "the voice gave up". */
     var ttsNotice by remember { mutableStateOf<String?>(null) }
+    /**
+     * The settings sheet is open as the *pre-start* picker: nothing is speaking yet and its primary
+     * button begins the reading. Opened from the panel instead, it edits a reading already underway.
+     */
+    var ttsStartPrompt by remember { mutableStateOf(false) }
 
     var chrome by remember { mutableStateOf(true) }
     var settingsOpen by remember { mutableStateOf(false) }
@@ -282,17 +289,44 @@ fun EbookReaderScreen(
         ttsOffset = 0
     }
 
+    /** A line worth hearing a voice say — long enough to judge it, short enough not to be a wait. */
+    val ttsSample = "This is how this voice will read your book."
+
+    /**
+     * Speaks the sample with the settings being chosen. Playback (if any) stops first: there is one
+     * voice, and hearing the sample over the book would tell you nothing about either. With
+     * [ttsPlaying] false the engine's progress events are ignored, so the sample can't advance the
+     * book — pressing play afterwards resumes from the word the reading had reached.
+     */
+    fun previewVoice(rate: Float = ttsRate, voiceId: String? = ttsVoice) {
+        ttsPlaying = false
+        ttsNotice = null
+        tts.stop()
+        tts.speak(ttsSample, ttsLang, rate, voiceId)
+    }
+
     fun toggleTts() {
         if (ttsOpen) {
             ttsOpen = false
             stopTts()
             return
         }
+        // Choose the voice and the speed *before* the first word: the settings are per-device and
+        // whatever was left over from the last book is rarely what this one wants. The sheet's
+        // "Start reading" is what actually turns the voice on.
+        chrome = true
+        ttsStartPrompt = true
+        ttsSettingsOpen = true
+    }
+
+    /** The pre-start picker's primary action. */
+    fun startTts() {
+        ttsStartPrompt = false
+        ttsSettingsOpen = false
+        tts.stop() // a sample still playing would be talking over the first block
         ttsOpen = true
         ttsPlaying = true
-        chrome = true
-        // Opening the panel is the "read this to me" gesture, so start at once rather than making the
-        // reader press play as well. The page answers with the first block from the visible page.
+        // The page answers with the first block from the visible page.
         call(CMD_TTS_START)
     }
 
@@ -377,6 +411,9 @@ fun EbookReaderScreen(
                 "ready" -> {
                     engineReady = true
                     sectionTotal = obj["sectionTotal"]?.jsonPrimitive?.intOrNull ?: 1
+                    // Known before anything is read, so the voice picker can lead with the voices
+                    // that actually speak this book's language.
+                    ttsLang = obj["lang"]?.jsonPrimitive?.content.orEmpty()
                     toc = obj["toc"]?.let { el ->
                         runCatching {
                             el.jsonArrayOrEmpty().map { row ->
@@ -422,7 +459,7 @@ fun EbookReaderScreen(
                 // the engine's Done below asks the page for the next one.
                 "tts-block" -> {
                     ttsText = obj["text"]?.jsonPrimitive?.content.orEmpty()
-                    ttsLang = obj["lang"]?.jsonPrimitive?.content.orEmpty()
+                    obj["lang"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }?.let { ttsLang = it }
                     ttsSpoken = 0
                     ttsOffset = 0
                     if (ttsPlaying) speakFrom(0)
@@ -791,8 +828,25 @@ fun EbookReaderScreen(
     }
 
     if (ttsSettingsOpen) {
-        val voices = remember(ttsAvailable) { if (ttsAvailable) tts.voices() else emptyList() }
-        KodexBottomSheet(onDismissRequest = { ttsSettingsOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        // Voices matching the book's language first: a phone can carry dozens, and scrolling past
+        // forty of them to find the one that can pronounce this book is the whole difficulty here.
+        val voices = remember(ttsAvailable, ttsLang) {
+            val all = if (ttsAvailable) tts.voices() else emptyList()
+            val language = ttsLang.substringBefore('-').lowercase()
+            if (language.isBlank()) all else all.sortedByDescending { it.locale.lowercase().startsWith(language) }
+        }
+        KodexBottomSheet(
+            onDismissRequest = {
+                ttsSettingsOpen = false
+                // Dismissed instead of started: nothing was turned on, so stop the sample if one is
+                // still talking.
+                if (ttsStartPrompt) {
+                    ttsStartPrompt = false
+                    tts.stop()
+                }
+            },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
             TtsSettingsSheet(
                 voices = voices,
                 voiceId = ttsVoice,
@@ -801,6 +855,8 @@ fun EbookReaderScreen(
                 // by re-speaking from the last word said rather than the top of the paragraph.
                 onVoice = { appSettings.setTtsVoice(it); if (ttsPlaying) speakFrom(ttsSpoken, voiceId = it) },
                 onRate = { appSettings.setTtsRate(it); if (ttsPlaying) speakFrom(ttsSpoken, rate = it) },
+                onPreview = { previewVoice() },
+                onStart = if (ttsStartPrompt) ({ startTts() }) else null,
             )
         }
     }
@@ -961,6 +1017,9 @@ private fun TtsSettingsSheet(
     rate: Float,
     onVoice: (String?) -> Unit,
     onRate: (Float) -> Unit,
+    onPreview: () -> Unit,
+    /** Non-null when this is the pre-start picker: the button that begins the reading. */
+    onStart: (() -> Unit)?,
 ) {
     Column(Modifier.fillMaxWidth().heightIn(max = 520.dp).padding(bottom = 24.dp)) {
         Text(
@@ -981,6 +1040,18 @@ private fun TtsSettingsSheet(
                 }
             }
         }
+        // Above the list rather than under it: the list is as long as the phone has voices, and a
+        // button that has to be scrolled to is a button nobody finds.
+        Row(
+            Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedButton(onClick = onPreview, modifier = Modifier.weight(1f)) { Text("Preview") }
+            if (onStart != null) {
+                Button(onClick = onStart, modifier = Modifier.weight(1f)) { Text("Start reading") }
+            }
+        }
         Text(
             "Voice",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -996,7 +1067,10 @@ private fun TtsSettingsSheet(
                     onClick = { onVoice(null) },
                 )
             }
-            items(voices, key = { it.id }) { voice ->
+            // Deliberately un-keyed: the ids come from the device's speech engine, and engines do
+            // repeat a name across locale variants — a duplicate key is a crash, and there is nothing
+            // here for a key to preserve anyway.
+            items(voices) { voice ->
                 TtsVoiceRow(
                     label = voice.name,
                     detail = voice.locale,

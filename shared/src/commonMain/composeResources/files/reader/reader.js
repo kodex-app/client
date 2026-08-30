@@ -545,7 +545,9 @@ async function boot() {
     if (CONFIG.initialLocator) await view.init({ lastLocation: CONFIG.initialLocator })
     else await view.goToFraction(CONFIG.initialFraction ?? 0)
 
-    post({ type: 'ready', toc: flattenToc(book.toc), sectionTotal })
+    // `lang` rides along so the native side can order the voice picker by the book's own
+    // language before a single block has been read.
+    post({ type: 'ready', toc: flattenToc(book.toc), sectionTotal, lang: ttsLang() })
   } catch (e) {
     post({ type: 'error', message: e && e.message ? e.message : String(e) })
   }

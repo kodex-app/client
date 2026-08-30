@@ -78,14 +78,28 @@ private class AndroidTtsEngine(context: Context) : TtsEngine {
         }
     }
 
-    override fun voices(): List<TtsVoice> {
-        val all = runCatching { tts?.voices }.getOrNull().orEmpty()
-        return all
+    /**
+     * The whole read is inside one `runCatching`, not just the `getVoices()` call: every field of a
+     * [Voice] is an engine-supplied platform type, so a device whose engine hands back a null name or
+     * locale would otherwise throw an NPE straight through a composition. An empty list costs the
+     * user the picker; an exception costs them the app.
+     */
+    override fun voices(): List<TtsVoice> = runCatching {
+        (tts?.voices ?: emptySet<Voice?>())
+            .asSequence()
+            .filterNotNull()
             // A voice the engine hasn't downloaded yet speaks nothing; offering it is a dead end.
             .filterNot { it.features?.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED) == true }
-            .map { TtsVoice(id = it.name, name = it.label(), locale = it.locale.toLanguageTag()) }
+            .mapNotNull { voice ->
+                val id: String = voice.name ?: return@mapNotNull null
+                TtsVoice(id = id, name = voice.label(), locale = voice.locale?.toLanguageTag().orEmpty())
+            }
+            // Engines do repeat a name across locale variants, and a repeated id is a duplicate key
+            // in the list that renders these.
+            .distinctBy { it.id }
             .sortedBy { it.name }
-    }
+            .toList()
+    }.getOrDefault(emptyList())
 
     override fun speak(text: String, lang: String, rate: Float, voiceId: String?) {
         val engine = tts ?: return
@@ -120,7 +134,8 @@ private class AndroidTtsEngine(context: Context) : TtsEngine {
  * the language is shown and the variant tacked on only when there is one to tell voices apart by.
  */
 private fun Voice.label(): String {
-    val variant = name.substringAfterLast('#', "").removeSuffix("-local").replace('_', ' ').trim()
-    val language = locale.displayName.ifBlank { locale.toLanguageTag() }
+    val id = name.orEmpty()
+    val variant = id.substringAfterLast('#', "").removeSuffix("-local").replace('_', ' ').trim()
+    val language = locale?.let { it.displayName.ifBlank { it.toLanguageTag() } } ?: id
     return if (variant.isEmpty()) language else "$language · $variant"
 }
