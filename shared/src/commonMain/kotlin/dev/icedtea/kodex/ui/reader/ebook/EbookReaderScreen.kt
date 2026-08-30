@@ -39,12 +39,20 @@ import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.Book
 import androidx.compose.material.icons.outlined.Bookmark
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.FastForward
+import androidx.compose.material.icons.outlined.FastRewind
+import androidx.compose.material.icons.outlined.Pause
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
+import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
@@ -83,6 +91,8 @@ import dev.icedtea.kodex.network.CustomFontDto
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.platform.StatusBarIcons
 import dev.icedtea.kodex.platform.SystemBarsHidden
+import dev.icedtea.kodex.platform.TTS_RATES
+import dev.icedtea.kodex.platform.TtsVoice
 import dev.icedtea.kodex.ui.KodexBottomSheet
 import dev.icedtea.kodex.ui.collectAsStateSafe
 import dev.icedtea.kodex.ui.reader.ChapterListSheet
@@ -206,6 +216,30 @@ fun EbookReaderScreen(
     var toc by remember { mutableStateOf<List<TocEntry>>(emptyList()) }
     var engineReady by remember { mutableStateOf(false) }
 
+    // ── Read aloud ───────────────────────────────────────────────────────────────────────────────
+    // The page produces the text (foliate's TTS blocks) and paints the highlight; the device speaks
+    // it. See the read-aloud section of `reader.js` — a WebView has no speechSynthesis on either
+    // platform, so unlike the web reader the voice has to live out here.
+    val tts = dev.icedtea.kodex.platform.rememberTtsEngine()
+    val ttsAvailable by tts.available.collectAsStateSafe()
+    val ttsRate by appSettings.ttsRate.collectAsStateSafe()
+    val ttsVoice by appSettings.ttsVoice.collectAsStateSafe()
+    var ttsOpen by remember { mutableStateOf(false) }
+    var ttsPlaying by remember { mutableStateOf(false) }
+    var ttsSettingsOpen by remember { mutableStateOf(false) }
+    /** The block being read, kept so pause/resume and a voice change can re-speak it. */
+    var ttsText by remember { mutableStateOf("") }
+    var ttsLang by remember { mutableStateOf("") }
+    /**
+     * Neither platform engine can pause an utterance, so resuming re-speaks the rest of the block:
+     * [ttsSpoken] is how far into the *block* the voice got (absolute), [ttsOffset] where the
+     * utterance now speaking starts within it. A reported range maps back with `ttsOffset + start`.
+     */
+    var ttsSpoken by remember { mutableStateOf(0) }
+    var ttsOffset by remember { mutableStateOf(0) }
+    /** Shown in the panel in place of the usual readout — currently only "the voice gave up". */
+    var ttsNotice by remember { mutableStateOf<String?>(null) }
+
     var chrome by remember { mutableStateOf(true) }
     var settingsOpen by remember { mutableStateOf(false) }
     var tocOpen by remember { mutableStateOf(false) }
@@ -222,6 +256,55 @@ fun EbookReaderScreen(
     // Commands go through the host (which the page long-polls), not the WebView's evaluateJavaScript
     // — see EbookHostHandle.send.
     fun call(command: String) = handle?.send(command)
+
+    // ── Read-aloud controls ──────────────────────────────────────────────────────────────────────
+    /**
+     * Speaks the current block from [from] characters in — the whole of it when resuming from 0.
+     * [rate]/[voiceId] are parameters because a settings change has to take effect on this very call:
+     * the collected state behind them only catches up on the next recomposition.
+     */
+    fun speakFrom(from: Int, rate: Float = ttsRate, voiceId: String? = ttsVoice) {
+        val text = ttsText
+        if (text.isBlank()) return
+        ttsNotice = null
+        val start = from.coerceIn(0, text.length)
+        ttsOffset = start
+        ttsSpoken = start
+        tts.speak(text.substring(start), ttsLang, rate, voiceId)
+    }
+
+    fun stopTts() {
+        ttsPlaying = false
+        tts.stop()
+        call(CMD_TTS_STOP)
+        ttsText = ""
+        ttsSpoken = 0
+        ttsOffset = 0
+    }
+
+    fun toggleTts() {
+        if (ttsOpen) {
+            ttsOpen = false
+            stopTts()
+            return
+        }
+        ttsOpen = true
+        ttsPlaying = true
+        chrome = true
+        // Opening the panel is the "read this to me" gesture, so start at once rather than making the
+        // reader press play as well. The page answers with the first block from the visible page.
+        call(CMD_TTS_START)
+    }
+
+    fun toggleTtsPlaying() {
+        if (ttsPlaying) {
+            ttsPlaying = false
+            tts.stop()
+            return
+        }
+        ttsPlaying = true
+        if (ttsText.isBlank()) call(CMD_TTS_START) else speakFrom(ttsSpoken)
+    }
 
     // ── Boot: resolve settings, then stand up the host and hand the URL to the WebView ────────────
     LaunchedEffect(source.seriesId, server?.id) {
@@ -335,6 +418,22 @@ fun EbookReaderScreen(
                     "prev" -> events.trySend(SYNTHETIC_PREV)
                 }
 
+                // One block of text to read aloud. Speaking it is what drives the reading forward:
+                // the engine's Done below asks the page for the next one.
+                "tts-block" -> {
+                    ttsText = obj["text"]?.jsonPrimitive?.content.orEmpty()
+                    ttsLang = obj["lang"]?.jsonPrimitive?.content.orEmpty()
+                    ttsSpoken = 0
+                    ttsOffset = 0
+                    if (ttsPlaying) speakFrom(0)
+                }
+
+                // Nothing left to read — the end of the book, not merely of a chapter.
+                "tts-end" -> {
+                    stopTts()
+                    ttsOpen = false
+                }
+
                 "error" -> failure = obj["message"]?.jsonPrimitive?.content ?: "Couldn't open this book."
 
                 // Raised by the key handler above, so keyboard turns take the same boundary path as taps.
@@ -343,6 +442,54 @@ fun EbookReaderScreen(
             }
         }
     }
+
+    // ── Read aloud: what the voice reports ───────────────────────────────────────────────────────
+    LaunchedEffect(tts) {
+        tts.events.collect { event ->
+            when (event) {
+                // The word being spoken, mapped back to an offset into the whole block so the page
+                // can find the foliate mark for it and highlight/scroll to it.
+                is dev.icedtea.kodex.platform.TtsEvent.Range -> {
+                    if (!ttsPlaying) return@collect
+                    ttsSpoken = ttsOffset + event.start
+                    call(ttsMarkCommand(ttsSpoken))
+                }
+
+                dev.icedtea.kodex.platform.TtsEvent.Done -> {
+                    if (!ttsPlaying) return@collect
+                    call(CMD_TTS_DONE)
+                }
+
+                // Reported in the panel rather than over the book: the voice failing is no reason to
+                // take away the page being read.
+                is dev.icedtea.kodex.platform.TtsEvent.Failed -> {
+                    ttsPlaying = false
+                    tts.stop()
+                    ttsNotice = event.message
+                }
+            }
+        }
+    }
+
+    // The voice is a device-wide service, so it keeps reading a book that has closed unless stopped.
+    DisposableEffect(tts) { onDispose { tts.stop() } }
+
+    // System playback controls (Android notification / iOS lock screen) for as long as read aloud is
+    // on. Listening happens with the reader off screen and the phone in a pocket, so there has to be
+    // a way to pause that isn't "find the app again" — and on Android the foreground service behind
+    // that notification is also what stops the system killing us mid-chapter.
+    dev.icedtea.kodex.platform.TtsMediaControls(
+        active = ttsOpen,
+        playing = ttsPlaying,
+        title = source.subtitle ?: source.title,
+        subtitle = listOfNotNull(
+            source.subtitle?.let { source.title },
+            chapterLabel.takeIf { it.isNotBlank() },
+        ).joinToString(" · "),
+        onPlayPause = { toggleTtsPlaying() },
+        onSkip = { delta -> call(ttsSkipCommand(delta, paused = !ttsPlaying)) },
+        onStop = { ttsOpen = false; stopTts() },
+    )
 
     // ── Progress ─────────────────────────────────────────────────────────────────────────────────
     // Debounced like the web's 600ms, and persisted on the session scope so the write survives the
@@ -501,6 +648,11 @@ fun EbookReaderScreen(
                 title = source.title,
                 subtitle = source.subtitle,
                 hasBookmarks = source.bookmarks != null,
+                // Only once the device reports a working voice: a phone with no engine installed
+                // would otherwise offer a button that can never say anything.
+                canReadAloud = ttsAvailable && engineReady,
+                readingAloud = ttsOpen,
+                onToggleReadAloud = { toggleTts() },
                 onOpenBookmarks = { bookmarksOpen = true },
                 onBack = onBack,
             )
@@ -508,48 +660,64 @@ fun EbookReaderScreen(
 
         if (source.incognito) IncognitoBadge(Modifier.align(Alignment.TopCenter))
 
-        AnimatedVisibility(
-            visible = chrome,
-            modifier = Modifier.align(Alignment.BottomCenter),
-            enter = slideInVertically { it } + fadeIn(),
-            exit = slideOutVertically { it } + fadeOut(),
-        ) {
-            EbookBottomBar(
-                chapterLabel = chapterLabel,
-                percent = ((scrub ?: (fraction * 100).toFloat())).roundToInt(),
-                sliderValue = scrub ?: (fraction * 100).toFloat(),
-                // Skip buttons move between *books/chapters of the series*, exactly as the image
-                // reader's do. They used to jump spine sections instead, which read as the same
-                // control doing two different things — and was dead weight for a source chapter,
-                // whose ephemeral EPUB has only ever one section. Jumping within a book is what the
-                // contents sheet is for.
-                canPrevChapter = source.nav?.prev != null,
-                canNextChapter = source.nav?.next != null,
-                hasChapters = !source.nav?.chapters.isNullOrEmpty(),
-                hasToc = toc.isNotEmpty(),
-                webEnabled = source.webUrl != null,
-                flow = (prefs ?: EbookPrefs()).flow,
-                onPrevPage = { goPrev() },
-                onNextPage = { goNext() },
-                onPrevChapter = { source.nav?.prev?.open(ReaderEdge.FIRST) },
-                onNextChapter = { source.nav?.next?.open(ReaderEdge.FIRST) },
-                onScrub = { scrub = it },
-                onScrubEnd = {
-                    val target = (scrub ?: it) / 100f
-                    scrub = null
-                    call(fractionCommand(target.toDouble()))
-                },
-                onOpenToc = { tocOpen = true },
-                onOpenChapters = { chaptersOpen = true },
-                onOpenWeb = { source.webUrl?.let(openUrl) },
-                onSetFlow = { update((prefs ?: EbookPrefs()).copy(flow = it)) },
-                onOpenSettings = { settingsOpen = true },
-                onOpenSeries = onOpenSeries,
-            )
+        // The read-aloud panel rides above the seek bar and, unlike it, does not auto-hide: playback
+        // controls that vanish mid-paragraph would be a trap. With the bars gone it drops to the
+        // screen edge and takes over their navigation-bar inset.
+        Column(Modifier.align(Alignment.BottomCenter)) {
+            if (ttsOpen) {
+                EbookTtsBar(
+                    playing = ttsPlaying,
+                    label = ttsNotice ?: "Read aloud · ${formatRate(ttsRate)}",
+                    modifier = if (chrome) Modifier else Modifier.navigationBarsPadding(),
+                    onPlayPause = { toggleTtsPlaying() },
+                    onSkip = { delta -> call(ttsSkipCommand(delta, paused = !ttsPlaying)) },
+                    onSettings = { ttsSettingsOpen = true },
+                    onClose = { toggleTts() },
+                )
+            }
+            AnimatedVisibility(
+                visible = chrome,
+                enter = slideInVertically { it } + fadeIn(),
+                exit = slideOutVertically { it } + fadeOut(),
+            ) {
+                EbookBottomBar(
+                    chapterLabel = chapterLabel,
+                    percent = ((scrub ?: (fraction * 100).toFloat())).roundToInt(),
+                    sliderValue = scrub ?: (fraction * 100).toFloat(),
+                    // Skip buttons move between *books/chapters of the series*, exactly as the image
+                    // reader's do. They used to jump spine sections instead, which read as the same
+                    // control doing two different things — and was dead weight for a source chapter,
+                    // whose ephemeral EPUB has only ever one section. Jumping within a book is what the
+                    // contents sheet is for.
+                    canPrevChapter = source.nav?.prev != null,
+                    canNextChapter = source.nav?.next != null,
+                    hasChapters = !source.nav?.chapters.isNullOrEmpty(),
+                    hasToc = toc.isNotEmpty(),
+                    webEnabled = source.webUrl != null,
+                    flow = (prefs ?: EbookPrefs()).flow,
+                    onPrevPage = { goPrev() },
+                    onNextPage = { goNext() },
+                    onPrevChapter = { source.nav?.prev?.open(ReaderEdge.FIRST) },
+                    onNextChapter = { source.nav?.next?.open(ReaderEdge.FIRST) },
+                    onScrub = { scrub = it },
+                    onScrubEnd = {
+                        val target = (scrub ?: it) / 100f
+                        scrub = null
+                        call(fractionCommand(target.toDouble()))
+                    },
+                    onOpenToc = { tocOpen = true },
+                    onOpenChapters = { chaptersOpen = true },
+                    onOpenWeb = { source.webUrl?.let(openUrl) },
+                    onSetFlow = { update((prefs ?: EbookPrefs()).copy(flow = it)) },
+                    onOpenSettings = { settingsOpen = true },
+                    onOpenSeries = onOpenSeries,
+                )
+            }
         }
 
         // Quiet progress pill while the bars are hidden — the same at-a-glance readout the web keeps.
-        if (!chrome && engineReady) {
+        // The read-aloud panel occupies that spot when it's up.
+        if (!chrome && engineReady && !ttsOpen) {
             Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp)) {
                 Text(
                     listOfNotNull(chapterLabel.takeIf { it.isNotBlank() }, "${(fraction * 100).roundToInt()}%").joinToString(" · "),
@@ -622,6 +790,21 @@ fun EbookReaderScreen(
         }
     }
 
+    if (ttsSettingsOpen) {
+        val voices = remember(ttsAvailable) { if (ttsAvailable) tts.voices() else emptyList() }
+        KodexBottomSheet(onDismissRequest = { ttsSettingsOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+            TtsSettingsSheet(
+                voices = voices,
+                voiceId = ttsVoice,
+                rate = ttsRate,
+                // Neither engine can retune an utterance already speaking, so the change is applied
+                // by re-speaking from the last word said rather than the top of the paragraph.
+                onVoice = { appSettings.setTtsVoice(it); if (ttsPlaying) speakFrom(ttsSpoken, voiceId = it) },
+                onRate = { appSettings.setTtsRate(it); if (ttsPlaying) speakFrom(ttsSpoken, rate = it) },
+            )
+        }
+    }
+
     if (tocOpen) {
         KodexBottomSheet(onDismissRequest = { tocOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             TocSheet(toc, current = chapterLabel) { href ->
@@ -675,6 +858,9 @@ private fun EbookTopBar(
     title: String,
     subtitle: String?,
     hasBookmarks: Boolean,
+    canReadAloud: Boolean,
+    readingAloud: Boolean,
+    onToggleReadAloud: () -> Unit,
     onOpenBookmarks: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -697,11 +883,163 @@ private fun EbookTopBar(
                 )
             }
         }
+        if (canReadAloud) {
+            IconButton(onClick = onToggleReadAloud) {
+                Icon(
+                    Icons.Outlined.RecordVoiceOver,
+                    contentDescription = if (readingAloud) "Stop reading aloud" else "Read aloud",
+                    tint = if (readingAloud) MaterialTheme.colorScheme.primary else content,
+                )
+            }
+        }
         if (hasBookmarks) {
             IconButton(onClick = onOpenBookmarks) {
                 Icon(Icons.Outlined.Bookmark, contentDescription = "Bookmarks", tint = content)
             }
         }
+    }
+}
+
+/**
+ * Playback controls for read aloud. Deliberately thin and always-on-screen: it is the only way back
+ * out of a voice that is talking, so it must not ride the auto-hiding chrome.
+ */
+@Composable
+private fun EbookTtsBar(
+    playing: Boolean,
+    label: String,
+    modifier: Modifier = Modifier,
+    onPlayPause: () -> Unit,
+    /** +1 / -1 — the next or previous paragraph. */
+    onSkip: (Int) -> Unit,
+    onSettings: () -> Unit,
+    onClose: () -> Unit,
+) {
+    val content = MaterialTheme.colorScheme.readerBarContentColor
+    Row(
+        modifier.fillMaxWidth().background(MaterialTheme.colorScheme.readerBarColor).padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = { onSkip(-1) }) {
+            Icon(Icons.Outlined.FastRewind, contentDescription = "Previous paragraph", tint = content)
+        }
+        IconButton(onClick = onPlayPause) {
+            Icon(
+                if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                contentDescription = if (playing) "Pause" else "Play",
+                tint = content,
+            )
+        }
+        IconButton(onClick = { onSkip(1) }) {
+            Icon(Icons.Outlined.FastForward, contentDescription = "Next paragraph", tint = content)
+        }
+        Text(
+            label,
+            Modifier.weight(1f).padding(horizontal = 4.dp),
+            color = content.copy(alpha = 0.75f),
+            style = MaterialTheme.typography.labelMedium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        IconButton(onClick = onSettings) {
+            Icon(Icons.Outlined.Speed, contentDescription = "Voice settings", tint = content)
+        }
+        IconButton(onClick = onClose) {
+            Icon(Icons.Outlined.Close, contentDescription = "Stop reading aloud", tint = content)
+        }
+    }
+}
+
+/**
+ * Voice and speed. The voices are the device's, so this is a device setting rather than one of the
+ * per-series display prefs — an engine id from one phone means nothing on another.
+ */
+@Composable
+private fun TtsSettingsSheet(
+    voices: List<TtsVoice>,
+    voiceId: String?,
+    rate: Float,
+    onVoice: (String?) -> Unit,
+    onRate: (Float) -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().heightIn(max = 520.dp).padding(bottom = 24.dp)) {
+        Text(
+            "Read aloud",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 8.dp),
+        )
+        Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Speed", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TTS_RATES.forEach { value ->
+                    FilterChip(
+                        selected = kotlin.math.abs(value - rate) < 0.01f,
+                        onClick = { onRate(value) },
+                        label = { Text(formatRate(value)) },
+                    )
+                }
+            }
+        }
+        Text(
+            "Voice",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 4.dp),
+        )
+        LazyColumn {
+            item {
+                TtsVoiceRow(
+                    label = "Automatic",
+                    detail = "Match the book's language",
+                    selected = voiceId == null,
+                    onClick = { onVoice(null) },
+                )
+            }
+            items(voices, key = { it.id }) { voice ->
+                TtsVoiceRow(
+                    label = voice.name,
+                    detail = voice.locale,
+                    selected = voice.id == voiceId,
+                    onClick = { onVoice(voice.id) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TtsVoiceRow(label: String, detail: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                label,
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (detail.isNotBlank()) {
+                Text(detail, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        if (selected) Icon(Icons.Outlined.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+    }
+}
+
+/** "1×", "1.25×" — trailing zeroes dropped, since most rates are whole or quarter steps. */
+private fun formatRate(rate: Float): String {
+    val rounded = (rate * 100).roundToInt()
+    val whole = rounded / 100
+    val cents = rounded % 100
+    return when {
+        cents == 0 -> "$whole×"
+        cents % 10 == 0 -> "$whole.${cents / 10}×"
+        else -> "$whole.${cents.toString().padStart(2, '0')}×"
     }
 }
 
@@ -1062,6 +1400,26 @@ private fun EbookPrefs.putInto(builder: kotlinx.serialization.json.JsonObjectBui
 
 private const val CMD_PREV = """{"cmd":"prev"}"""
 private const val CMD_NEXT = """{"cmd":"next"}"""
+
+// Read aloud. The page owns the text and the highlight; these are the four things it needs told —
+// start, "the voice finished that block", "it is saying the word at this character", and stop.
+private const val CMD_TTS_START = """{"cmd":"ttsStart"}"""
+private const val CMD_TTS_STOP = """{"cmd":"ttsStop"}"""
+private const val CMD_TTS_DONE = """{"cmd":"ttsDone"}"""
+
+/** [delta] is +1/-1 by paragraph; [paused] lets the page highlight the whole block it lands on. */
+private fun ttsSkipCommand(delta: Int, paused: Boolean): String =
+    buildJsonObject {
+        put("cmd", "ttsSkip")
+        put("delta", delta)
+        put("paused", paused)
+    }.toString()
+
+private fun ttsMarkCommand(charIndex: Int): String =
+    buildJsonObject {
+        put("cmd", "ttsMark")
+        put("charIndex", charIndex)
+    }.toString()
 
 private fun prefsCommand(prefs: EbookPrefs): String =
     buildJsonObject {

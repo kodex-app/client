@@ -25,6 +25,15 @@
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<!--
+	  Read aloud speaks through AVSpeechSynthesizer on a playback audio session. Without the audio
+	  background mode iOS suspends the app the moment the screen locks, which stops the voice
+	  mid-sentence and takes the lock-screen controls with it.
+	-->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
+	<!--
 	  Kodex servers are self-hosted at unknown addresses, frequently plain http on a LAN. App
 	  Transport Security blocks that by default, so allow arbitrary loads (mirrors the Android
 	  network-security-config that permits cleartext).

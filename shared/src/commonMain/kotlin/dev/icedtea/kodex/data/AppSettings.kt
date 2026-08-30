@@ -55,6 +55,17 @@ class AppSettings(private val settings: Settings = Settings()) {
     )
     val ebookPageAnim: StateFlow<String> = _ebookPageAnim.asStateFlow()
 
+    /**
+     * Read-aloud voice settings: speed multiplier and the chosen platform voice (null = whatever the
+     * device picks for the book's language). Device-local of necessity — the voice list is this
+     * phone's, and an id from one device means nothing on another.
+     */
+    private val _ttsRate = MutableStateFlow(settings.getFloat(KEY_TTS_RATE, 1f).coerceIn(0.5f, 3f))
+    val ttsRate: StateFlow<Float> = _ttsRate.asStateFlow()
+
+    private val _ttsVoice = MutableStateFlow(settings.getStringOrNull(KEY_TTS_VOICE))
+    val ttsVoice: StateFlow<String?> = _ttsVoice.asStateFlow()
+
     /** Global incognito reading: when on, no reader saves progress/history. */
     private val _incognito = MutableStateFlow(settings.getBoolean(KEY_INCOGNITO, false))
     val incognitoMode: StateFlow<Boolean> = _incognito.asStateFlow()
@@ -89,6 +100,16 @@ class AppSettings(private val settings: Settings = Settings()) {
 
     fun setEbookPageAnim(value: String) {
         settings.putString(KEY_EBOOK_ANIM, value); _ebookPageAnim.value = value
+    }
+
+    fun setTtsRate(value: Float) {
+        val rate = value.coerceIn(0.5f, 3f)
+        settings.putFloat(KEY_TTS_RATE, rate); _ttsRate.value = rate
+    }
+
+    fun setTtsVoice(value: String?) {
+        if (value == null) settings.remove(KEY_TTS_VOICE) else settings.putString(KEY_TTS_VOICE, value)
+        _ttsVoice.value = value
     }
 
     fun setIncognitoMode(value: Boolean) {
@@ -154,6 +175,8 @@ class AppSettings(private val settings: Settings = Settings()) {
         const val KEY_LIBRARIES_SORT = "libraries.sort"
         const val KEY_INCOGNITO = "reader.incognito"
         const val KEY_EBOOK_ANIM = "reader.ebook.pageAnim"
+        const val KEY_TTS_RATE = "reader.tts.rate"
+        const val KEY_TTS_VOICE = "reader.tts.voice"
         const val KEY_UPDATES_SEEN = "recents.updatesSeenAt"
     }
 }

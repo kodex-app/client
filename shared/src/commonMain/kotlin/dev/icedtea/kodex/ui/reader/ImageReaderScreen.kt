@@ -65,8 +65,6 @@ import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.BookmarkBorder
-import androidx.compose.material.icons.outlined.Pause
-import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SkipNext
@@ -582,8 +580,6 @@ fun ImageReaderScreen(
                     pageCount = source.pageCount,
                     pageLabel = pageLabel,
                     rtl = p.isRtl,
-                    continuous = effectiveMode == MODE_CONTINUOUS,
-                    autoScroll = autoScroll,
                     hasChapters = (source.nav?.chapters?.size ?: 0) > 1,
                     canPrevChapter = source.nav?.prev != null,
                     canNextChapter = source.nav?.next != null,
@@ -597,7 +593,6 @@ fun ImageReaderScreen(
                     onSetReadMode = { m, d -> update(p.copy(mode = m, direction = d)) },
                     onOpenSettings = { settingsOpen = true },
                     onOpenSeries = onOpenSeries,
-                    onToggleAutoScroll = { autoScroll = !autoScroll },
                     onSeek = { target -> page = target.coerceIn(1, source.pageCount) },
                     onOpenPicker = { pickerOpen = true },
                 )
@@ -1271,8 +1266,6 @@ private fun BottomBar(
     pageCount: Int,
     pageLabel: String,
     rtl: Boolean,
-    continuous: Boolean,
-    autoScroll: Boolean,
     hasChapters: Boolean,
     canPrevChapter: Boolean,
     canNextChapter: Boolean,
@@ -1286,11 +1279,9 @@ private fun BottomBar(
     onSetReadMode: (mode: String, direction: String) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenSeries: (() -> Unit)?,
-    onToggleAutoScroll: () -> Unit,
     onSeek: (Int) -> Unit,
     onOpenPicker: () -> Unit,
 ) {
-    val content = MaterialTheme.colorScheme.readerBarContentColor
     Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.readerBarColor).navigationBarsPadding()) {
         ChapterNavigator(
             page = page,
@@ -1304,20 +1295,13 @@ private fun BottomBar(
             onSeek = onSeek,
             onOpenPicker = onOpenPicker,
         )
-        // Toolbar row: auto-scroll (continuous only) · chapter list · open in web · read mode · settings.
+        // Toolbar row: series · chapter list · open in web · read mode · settings.
+        // Auto-scroll is not here — it lives in the top bar's panel, next to the speed it needs.
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (continuous) {
-                ToolbarButton(
-                    if (autoScroll) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                    "Auto-scroll",
-                    tint = if (autoScroll) MaterialTheme.colorScheme.primary else content,
-                    onClick = onToggleAutoScroll,
-                )
-            }
             onOpenSeries?.let { open -> ToolbarButton(Icons.Outlined.Book, "Series details", onClick = open) }
             ToolbarButton(Icons.AutoMirrored.Outlined.ViewList, "Books", enabled = hasChapters, onClick = onOpenChapters)
             ToolbarButton(Icons.Outlined.Public, "Open in web", enabled = webEnabled, onClick = onOpenWeb)

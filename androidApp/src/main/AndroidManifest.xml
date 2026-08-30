@@ -3,6 +3,13 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Read aloud keeps speaking with the app in the background, which needs a foreground service
+         (or the system may kill the app mid-chapter); its notification is also the only way to pause
+         without going back into the app. POST_NOTIFICATIONS is requested when read aloud starts. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:label="${appLabel}"
         android:icon="@mipmap/ic_launcher"
@@ -21,6 +28,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name="dev.icedtea.kodex.platform.TtsPlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
     </application>
 
 </manifest>

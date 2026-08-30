@@ -108,6 +108,12 @@ function contentStyles(p) {
     ${p.indent != null ? `p { text-indent: ${p.indent}em !important; }` : ''}
     a, a:visited { color: ${c.link} !important; }
     img { max-width: 100% !important; height: auto !important; }
+    /* The word being read aloud (CSS Custom Highlight API — see the read-aloud section below). Amber
+       reads as "here" on all three themes; the dark one is toned down so it doesn't glare. */
+    ::highlight(${TTS_HIGHLIGHT}) {
+      background: ${p.theme === 'dark' ? 'rgba(255,196,0,0.30)' : 'rgba(255,196,0,0.45)'};
+      color: inherit;
+    }
   `
 }
 
@@ -557,6 +563,162 @@ function flattenToc(items, depth = 0, out = []) {
   return out
 }
 
+// ── Read aloud ───────────────────────────────────────────────────────────────────────────────────
+// The engine half of text-to-speech. foliate's own TTS does the hard part — walking the chapter into
+// blocks and marking every word — but it only produces SSML; something else has to speak it. In the
+// browser that is the Web Speech API (`tts.ts` in the web UI); here it is the platform voice on the
+// Kotlin side, because neither Android's WebView nor WKWebView implements speechSynthesis.
+//
+// So the split is: this file owns the text and the highlight, Kotlin owns the voice. Per block we
+// post the plain text; Kotlin speaks it and reports back the character it is currently saying
+// (`ttsMark`) and when it has finished (`ttsDone`), which is what advances the reading.
+
+const TTS_HIGHLIGHT = 'kdx-tts'
+
+/** Marks of the block currently being spoken: where each word starts in the text Kotlin was given. */
+let ttsMarks = []
+let ttsLastMark = null
+let ttsActive = false
+
+/**
+ * Flattens one SSML block into the text a synthesizer speaks plus the character offset of every
+ * `<mark>`, so a word-boundary report (a character index) can be turned back into the foliate mark —
+ * and from there into the live range to highlight.
+ *
+ * Taken verbatim, whitespace and all: normalizing would shift every offset out from under the marks,
+ * and the platform engines collapse runs of whitespace themselves.
+ */
+function ssmlToSpeech(ssml) {
+  const doc = new DOMParser().parseFromString(ssml, 'application/xml')
+  const marks = []
+  let text = ''
+  const walk = (node) => {
+    for (const child of node.childNodes) {
+      if (child.nodeType === 3 || child.nodeType === 4) {
+        text += child.nodeValue || ''
+      } else if (child.nodeType === 1) {
+        const name = child.localName.toLowerCase()
+        if (name === 'mark') {
+          const markName = child.getAttribute('name')
+          if (markName != null) marks.push({ name: markName, index: text.length })
+        } else if (name === 'break') {
+          text += ' '
+        } else {
+          walk(child)
+        }
+      }
+    }
+  }
+  walk(doc.documentElement)
+  return { text, marks }
+}
+
+/**
+ * Paints the spoken word inside the chapter's own document. The Custom Highlight API is used rather
+ * than foliate's overlayer because it needs no CFI round-trip and leaves the book's DOM untouched —
+ * a word changes a few times a second. A WebView without it still gets the scroll-along.
+ */
+function paintTtsHighlight(range) {
+  const win = range.startContainer.ownerDocument && range.startContainer.ownerDocument.defaultView
+  const highlights = win && win.CSS && win.CSS.highlights
+  if (!win || !win.Highlight || !highlights) return
+  try {
+    highlights.set(TTS_HIGHLIGHT, new win.Highlight(range))
+  } catch {
+    /* the range went stale (the section re-rendered under us) — the next word repaints */
+  }
+}
+
+function clearTtsHighlight() {
+  for (const { doc } of (view && view.renderer ? view.renderer.getContents() : [])) {
+    const highlights = doc && doc.defaultView && doc.defaultView.CSS && doc.defaultView.CSS.highlights
+    if (highlights) highlights.delete(TTS_HIGHLIGHT)
+  }
+}
+
+/** foliate builds its TTS over the section on screen, so it is rebuilt whenever reading leaves one. */
+async function ensureTts() {
+  if (!view) return null
+  // `select: false` — foliate's own default selects the spoken word, which on top of the highlight
+  // is a second marker and, on touch, a long-press menu waiting to happen. The page still scrolls to
+  // keep the word in view.
+  await view.initTTS('word', undefined, (range) => {
+    if (view.renderer && view.renderer.scrollToAnchor) view.renderer.scrollToAnchor(range, false)
+    paintTtsHighlight(range)
+  })
+  return view.tts || null
+}
+
+/** The language of the text being read, so the native side can pick a voice that speaks it. */
+function ttsLang() {
+  const contents = view && view.renderer ? view.renderer.getContents() : []
+  const primary = contents.find((x) => x.index === view.renderer.primaryIndex) || contents[0]
+  const doc = primary && primary.doc
+  const lang = doc && doc.documentElement && doc.documentElement.lang
+  return (lang || (view.book && view.book.metadata && view.book.metadata.language) || '').toString()
+}
+
+/**
+ * Hands one block to Kotlin to speak. Blocks with nothing sayable (an illustration, a rule, stray
+ * punctuation) are stepped over here rather than bouncing an empty utterance off the native engine.
+ */
+function ttsEmit(ssml) {
+  let cur = ssml
+  // Bounded, so a book that somehow keeps yielding empty blocks can't spin the page forever.
+  for (let guard = 0; guard < 500; guard++) {
+    if (!cur) return ttsCrossSection()
+    const { text, marks } = ssmlToSpeech(cur)
+    if (text.trim()) {
+      ttsMarks = marks
+      ttsLastMark = null
+      return post({ type: 'tts-block', text, lang: ttsLang() })
+    }
+    cur = view.tts && view.tts.next()
+  }
+  return post({ type: 'tts-end' })
+}
+
+/** Blocks exhausted: carry on into the next section, or report the end of the book. */
+async function ttsCrossSection() {
+  const r = view && view.renderer
+  if (!r || !r.nextSection) return post({ type: 'tts-end' })
+  const before = r.primaryIndex
+  try {
+    await r.nextSection()
+  } catch {
+    return post({ type: 'tts-end' })
+  }
+  // The same section back means there was no next one (or the rest are non-linear): book finished.
+  if (r.primaryIndex === before) return post({ type: 'tts-end' })
+  view.tts = null
+  const tts = await ensureTts()
+  if (!tts) return post({ type: 'tts-end' })
+  return ttsEmit(tts.start())
+}
+
+/** Highlights the word containing [charIndex] — the last mark at or before the character spoken. */
+function ttsMark(charIndex) {
+  let name = null
+  for (const m of ttsMarks) {
+    if (m.index > charIndex) break
+    name = m.name
+  }
+  if (name == null || name === ttsLastMark) return
+  ttsLastMark = name
+  try {
+    if (view.tts && view.tts.setMark) view.tts.setMark(name)
+  } catch {
+    /* the section re-rendered mid-utterance; the next word re-anchors */
+  }
+}
+
+function ttsStop() {
+  ttsActive = false
+  ttsMarks = []
+  ttsLastMark = null
+  clearTtsHighlight()
+}
+
 // ── Commands from Kotlin ─────────────────────────────────────────────────────────────────────────
 // Delivered by long-polling ./commands rather than injected with the WebView's evaluateJavaScript:
 // that API is a separate implementation per platform and never arrived at all on desktop's Chromium
@@ -582,6 +744,44 @@ async function dispatch(c) {
       return view.goTo && view.goTo(c.href)
     case 'prefs':
       return applyPrefs(c.prefs)
+
+    // Read aloud. The native voice drives the pace: it asks for a block, says it, reports each word
+    // it reaches and then asks for the next one.
+    case 'ttsStart': {
+      ttsActive = true
+      const tts = await ensureTts()
+      if (!tts) return post({ type: 'tts-end' })
+      // Start where the reader is looking, not at the top of the chapter. `from()` throws when the
+      // location can't be matched to a block (an empty page, a jump caught mid-render) — exactly when
+      // the section's first block is the right fallback.
+      let first
+      const range = view.lastLocation && view.lastLocation.range
+      if (range) {
+        try {
+          first = tts.from(range)
+        } catch {
+          first = undefined
+        }
+      }
+      return ttsEmit(first || tts.start())
+    }
+    case 'ttsSkip': {
+      const tts = await ensureTts()
+      if (!tts) return
+      // `paused` makes foliate highlight the whole block it moved to; while speaking, the per-word
+      // marks do that job instead.
+      const ssml = c.delta < 0 ? tts.prev(!!c.paused) : tts.next(!!c.paused)
+      if (!ssml) return c.delta < 0 ? undefined : ttsCrossSection()
+      return ttsEmit(ssml)
+    }
+    case 'ttsDone':
+      if (!ttsActive) return
+      return ttsEmit(view.tts && view.tts.next())
+    case 'ttsMark':
+      return ttsMark(c.charIndex | 0)
+    case 'ttsStop':
+      return ttsStop()
+
     default:
       return
   }
