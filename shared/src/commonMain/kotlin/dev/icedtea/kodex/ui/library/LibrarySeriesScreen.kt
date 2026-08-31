@@ -91,6 +91,8 @@ import dev.icedtea.kodex.ui.collectAsStateSafe
 import dev.icedtea.kodex.ui.rememberSelection
 import dev.icedtea.kodex.ui.rememberSnackbar
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -136,6 +138,25 @@ private data class GroupTab(val key: String, val label: String, val count: Int)
 // Fixed order for the status dimension's tabs (mirrors the web's STATUS_ORDER).
 private val STATUS_ORDER = listOf("ONGOING", "COMPLETED", "PUBLISHING_FINISHED", "LICENSED", "CANCELLED", "ON_HIATUS", "UNKNOWN")
 
+// The per-user server settings that carry how a library is being viewed. Each holds one flat
+// { scope -> value } map, written by the web UI under the same keys (its useLibrarySort /
+// useLibraryGroup) — so a library grouped by source in the browser opens grouped by source here.
+private const val LIBRARY_SORT_KEY = "ui.librarySort"
+private const val LIBRARY_GROUP_KEY = "ui.libraryGroup"
+private const val LIBRARY_GROUP_TAB_KEY = "ui.libraryGroupTab"
+
+/** Reads one of those maps, skipping entries whose value isn't a plain string. */
+private fun JsonObject.stringMap(key: String): Map<String, String> =
+    (this[key] as? JsonObject)
+        ?.mapNotNull { (k, v) -> (v as? JsonPrimitive)?.contentOrNull?.let { k to it } }
+        ?.toMap()
+        .orEmpty()
+
+private fun Map<String, String>.asSetting() = JsonObject(mapValues { JsonPrimitive(it.value) })
+
+/** Group tabs are stored per (library, dimension), since switching dimension swaps the whole strip. */
+private fun groupTabScope(libraryId: String, groupBy: String) = "$libraryId.$groupBy"
+
 /** A single library's series, with sort · reading-status filter · grid/list toggle · refresh. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -163,8 +184,9 @@ fun LibrarySeriesScreen(
     // Retained: opening a series unmounts this screen, so without this the sort, filters, grouping and
     // the loaded group counts would all be rebuilt on the way back. The counts especially: they arrive
     // asynchronously, and a screen that comes back with no groups yet cannot restore its group tab.
+    val allowedGroups = groupOptions.map { it.first }.toSet()
     val st = retain("library:${library.id}") {
-        LibraryScreenState(library.id, appSettings, groupOptions.map { it.first }.toSet())
+        LibraryScreenState(library.id, appSettings, allowedGroups)
     }
     var sortKey by st.sortKey
     var sortAsc by st.sortAsc
@@ -218,37 +240,59 @@ fun LibrarySeriesScreen(
     val readingInclude = READING_OPTIONS.map { it.value }.filter { readingTri[it] == Tri.INCLUDE }
     val readingExclude = READING_OPTIONS.map { it.value }.filter { readingTri[it] == Tri.EXCLUDE }
 
-    // Server-backed sort choice: one `ui.librarySort` setting holding a { libraryId → "field,dir" } map,
-    // so the choice follows the user across devices (mirrors the web's useLibrarySort).
+    // Server-backed view choices: the sort, the grouping dimension and the open group tab all live in
+    // per-user settings shared with the web UI, so a library is presented the same way wherever it is
+    // opened. The local store still holds them too — it is what the screen shows before the fetch lands
+    // (and all it has while offline), so every save writes both.
     var sortMap by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var groupMap by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var groupTabMap by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     LaunchedEffect(server?.id, library.id) {
         val s = server ?: return@LaunchedEffect
         val settings = runCatching { api.userSettings(s.baseUrl, s.apiKey) }.getOrNull() ?: return@LaunchedEffect
-        val map = (settings["ui.librarySort"] as? kotlinx.serialization.json.JsonObject)
-            ?.mapNotNull { (k, v) -> (v as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull?.let { k to it } }
-            ?.toMap().orEmpty()
-        sortMap = map
-        map[library.id]?.let { expr ->
+        sortMap = settings.stringMap(LIBRARY_SORT_KEY)
+        groupMap = settings.stringMap(LIBRARY_GROUP_KEY)
+        groupTabMap = settings.stringMap(LIBRARY_GROUP_TAB_KEY)
+        sortMap[library.id]?.let { expr ->
             val parts = expr.split(",")
             SortKey.entries.find { it.field == parts.getOrNull(0) }?.let { key ->
                 sortKey = key
                 sortAsc = parts.getOrNull(1) != "desc"
             }
         }
+        // A dimension this library doesn't offer (stored by a library of another type, or by a newer
+        // web build) is ignored rather than grouping by something that has no tabs here.
+        groupMap[library.id]?.takeIf { it in allowedGroups }?.let { g ->
+            groupBy = g
+            appSettings.setLibraryGroupBy(library.id, g)
+            groupTabMap[groupTabScope(library.id, g)]?.let { tab ->
+                selectedGroup = tab
+                appSettings.setLibraryGroupTab(library.id, g, tab)
+            }
+        }
+    }
+
+    /** Writes one entry of a shared settings map back, leaving every other library's entry untouched. */
+    fun persistSetting(key: String, map: Map<String, String>) {
+        val s = server ?: return
+        scope.launch { runCatching { api.saveUserSetting(s.baseUrl, s.apiKey, key, map.asSetting()) } }
     }
 
     fun persistSort() {
-        val s = server ?: return
-        val newMap = sortMap + (library.id to "${sortKey.field},${if (sortAsc) "asc" else "desc"}")
-        sortMap = newMap
-        scope.launch {
-            runCatching {
-                api.saveUserSetting(
-                    s.baseUrl, s.apiKey, "ui.librarySort",
-                    kotlinx.serialization.json.JsonObject(newMap.mapValues { kotlinx.serialization.json.JsonPrimitive(it.value) }),
-                )
-            }
-        }
+        sortMap = sortMap + (library.id to "${sortKey.field},${if (sortAsc) "asc" else "desc"}")
+        persistSetting(LIBRARY_SORT_KEY, sortMap)
+    }
+
+    fun persistGroupBy(value: String) {
+        appSettings.setLibraryGroupBy(library.id, value)
+        groupMap = groupMap + (library.id to value)
+        persistSetting(LIBRARY_GROUP_KEY, groupMap)
+    }
+
+    fun persistGroupTab(dimension: String, key: String) {
+        appSettings.setLibraryGroupTab(library.id, dimension, key)
+        groupTabMap = groupTabMap + (groupTabScope(library.id, dimension) to key)
+        persistSetting(LIBRARY_GROUP_TAB_KEY, groupTabMap)
     }
 
     // Live per-group counts for the current grouping dimension.
@@ -433,7 +477,7 @@ fun LibrarySeriesScreen(
                     val key = tabGroups.getOrNull(pagerState.settledPage)?.key ?: return@LaunchedEffect
                     if (key == selectedGroup) return@LaunchedEffect
                     selectedGroup = key
-                    appSettings.setLibraryGroupTab(library.id, groupBy, key)
+                    persistGroupTab(groupBy, key)
                 }
                 GroupTabs(tabGroups, tabGroups.getOrNull(pagerState.currentPage)?.key, onSelect = { key ->
                     val idx = tabGroups.indexOfFirst { it.key == key }
@@ -545,10 +589,11 @@ fun LibrarySeriesScreen(
                         groupOptions.forEach { (value, label) ->
                             CheckRow(label, groupBy == value) {
                                 groupBy = value
-                                appSettings.setLibraryGroupBy(library.id, value)
+                                persistGroupBy(value)
                                 // A new dimension has different tabs, so fall back to whichever one
                                 // was last open under it (null → the first).
-                                selectedGroup = appSettings.libraryGroupTab(library.id, value)
+                                selectedGroup = groupTabMap[groupTabScope(library.id, value)]
+                                    ?: appSettings.libraryGroupTab(library.id, value)
                             }
                         }
                         if (groupBy != "none") {
