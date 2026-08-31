@@ -814,9 +814,17 @@ class KodexApi(private val client: HttpClient) {
             parameter("chapterId", chapterId)
         }.body()
 
-    /** Fonts the user uploaded, offered alongside the built-in stacks in the ebook font picker. */
+    /** Fonts the user uploaded, offered alongside the shipped ones in the ebook font picker. */
     suspend fun customFonts(baseUrl: String, apiKey: String): List<CustomFontDto> =
         client.get("$baseUrl/api/v1/fonts") { header(HEADER_API_KEY, apiKey) }.body()
+
+    /**
+     * The OFL reader fonts the server ships. Asked for rather than hard-coded so the app offers the
+     * same list the web reader does — including their @font-face descriptors, which is what lets the
+     * real font file be fetched instead of guessing at a family name the device probably lacks.
+     */
+    suspend fun bundledFonts(baseUrl: String, apiKey: String): List<BundledFontDto> =
+        client.get("$baseUrl/api/v1/fonts/bundled") { header(HEADER_API_KEY, apiKey) }.body()
 
     // ── Per-user settings (reader prefs live here) ───────────────────────────────────────────────
 

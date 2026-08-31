@@ -175,6 +175,17 @@ object EbookHost {
             val id = call.parameters["id"] ?: return@get notFound()
             proxy(ctx, "${ctx.baseUrl}/api/v1/fonts/${id.encodeURLQueryComponent()}/file")
         }
+        // The OFL faces the server ships. Same immutable bytes for every user, and every section
+        // re-render re-declares the @font-face — so let the WebView keep them rather than pulling a
+        // few hundred KB down the wire on each settings change.
+        get("/{token}/bundled-font/{file}") {
+            val ctx = session() ?: return@get notFound()
+            val file = call.parameters["file"].orEmpty()
+            // Flat names from the server's catalog, never paths.
+            if (!file.endsWith(".woff2") || '/' in file || '\\' in file || ".." in file) return@get notFound()
+            call.response.header(HttpHeaders.CacheControl, "private, max-age=31536000, immutable")
+            proxy(ctx, "${ctx.baseUrl}/api/v1/fonts/bundled/${file.encodeURLQueryComponent()}")
+        }
 
         // A source chapter's illustrations aren't in the EPUB — the chapter HTML points at the
         // source's own CDN, so loading them straight from the page asks the *device* to reach a host

@@ -76,7 +76,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -1643,69 +1642,85 @@ private fun SettingsSheet(
     onSaveDefault: () -> Unit,
     onReset: () -> Unit,
 ) {
-    Column(
-        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        Text("Reader settings", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-
-        SegRow("Layout", prefs.mode, listOf(MODE_AUTO to "Auto", MODE_PAGED to "Paged", MODE_CONTINUOUS to "Continuous")) {
-            onChange(prefs.copy(mode = it))
-        }
-        SegRow("Fit", prefs.zoom, listOf(ZOOM_HEIGHT to "Height", ZOOM_WIDTH to "Width", ZOOM_ORIGINAL to "Original")) {
-            onChange(prefs.copy(zoom = it))
-        }
-        if (effectiveMode == MODE_PAGED) {
-            SegRow("Pages", prefs.spread, listOf(SPREAD_SINGLE to "Single", SPREAD_DOUBLE to "Double")) {
-                onChange(prefs.copy(spread = it))
+    Column(Modifier.fillMaxWidth()) {
+        ReaderSettingsHeader("Reader settings", "Applies to this series")
+        Column(
+            // fill = false so a short sheet stays short; the cap in KodexBottomSheet turns a long one
+            // into a scroll rather than pushing the footer off the bottom.
+            Modifier.weight(1f, fill = false)
+                .verticalScroll(rememberScrollState())
+                .padding(start = SheetGutter, end = SheetGutter, bottom = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            ReaderSettingsCard {
+                ReaderSettingsSwatches("Background", prefs.bg, PAGE_BG_SWATCHES) { onChange(prefs.copy(bg = it)) }
             }
-            SegRow("Direction", prefs.direction, listOf(DIR_LTR to "L → R", DIR_RTL to "R → L")) {
-                onChange(prefs.copy(direction = it))
+            ReaderSettingsCard {
+                ReaderSettingsSegmented(
+                    "Layout",
+                    prefs.mode,
+                    listOf(MODE_AUTO to "Auto", MODE_PAGED to "Paged", MODE_CONTINUOUS to "Continuous"),
+                ) {
+                    onChange(prefs.copy(mode = it))
+                }
+                ReaderSettingsSegmented(
+                    "Fit",
+                    prefs.zoom,
+                    listOf(ZOOM_HEIGHT to "Height", ZOOM_WIDTH to "Width", ZOOM_ORIGINAL to "Original"),
+                ) {
+                    onChange(prefs.copy(zoom = it))
+                }
+                if (effectiveMode == MODE_PAGED) {
+                    ReaderSettingsSegmented("Pages", prefs.spread, listOf(SPREAD_SINGLE to "Single", SPREAD_DOUBLE to "Double")) {
+                        onChange(prefs.copy(spread = it))
+                    }
+                    ReaderSettingsSegmented("Direction", prefs.direction, listOf(DIR_LTR to "L → R", DIR_RTL to "R → L")) {
+                        onChange(prefs.copy(direction = it))
+                    }
+                    ReaderSettingsToggle(
+                        label = "Tap to turn",
+                        checked = prefs.tapToTurn,
+                        description = "Tap the left or right edge to change page",
+                    ) {
+                        onChange(prefs.copy(tapToTurn = it))
+                    }
+                }
             }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("Tap to turn", Modifier.weight(1f))
-                Switch(checked = prefs.tapToTurn, onCheckedChange = { onChange(prefs.copy(tapToTurn = it)) })
-            }
-        }
-        SegRow("Background", prefs.bg, listOf(BG_WHITE to "White", BG_GRAY to "Gray", BG_BLACK to "Black")) {
-            onChange(prefs.copy(bg = it))
-        }
-        // Lives here now that the toolbar's rotation button became the reading-mode picker. Unlike the
-        // rest of the sheet this isn't a stored preference — it lasts as long as the reader is open.
-        SegRow(
-            "Screen orientation",
-            orientation.name,
-            dev.icedtea.kodex.platform.ScreenOrientation.entries.map { it.name to it.name.lowercase().replaceFirstChar(Char::uppercase) },
-        ) { picked ->
-            onOrientation(dev.icedtea.kodex.platform.ScreenOrientation.valueOf(picked))
-        }
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Preload pages", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PRELOAD_OPTIONS.forEach { n ->
-                    FilterChip(selected = preload == n, onClick = { onPreload(n) }, label = { Text("$n") })
+            ReaderSettingsCard {
+                // Lives here now that the toolbar's rotation button became the reading-mode picker. Unlike the
+                // rest of the sheet this isn't a stored preference — it lasts as long as the reader is open.
+                ReaderSettingsSegmented(
+                    "Screen orientation",
+                    orientation.name,
+                    dev.icedtea.kodex.platform.ScreenOrientation.entries.map { it.name to it.name.lowercase().replaceFirstChar(Char::uppercase) },
+                    caption = "Lasts until you leave the reader.",
+                ) { picked ->
+                    onOrientation(dev.icedtea.kodex.platform.ScreenOrientation.valueOf(picked))
+                }
+                ReaderSettingsChips(
+                    "Preload pages",
+                    preload.toString(),
+                    PRELOAD_OPTIONS.map { it.toString() to it.toString() },
+                    caption = "How many pages ahead to fetch. Applies everywhere, not just here.",
+                ) { picked ->
+                    picked.toIntOrNull()?.let(onPreload)
                 }
             }
         }
-
-        Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = onSaveDefault, modifier = Modifier.weight(1f)) { Text("Save as default") }
-            TextButton(onClick = onReset, modifier = Modifier.weight(1f)) { Text("Reset") }
-        }
+        ReaderSettingsFooter(
+            note = "\"Save as default\" applies these to every book without its own settings.",
+            onSaveDefault = onSaveDefault,
+            onReset = onReset,
+        )
     }
 }
 
-@Composable
-internal fun SegRow(label: String, value: String, options: List<Pair<String, String>>, onSelect: (String) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            options.forEach { (v, l) ->
-                FilterChip(selected = value == v, onClick = { onSelect(v) }, label = { Text(l) })
-            }
-        }
-    }
-}
+/** Page backgrounds as the colours themselves — the same three [bgColor] paints behind a page. */
+private val PAGE_BG_SWATCHES = listOf(
+    ReaderSwatch(BG_WHITE, "White", bgColor(BG_WHITE)),
+    ReaderSwatch(BG_GRAY, "Gray", bgColor(BG_GRAY)),
+    ReaderSwatch(BG_BLACK, "Black", bgColor(BG_BLACK)),
+)
 
 // ── Auto-detect ──────────────────────────────────────────────────────────────────────────────────
 // Kept in step with the web reader's ImageReader.vue — same thresholds, same verdicts.

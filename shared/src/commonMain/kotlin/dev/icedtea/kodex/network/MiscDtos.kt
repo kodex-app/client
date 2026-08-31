@@ -84,6 +84,32 @@ data class CustomFontDto(
     val createdDate: String? = null,
 )
 
+/**
+ * A reader font shipped with the server — the same six OFL faces the web reader offers. The catalog
+ * (and every @font-face descriptor in it) comes from the server rather than a table of our own, so the
+ * app renders exactly the font a book was configured with in the browser.
+ */
+@Serializable
+data class BundledFontDto(
+    /** Stored in prefs as `bundled:<id>`. */
+    val id: String,
+    /** CSS font-family to declare and apply. */
+    val family: String = "",
+    /** Generic family to fall back to until the woff2 has loaded. */
+    val fallback: String = "serif",
+    val faces: List<BundledFontFaceDto> = emptyList(),
+)
+
+/** One @font-face of a [BundledFontDto]; [file] is fetched through the reader host's font proxy. */
+@Serializable
+data class BundledFontFaceDto(
+    val file: String,
+    val weight: Int = 400,
+    val style: String = "normal",
+    /** Keeps the latin and vietnamese subsets from overriding one another. */
+    val unicodeRange: String = "",
+)
+
 /** A series-level bookmark (aggregated across the series' books). */
 @Serializable
 data class SeriesBookmarkDto(

@@ -61,17 +61,34 @@ function customFaceRule(font) {
 }
 
 /**
- * Resolves a stored `fontFamily` into the CSS the reader needs. The web additionally ships six OFL
- * faces as bundled webfonts; the app doesn't carry those megabytes, so `bundled:<id>` degrades to a
- * plain family name — it renders if the platform happens to have the face and falls back to serif
- * otherwise. That keeps prefs written in the browser readable here instead of erroring on them.
+ * The OFL faces the server ships, fetched through the host the same way an upload is — the app
+ * carries no font files of its own, and a bare family name would only render on a device that happened
+ * to have the face installed. `CONFIG.bundledFonts` is the server's own catalog (id, family, fallback
+ * and every @font-face descriptor), so the subsets and unicode-ranges here are whatever it serves
+ * rather than a table this file would have to keep in step.
  */
+function bundledFacesCss(font) {
+  return (font.faces || [])
+    .map((face) => {
+      const url = new URL(`./bundled-font/${encodeURIComponent(face.file)}`, location.href).href
+      return (
+        `@font-face{font-family:'${font.family}';font-style:${face.style || 'normal'};` +
+        `font-weight:${face.weight || 400};font-display:swap;src:url('${url}') format('woff2');` +
+        (face.unicodeRange ? `unicode-range:${face.unicodeRange};` : '') +
+        '}'
+      )
+    })
+    .join('')
+}
+
+/** Resolves a stored `fontFamily` into the CSS the reader needs. Values are the web reader's. */
 function resolveFont(value, fonts) {
   if (!value || value === 'publisher') return { faceCss: '', stack: null }
   if (GENERIC_STACKS[value]) return { faceCss: '', stack: GENERIC_STACKS[value] }
   if (value.startsWith('bundled:')) {
-    const name = value.slice('bundled:'.length).replace(/-/g, ' ')
-    return { faceCss: '', stack: `'${name}', serif` }
+    const id = value.slice('bundled:'.length)
+    const font = (CONFIG.bundledFonts || []).find((f) => f.id === id)
+    if (font) return { faceCss: bundledFacesCss(font), stack: `'${font.family}', ${font.fallback || 'serif'}` }
   }
   if (value.startsWith('custom:')) {
     const id = value.slice('custom:'.length)

@@ -32,8 +32,17 @@ const val PAGE_ANIM_NONE = "none"
 
 val EBOOK_ANIMS = listOf(PAGE_ANIM_SLIDE, PAGE_ANIM_FLIP, PAGE_ANIM_NONE)
 
-/** `publisher` keeps the book's own fonts; otherwise `serif`/`sans`/`mono` or `custom:<fontId>`. */
+/**
+ * `publisher` keeps the book's own fonts; otherwise `bundled:<id>` (an OFL face the server ships) or
+ * `custom:<fontId>` (one the user uploaded). Both are fetched from the server — see `reader.js`.
+ */
 const val FONT_PUBLISHER = "publisher"
+
+/**
+ * The generic system stacks the reader used to offer. `reader.js` still renders them so a pref written
+ * by an older client keeps working, and the picker shows one only while it is the current choice.
+ */
+val LEGACY_FONT_STACKS = mapOf("serif" to "Serif", "sans" to "Sans", "mono" to "Mono")
 
 const val FONT_SIZE_MIN = 70
 const val FONT_SIZE_MAX = 250

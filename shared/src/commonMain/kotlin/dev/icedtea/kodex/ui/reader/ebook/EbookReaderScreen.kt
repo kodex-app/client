@@ -6,7 +6,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
@@ -17,6 +16,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -48,7 +48,6 @@ import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.RecordVoiceOver
-import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
@@ -65,7 +64,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -89,6 +87,7 @@ import androidx.compose.ui.unit.dp
 import dev.icedtea.kodex.auth.SessionManager
 import dev.icedtea.kodex.data.AppSettings
 import dev.icedtea.kodex.network.BookmarkDto
+import dev.icedtea.kodex.network.BundledFontDto
 import dev.icedtea.kodex.network.CustomFontDto
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.platform.StatusBarIcons
@@ -104,6 +103,17 @@ import dev.icedtea.kodex.ui.reader.ReaderChapterNav
 import dev.icedtea.kodex.ui.reader.ReadModeButton
 import dev.icedtea.kodex.ui.reader.ReaderEdge
 import dev.icedtea.kodex.ui.reader.ReaderModeOption
+import dev.icedtea.kodex.ui.reader.ReaderSettingsCard
+import dev.icedtea.kodex.ui.reader.ReaderSettingsChips
+import dev.icedtea.kodex.ui.reader.ReaderSettingsFooter
+import dev.icedtea.kodex.ui.reader.ReaderSettingsHeader
+import dev.icedtea.kodex.ui.reader.ReaderSettingsSegmented
+import dev.icedtea.kodex.ui.reader.ReaderSettingsSlider
+import dev.icedtea.kodex.ui.reader.ReaderSettingsStepper
+import dev.icedtea.kodex.ui.reader.ReaderSettingsSwatches
+import dev.icedtea.kodex.ui.reader.ReaderSettingsTabs
+import dev.icedtea.kodex.ui.reader.ReaderSwatch
+import dev.icedtea.kodex.ui.reader.SheetGutter
 import dev.icedtea.kodex.ui.reader.ToolbarButton
 import dev.icedtea.kodex.ui.reader.disabled
 import dev.icedtea.kodex.ui.reader.readerBarColor
@@ -201,6 +211,7 @@ fun EbookReaderScreen(
     var prefs by remember { mutableStateOf<EbookPrefs?>(null) }
     var defaultPrefs by remember { mutableStateOf(EbookPrefs()) }
     var fonts by remember { mutableStateOf<List<CustomFontDto>>(emptyList()) }
+    var bundledFonts by remember { mutableStateOf<List<BundledFontDto>>(emptyList()) }
     var handle by remember { mutableStateOf<EbookHostHandle?>(null) }
     var failure by remember { mutableStateOf<String?>(null) }
     // Both platforms report Ready immediately, but the gate stays: it is what guarantees the WebView
@@ -346,6 +357,10 @@ fun EbookReaderScreen(
         val resolved = resolveEbookPrefs(api, s.baseUrl, s.apiKey, source.seriesId)
         defaultPrefs = resolved.default
         fonts = runCatching { api.customFonts(s.baseUrl, s.apiKey) }.getOrDefault(emptyList())
+        // The shipped OFL faces come from the server too — same files the web reader uses, so a book
+        // set to one of them in the browser renders in that font here instead of a system substitute.
+        // An older server without the endpoint just leaves the list empty.
+        bundledFonts = runCatching { api.bundledFonts(s.baseUrl, s.apiKey) }.getOrDefault(emptyList())
         prefs = resolved.effective
     }
 
@@ -373,6 +388,37 @@ fun EbookReaderScreen(
                                 put("id", f.id)
                                 put("family", f.family)
                                 put("format", f.format)
+                            },
+                        )
+                    }
+                },
+            )
+            // Handed over whole: `reader.js` builds the @font-face rules straight from the server's
+            // descriptors, so re-subsetting a face on the server needs no change out here.
+            put(
+                "bundledFonts",
+                buildJsonArray {
+                    bundledFonts.forEach { f ->
+                        add(
+                            buildJsonObject {
+                                put("id", f.id)
+                                put("family", f.family)
+                                put("fallback", f.fallback)
+                                put(
+                                    "faces",
+                                    buildJsonArray {
+                                        f.faces.forEach { face ->
+                                            add(
+                                                buildJsonObject {
+                                                    put("file", face.file)
+                                                    put("weight", face.weight)
+                                                    put("style", face.style)
+                                                    put("unicodeRange", face.unicodeRange)
+                                                },
+                                            )
+                                        }
+                                    },
+                                )
                             },
                         )
                     }
@@ -807,6 +853,7 @@ fun EbookReaderScreen(
             EbookSettingsSheet(
                 prefs = prefs ?: EbookPrefs(),
                 fonts = fonts,
+                bundledFonts = bundledFonts,
                 orientation = orientation.orientation,
                 onOrientation = orientation::set,
                 pageAnim = pageAnim,
@@ -1287,6 +1334,7 @@ private fun BookmarksSheet(
 private fun EbookSettingsSheet(
     prefs: EbookPrefs,
     fonts: List<CustomFontDto>,
+    bundledFonts: List<BundledFontDto>,
     orientation: dev.icedtea.kodex.platform.ScreenOrientation,
     onOrientation: (dev.icedtea.kodex.platform.ScreenOrientation) -> Unit,
     pageAnim: String,
@@ -1295,149 +1343,158 @@ private fun EbookSettingsSheet(
     onSaveDefault: () -> Unit,
     onReset: () -> Unit,
 ) {
-    Column(
-        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        Text("Display", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-
-        ThemeRow(prefs.theme) { onChange(prefs.copy(theme = it)) }
-
-        ChipRow("Layout", prefs.flow, listOf(FLOW_PAGINATED to "Paged", FLOW_SCROLLED to "Scrolled")) {
-            onChange(prefs.copy(flow = it))
+    var tab by remember { mutableStateOf(0) }
+    Column(Modifier.fillMaxWidth()) {
+        ReaderSettingsHeader("Display", "Applies to this series")
+        // The theme swatches sit above the tabs rather than inside one: it is the setting people
+        // reopen this sheet for, and the only one whose effect is visible without reading a label.
+        Column(Modifier.padding(horizontal = SheetGutter)) {
+            ReaderSettingsSwatches("Theme", prefs.theme, EBOOK_THEME_SWATCHES) { onChange(prefs.copy(theme = it)) }
         }
-        // Column count and the turn animation only mean anything when the text is paginated.
-        if (prefs.flow == FLOW_PAGINATED) {
-            ChipRow("Columns", prefs.columns, listOf(COLUMNS_AUTO to "Auto", COLUMNS_ONE to "One", COLUMNS_TWO to "Two")) {
-                onChange(prefs.copy(columns = it))
+        Spacer(Modifier.height(16.dp))
+        // Two short pages instead of one twelve-control scroll: text choices are made together and
+        // page choices are made together, and neither half now pushes the other off the screen.
+        ReaderSettingsTabs(EBOOK_SETTINGS_TABS, tab) { tab = it }
+        Column(
+            // fill = false so a short tab keeps the sheet short; the cap in KodexBottomSheet still
+            // turns a long one into a scroll rather than pushing the footer off the bottom.
+            Modifier.weight(1f, fill = false)
+                .verticalScroll(rememberScrollState())
+                .padding(start = SheetGutter, end = SheetGutter, top = 14.dp, bottom = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (tab == 0) {
+                EbookTextSettings(prefs, fonts, bundledFonts, onChange)
+            } else {
+                EbookPageSettings(prefs, pageAnim, onPageAnim, orientation, onOrientation, onChange)
             }
-            // Unlike the rest of the sheet this one is a device setting, not a per-series override —
-            // hence its own callback rather than a copy() of the prefs.
-            ChipRow(
-                "Page turn",
-                pageAnim,
-                listOf(PAGE_ANIM_SLIDE to "Slide", PAGE_ANIM_FLIP to "Flip", PAGE_ANIM_NONE to "None"),
-                onSelect = onPageAnim,
-            )
         }
+        ReaderSettingsFooter(
+            note = "\"Save as default\" applies these to every book without its own settings.",
+            onSaveDefault = onSaveDefault,
+            onReset = onReset,
+        )
+    }
+}
 
-        val fontOptions = buildList {
-            add(FONT_PUBLISHER to "Publisher")
-            add("serif" to "Serif")
-            add("sans" to "Sans")
-            add("mono" to "Mono")
-            fonts.forEach { add("custom:${it.id}" to it.family.ifBlank { "Custom" }) }
-        }
-        ChipRow("Font", prefs.fontFamily, fontOptions) { onChange(prefs.copy(fontFamily = it)) }
+private val EBOOK_SETTINGS_TABS = listOf("Text", "Page")
 
-        StepperRow(
+/** Reading themes as swatches, so the choice is visible rather than named. */
+private val EBOOK_THEME_SWATCHES = listOf(
+    ReaderSwatch(THEME_LIGHT, "Light", ebookPageColor(THEME_LIGHT), ebookTextColor(THEME_LIGHT), "Aa"),
+    ReaderSwatch(THEME_SEPIA, "Sepia", ebookPageColor(THEME_SEPIA), ebookTextColor(THEME_SEPIA), "Aa"),
+    ReaderSwatch(THEME_DARK, "Dark", ebookPageColor(THEME_DARK), ebookTextColor(THEME_DARK), "Aa"),
+)
+
+/** Everything about the type itself: which face, how big, how loose, how it sits on the line. */
+@Composable
+private fun EbookTextSettings(
+    prefs: EbookPrefs,
+    fonts: List<CustomFontDto>,
+    bundledFonts: List<BundledFontDto>,
+    onChange: (EbookPrefs) -> Unit,
+) {
+    // The same list the web offers: the book's own fonts, the server's shipped faces, then the
+    // user's uploads. The generic `serif`/`sans`/`mono` stacks are legacy values — still rendered
+    // when a stored pref names one, but only shown here so that pref has a visible selection.
+    val fontOptions = buildList {
+        add(FONT_PUBLISHER to "Publisher")
+        bundledFonts.forEach { add("bundled:${it.id}" to it.family.ifBlank { it.id }) }
+        fonts.forEach { add("custom:${it.id}" to it.family.ifBlank { "Custom" }) }
+        val legacy = LEGACY_FONT_STACKS[prefs.fontFamily]
+        if (legacy != null) add(prefs.fontFamily to legacy)
+    }
+    ReaderSettingsCard {
+        ReaderSettingsChips("Font", prefs.fontFamily, fontOptions) { onChange(prefs.copy(fontFamily = it)) }
+        ReaderSettingsStepper(
             label = "Text size",
             value = "${prefs.fontSize}%",
+            canDecrease = prefs.fontSize > FONT_SIZE_MIN,
+            canIncrease = prefs.fontSize < FONT_SIZE_MAX,
             onDecrease = { onChange(prefs.copy(fontSize = (prefs.fontSize - 10).coerceAtLeast(FONT_SIZE_MIN))) },
             onIncrease = { onChange(prefs.copy(fontSize = (prefs.fontSize + 10).coerceAtMost(FONT_SIZE_MAX))) },
         )
-        StepperRow(
+        ReaderSettingsStepper(
             label = "Line height",
             value = "${prefs.lineHeight}%",
+            canDecrease = prefs.lineHeight > LINE_HEIGHT_MIN,
+            canIncrease = prefs.lineHeight < LINE_HEIGHT_MAX,
             onDecrease = { onChange(prefs.copy(lineHeight = (prefs.lineHeight - 10).coerceAtLeast(LINE_HEIGHT_MIN))) },
             onIncrease = { onChange(prefs.copy(lineHeight = (prefs.lineHeight + 10).coerceAtMost(LINE_HEIGHT_MAX))) },
         )
-
-        ChipRow("Alignment", prefs.textAlign, listOf(ALIGN_AUTO to "Auto", ALIGN_LEFT to "Left", ALIGN_JUSTIFY to "Justify")) {
+    }
+    ReaderSettingsCard {
+        ReaderSettingsSegmented(
+            "Alignment",
+            prefs.textAlign,
+            listOf(ALIGN_AUTO to "Auto", ALIGN_LEFT to "Left", ALIGN_JUSTIFY to "Justify"),
+        ) {
             onChange(prefs.copy(textAlign = it))
         }
-        ChipRow(
-            "Indent",
+        ReaderSettingsSegmented(
+            "Paragraph indent",
             prefs.indent?.toString() ?: "auto",
             listOf("auto" to "Auto", "0.0" to "None", "1.0" to "1em", "2.0" to "2em"),
         ) {
             onChange(prefs.copy(indent = if (it == "auto") null else it.toDoubleOrNull()))
         }
+    }
+}
 
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Margin", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
-            Slider(
-                value = prefs.margin.toFloat(),
-                onValueChange = { onChange(prefs.copy(margin = it.roundToInt().coerceIn(MARGIN_MIN, MARGIN_MAX))) },
-                valueRange = MARGIN_MIN.toFloat()..MARGIN_MAX.toFloat(),
-                steps = (MARGIN_MAX / 8) - 1,
+/** How the text is laid out on the screen: flow, columns, turn animation, margin, orientation. */
+@Composable
+private fun EbookPageSettings(
+    prefs: EbookPrefs,
+    pageAnim: String,
+    onPageAnim: (String) -> Unit,
+    orientation: dev.icedtea.kodex.platform.ScreenOrientation,
+    onOrientation: (dev.icedtea.kodex.platform.ScreenOrientation) -> Unit,
+    onChange: (EbookPrefs) -> Unit,
+) {
+    ReaderSettingsCard {
+        ReaderSettingsSegmented("Layout", prefs.flow, listOf(FLOW_PAGINATED to "Paged", FLOW_SCROLLED to "Scrolled")) {
+            onChange(prefs.copy(flow = it))
+        }
+        // Column count and the turn animation only mean anything when the text is paginated.
+        if (prefs.flow == FLOW_PAGINATED) {
+            ReaderSettingsSegmented(
+                "Columns",
+                prefs.columns,
+                listOf(COLUMNS_AUTO to "Auto", COLUMNS_ONE to "One", COLUMNS_TWO to "Two"),
+            ) {
+                onChange(prefs.copy(columns = it))
+            }
+            // Unlike the rest of the sheet this one is a device setting, not a per-series override —
+            // hence its own callback rather than a copy() of the prefs.
+            ReaderSettingsSegmented(
+                "Page turn",
+                pageAnim,
+                listOf(PAGE_ANIM_SLIDE to "Slide", PAGE_ANIM_FLIP to "Flip", PAGE_ANIM_NONE to "None"),
+                caption = "Applies to every book on this device.",
+                onSelect = onPageAnim,
             )
         }
-
+        ReaderSettingsSlider(
+            label = "Margin",
+            value = prefs.margin.toFloat(),
+            valueText = "${prefs.margin} px",
+            valueRange = MARGIN_MIN.toFloat()..MARGIN_MAX.toFloat(),
+            steps = (MARGIN_MAX / 8) - 1,
+        ) {
+            onChange(prefs.copy(margin = it.roundToInt().coerceIn(MARGIN_MIN, MARGIN_MAX)))
+        }
+    }
+    ReaderSettingsCard {
         // Lives here now that the toolbar's rotation button became the reading-mode picker. Unlike the
         // rest of the sheet this isn't a stored preference — it lasts as long as the reader is open.
-        ChipRow(
+        ReaderSettingsSegmented(
             "Screen orientation",
             orientation.name,
             dev.icedtea.kodex.platform.ScreenOrientation.entries.map { it.name to it.name.lowercase().replaceFirstChar(Char::uppercase) },
+            caption = "Lasts until you leave the reader.",
         ) { picked ->
             onOrientation(dev.icedtea.kodex.platform.ScreenOrientation.valueOf(picked))
         }
-
-        Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = onSaveDefault, modifier = Modifier.weight(1f)) { Text("Save as default") }
-            TextButton(onClick = onReset, modifier = Modifier.weight(1f)) { Text("Reset") }
-        }
-        Text(
-            "Changes apply to this series. \"Save as default\" applies them to every book without its own setting.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodySmall,
-        )
-    }
-}
-
-/** Reading-theme picker, drawn as real swatches so the choice is visible rather than named. */
-@Composable
-private fun ThemeRow(value: String, onSelect: (String) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("Theme", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            listOf(THEME_LIGHT to "Light", THEME_SEPIA to "Sepia", THEME_DARK to "Dark").forEach { (id, label) ->
-                val selected = value == id
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(
-                        Modifier.size(width = 54.dp, height = 48.dp)
-                            .background(ebookPageColor(id), RoundedCornerShape(8.dp))
-                            .border(
-                                width = if (selected) 2.dp else 1.dp,
-                                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                                shape = RoundedCornerShape(8.dp),
-                            )
-                            .clickable { onSelect(id) },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text("Aa", color = ebookTextColor(id), style = MaterialTheme.typography.labelMedium)
-                    }
-                    Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ChipRow(label: String, value: String, options: List<Pair<String, String>>, onSelect: (String) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
-        Row(
-            Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            options.forEach { (v, l) ->
-                FilterChip(selected = value == v, onClick = { onSelect(v) }, label = { Text(l) })
-            }
-        }
-    }
-}
-
-/** Compact [−] value [+] row, for the settings that step rather than slide. */
-@Composable
-private fun StepperRow(label: String, value: String, onDecrease: () -> Unit, onIncrease: () -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
-        IconButton(onClick = onDecrease) { Icon(Icons.Outlined.Remove, "Decrease $label") }
-        Text(value, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.width(56.dp), textAlign = TextAlign.Center)
-        IconButton(onClick = onIncrease) { Icon(Icons.Outlined.Add, "Increase $label") }
     }
 }
 
