@@ -13,11 +13,26 @@ name: Build & publish APK
 # The dev channel is a separate package signed with its own key, so it installs alongside the
 # production app and its updates never collide with the released signature.
 
+# A manual run (Actions -> Build & publish APK -> Run workflow) takes the same three channels: leave
+# `channel` on auto to get whatever the picked ref would have produced on a push, or force one.
+# Manual runs publish nothing unless `publish` is ticked, so dispatching dev twice to test something
+# does not churn the rolling prerelease.
+
 on:
   push:
     branches: [main, dev]
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      channel:
+        description: Build channel (auto decides from the ref, exactly as a push would)
+        type: choice
+        options: [auto, main, dev, release]
+        default: auto
+      publish:
+        description: Publish a GitHub Release (the release channel needs a v* tag ref)
+        type: boolean
+        default: false
 
 concurrency:
   group: build-${{ github.ref }}
@@ -35,19 +50,46 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Everything ref-dependent is decided once, here, so the later steps stay dumb.
+      # Everything ref-dependent is decided once, here, so the later steps stay dumb. A manual run may
+      # override the channel and opt into publishing; a push behaves exactly as it always did.
       - name: Resolve build channel
         id: channel
+        env:
+          CHANNEL_INPUT: ${{ inputs.channel }}
+          PUBLISH_INPUT: ${{ inputs.publish }}
         run: |
           set -euo pipefail
-          # An empty tag means "build only, publish nothing".
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            channel=release; tag="${GITHUB_REF#refs/tags/}"; version="$tag"; app_id_suffix=""
-          elif [[ "${GITHUB_REF}" == refs/heads/dev ]]; then
-            channel=dev; tag=dev; version="dev-$(git rev-parse --short HEAD)"; app_id_suffix=".dev"
-          else
-            channel=main; tag=""; version="main-$(git rev-parse --short HEAD)"; app_id_suffix=""
+          # Both inputs are empty on a push, which lands on auto/publish.
+          channel="${CHANNEL_INPUT:-auto}"
+          if [[ "${channel}" == auto ]]; then
+            if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+              channel=release
+            elif [[ "${GITHUB_REF}" == refs/heads/dev ]]; then
+              channel=dev
+            else
+              channel=main
+            fi
           fi
+          if [[ "${GITHUB_EVENT_NAME}" == workflow_dispatch ]]; then
+            publish="${PUBLISH_INPUT}"
+          else
+            publish=true
+          fi
+          # An empty tag means "build only, publish nothing".
+          case "${channel}" in
+            release)
+              # A versioned release is only ever cut from its tag, dispatch or not.
+              if [[ "${GITHUB_REF}" != refs/tags/* ]]; then
+                echo "The release channel needs a v* tag ref; got ${GITHUB_REF}." >&2
+                exit 1
+              fi
+              tag="${GITHUB_REF#refs/tags/}"; version="$tag"; app_id_suffix="" ;;
+            dev)
+              tag=dev; version="dev-$(git rev-parse --short HEAD)"; app_id_suffix=".dev" ;;
+            main)
+              tag=""; version="main-$(git rev-parse --short HEAD)"; app_id_suffix="" ;;
+          esac
+          [[ "${publish}" == true ]] || tag=""
           {
             echo "channel=${channel}"
             echo "tag=${tag}"
