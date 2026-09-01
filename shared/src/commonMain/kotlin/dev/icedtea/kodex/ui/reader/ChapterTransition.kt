@@ -48,14 +48,16 @@ internal fun ChapterTransitionPage(
     background: Color = MaterialTheme.colorScheme.surface,
 ) {
     // The sibling's content is fetched by the screen that replaces this one, so the spinner runs from
-    // the moment the jump is committed until that screen takes over.
+    // the moment the jump is committed until that screen takes over. The tap stays live while it does:
+    // whatever the jump is waiting on, a page that has stopped answering taps is a page nobody can
+    // leave, and committing twice only ever asks for the same chapter twice.
     var committing by remember { mutableStateOf(false) }
     val content = if (background.luminance() > 0.5f) Color(0xFF14161A) else Color(0xFFF2F3F5)
     val contentVariant = content.copy(alpha = 0.72f)
     Column(
         modifier.fillMaxSize()
             .background(background)
-            .clickable(enabled = !committing) { committing = true; onContinue() }
+            .clickable { committing = true; onContinue() }
             .padding(horizontal = 32.dp),
         verticalArrangement = Arrangement.Center,
     ) {

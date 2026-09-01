@@ -1,8 +1,10 @@
 package dev.icedtea.kodex.ui.reader
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -12,6 +14,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -41,6 +44,7 @@ import dev.icedtea.kodex.ui.reader.ebook.EbookOrigin
 import dev.icedtea.kodex.ui.reader.ebook.EbookReaderScreen
 import dev.icedtea.kodex.ui.reader.ebook.EbookSource
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -53,8 +57,11 @@ private sealed interface ReaderState {
     /**
      * [progress] is fetched separately from the book: `BookDto.readProgress` carries only page and
      * completed, and a reflowable book resumes from the CFI that only `/read-progress` returns.
+     *
+     * [complete] is false while the reader is drawing a book opened straight from its sibling row —
+     * enough to render pages, with [progress] and the bookmarks still in flight behind it.
      */
-    data class Ready(val book: BookDto, val progress: ReadProgressDto?) : ReaderState
+    data class Ready(val book: BookDto, val progress: ReadProgressDto?, val complete: Boolean = true) : ReaderState
 }
 
 /** The book currently open; [edge] is set when arriving from a sibling (start of it / end of it). */
@@ -106,16 +113,28 @@ fun ReaderScreen(
     // while you are still reading the tail of the current book - the same trick Mihon's
     // ReaderViewModel.preload plays, and what keeps a chapter turn from starting at a blank screen.
     val loaded = remember(bookId) { mutableStateMapOf<String, BookBundle>() }
-    val loading = remember(bookId) { mutableSetOf<String>() }
+    val inFlight = remember(bookId) { mutableMapOf<String, Deferred<Result<BookBundle>>>() }
+
+    /**
+     * One fetch per book, shared by the preloader and by opening it for real. Turning a book while its
+     * preload is still running then waits on that request rather than firing a second copy of it.
+     *
+     * The result is carried rather than thrown: a failed `async` would take the screen's whole scope
+     * down with it, and a book that won't load is something the caller decides what to do about.
+     */
+    fun bundleAsync(s: ServerConnection, id: String): Deferred<Result<BookBundle>> =
+        inFlight.getOrPut(id) {
+            scope.async {
+                runCatching { loadBundle(api, s, id) }
+                    .onSuccess { loaded[id] = it }
+                    .also { inFlight.remove(id) } // so a failure can be retried by opening it again
+            }
+        }
 
     fun preloadBook(id: String) {
         val s = server ?: return
-        if (loaded.containsKey(id) || !loading.add(id)) return
-        scope.launch {
-            runCatching { loadBundle(api, s, id) }
-                .onSuccess { loaded[id] = it }
-                .onFailure { loading.remove(id) } // opening it for real will try again, and report why
-        }
+        if (loaded.containsKey(id)) return
+        bundleAsync(s, id)
     }
 
     suspend fun reloadBookmarks(s: ServerConnection, id: String) {
@@ -125,14 +144,24 @@ fun ReaderScreen(
 
     LaunchedEffect(target.id, server?.id) {
         val s = server ?: return@LaunchedEffect
+        val open = state as? ReaderState.Ready
         // Already seeded from the preload cache by openBook - refetching would only put the spinner
         // back for the length of a round trip that has already happened.
-        if ((state as? ReaderState.Ready)?.book?.id == target.id) return@LaunchedEffect
-        state = ReaderState.Loading
-        bookmarks = emptyList()
-        runCatching { loadBundle(api, s, target.id) }
-            .onSuccess { loaded[target.id] = it; bookmarks = it.bookmarks; state = ReaderState.Ready(it.book, it.progress) }
-            .onFailure { state = ReaderState.Error(it.friendlyMessage()) }
+        if (open?.book?.id == target.id && open.complete) return@LaunchedEffect
+        // A book opened from its sibling row is already on screen showing pages; it only needs the
+        // bundle filled in behind it, so it must not be thrown back to the loading shell here.
+        if (open?.book?.id != target.id) {
+            state = ReaderState.Loading
+            bookmarks = emptyList()
+        }
+        val bundle = loaded[target.id]?.let { Result.success(it) } ?: bundleAsync(s, target.id).await()
+        bundle
+            .onSuccess { bookmarks = it.bookmarks; state = ReaderState.Ready(it.book, it.progress) }
+            .onFailure {
+                // Only a book with nothing on screen becomes an error. One already being read keeps
+                // its pages — those come from their own requests — and simply goes without bookmarks.
+                if ((state as? ReaderState.Ready)?.book?.id != target.id) state = ReaderState.Error(it.friendlyMessage())
+            }
     }
     // Sibling books for cross-chapter navigation (ordered by number ascending by the API).
     //
@@ -150,15 +179,24 @@ fun ReaderScreen(
             ?.let { it.title.ifBlank { it.name } }?.takeIf { it.isNotBlank() }
     }
 
-    // Swap the open book, in one frame when it has been preloaded: seeding the new state alongside the
-    // new target is what turns the swap into a page turn instead of a trip through the black loading
-    // shell. A book nobody warmed still falls back to Loading rather than rendering the new book's
-    // pages against the old page count.
+    // Swap the open book, in one frame: seeding the new state alongside the new target is what turns
+    // the swap into a page turn instead of a trip through the black loading shell.
     fun openBook(b: BookDto, edge: ReaderEdge) {
         val ready = loaded[b.id]
         target = BookTarget(b.id, edge)
-        state = if (ready != null) ReaderState.Ready(ready.book, ready.progress) else ReaderState.Loading
         bookmarks = ready?.bookmarks.orEmpty()
+        state = when {
+            ready != null -> ReaderState.Ready(ready.book, ready.progress)
+            // Not warmed yet — open on the sibling row anyway. It already carries everything a page
+            // needs (page count, media type), and arriving from a boundary pins the page at one end,
+            // so the progress the bundle would bring has nothing left to say. The pages then load as
+            // pages always do, each behind its own spinner, instead of the turn being held at a black
+            // screen until a round trip that only fills in bookmarks comes back.
+            b.pageCount > 0 -> ReaderState.Ready(b, progress = null, complete = false)
+            // No page count on the row (a reflowable book, or a payload without one): there is nothing
+            // to draw until the book itself is fetched.
+            else -> ReaderState.Loading
+        }
     }
 
     when (val st = state) {
@@ -214,7 +252,7 @@ fun ReaderScreen(
                             reloadBookmarks(s, book.id)
                         }
                     }
-                    val source = remember(current, s.baseUrl, siblings, seriesTitle, bookmarkPages, book.pageCount) {
+                    val source = remember(current, s.baseUrl, siblings, seriesTitle, bookmarkPages, book.pageCount, st.complete) {
                         val idx = siblings.indexOfFirst { it.id == book.id }
                         val nav = if (siblings.size > 1 && idx >= 0) {
                             fun ref(b: BookDto?) = b?.let { sib ->
@@ -251,7 +289,11 @@ fun ReaderScreen(
                             incognito = incognito,
                             nav = nav,
                             webUrl = "${s.baseUrl}/books/${book.id}/read",
-                            bookmarks = ReaderBookmarks(bookmarkPages, toggleBookmark),
+                            // Held back until this book's own bookmarks have arrived. A book opened
+                            // from its sibling row has none loaded yet, and the server does not merge
+                            // duplicates — bookmarking a page it already holds one for would file a
+                            // second copy rather than clearing the first.
+                            bookmarks = if (st.complete) ReaderBookmarks(bookmarkPages, toggleBookmark) else null,
                         )
                     }
                     // The reader keeps its own page state, so a book swap has to remount it - but its
@@ -296,9 +338,12 @@ internal fun BoxScope.Spinner() =
     CircularProgressIndicator(Modifier.align(Alignment.Center), color = Color.White)
 
 @Composable
-internal fun ReaderMessage(text: String) {
+internal fun ReaderMessage(text: String, onRetry: (() -> Unit)? = null) {
     Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-        Text(text, color = Color.White, textAlign = TextAlign.Center)
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(text, color = Color.White, textAlign = TextAlign.Center)
+            if (onRetry != null) TextButton(onClick = onRetry) { Text("Try again", color = Color.White) }
+        }
     }
 }
 

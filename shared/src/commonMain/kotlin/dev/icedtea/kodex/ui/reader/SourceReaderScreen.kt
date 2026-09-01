@@ -22,6 +22,7 @@ import dev.icedtea.kodex.ui.reader.ebook.EbookOrigin
 import dev.icedtea.kodex.ui.reader.ebook.EbookReaderScreen
 import dev.icedtea.kodex.ui.reader.ebook.EbookSource
 import io.ktor.http.encodeURLParameter
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -115,16 +116,31 @@ fun SourceReaderScreen(
     // into pages. Warmed by [ReaderChapterRef.preload] near either end of the current chapter, the way
     // Mihon's ReaderViewModel.preload warms its adjacent chapters while you read.
     val loaded = remember(chapterId) { mutableStateMapOf<String, SourceReaderState.Ready>() }
-    val loading = remember(chapterId) { mutableSetOf<String>() }
+    val inFlight = remember(chapterId) { mutableMapOf<String, Deferred<Result<SourceReaderState.Ready>>>() }
+    // Bumped by "Try again" on the error screen, which is what re-runs the load below.
+    var attempt by remember(chapterId) { mutableStateOf(0) }
+
+    /**
+     * One fetch per chapter, shared by the preloader and by opening it for real: the page count makes
+     * the server reach out to the remote source, so committing a chapter turn while its preload is
+     * still running waits on that request instead of paying for a second one.
+     *
+     * The result is carried rather than thrown — a failed `async` would take the screen's whole scope
+     * with it.
+     */
+    fun chapterAsync(s: ServerConnection, id: String): Deferred<Result<SourceReaderState.Ready>> =
+        inFlight.getOrPut(id) {
+            scope.async {
+                runCatching { loadChapter(api, s, providerId, id) }
+                    .onSuccess { loaded[id] = it }
+                    .also { inFlight.remove(id) } // so a failure can be retried by opening it again
+            }
+        }
 
     fun preloadChapter(id: String) {
         val s = server ?: return
-        if (loaded.containsKey(id) || !loading.add(id)) return
-        scope.launch {
-            runCatching { loadChapter(api, s, providerId, id) }
-                .onSuccess { loaded[id] = it }
-                .onFailure { loading.remove(id) } // opening it for real will try again, and report why
-        }
+        if (loaded.containsKey(id)) return
+        chapterAsync(s, id)
     }
 
     // Sibling chapters for cross-chapter navigation. Both entry points have a chapter list available:
@@ -194,7 +210,7 @@ fun SourceReaderScreen(
         }
     }
 
-    LaunchedEffect(target.id, server?.id, isNovel) {
+    LaunchedEffect(target.id, server?.id, isNovel, attempt) {
         val s = server ?: return@LaunchedEffect
         // Already seeded from the preload cache by openChapter - refetching would only put the spinner
         // back for the length of a round trip that has already happened.
@@ -211,9 +227,8 @@ fun SourceReaderScreen(
 
             false -> {
                 state = SourceReaderState.Loading
-                state = runCatching { loadChapter(api, s, providerId, target.id) }
-                    .onSuccess { loaded[target.id] = it }
-                    .getOrElse { SourceReaderState.Error(it.friendlyMessage()) }
+                val ready = loaded[target.id]?.let { Result.success(it) } ?: chapterAsync(s, target.id).await()
+                state = ready.getOrElse { SourceReaderState.Error(it.friendlyMessage()) }
             }
         }
     }
@@ -233,7 +248,10 @@ fun SourceReaderScreen(
     }
 
     when (val st = state) {
-        is SourceReaderState.Error -> ReaderShell(onBack) { ReaderMessage(st.message) }
+        // Retryable: a chapter the source failed to serve is otherwise a dead end you can only back
+        // out of, and the failure is usually the remote source having a bad minute rather than a
+        // chapter that will never load.
+        is SourceReaderState.Error -> ReaderShell(onBack) { ReaderMessage(st.message, onRetry = { attempt++ }) }
         is SourceReaderState.Loading -> ReaderShell(onBack) { Spinner() }
 
         is SourceReaderState.Ready -> {
