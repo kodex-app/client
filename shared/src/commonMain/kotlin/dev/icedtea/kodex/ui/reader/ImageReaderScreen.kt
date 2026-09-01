@@ -792,6 +792,9 @@ private fun PagedReader(
     }
 }
 
+/** Where a double tap lands. Deep enough to read small lettering, shallow enough to still place a panel. */
+private const val DOUBLE_TAP_SCALE = 2f
+
 @Composable
 private fun ZoomablePage(
     url: String,
@@ -829,15 +832,47 @@ private fun ZoomablePage(
     var offsetX by remember(url) { mutableStateOf(0f) }
     var offsetY by remember(url) { mutableStateOf(0f) }
     var widthPx by remember { mutableStateOf(1) }
+    var heightPx by remember { mutableStateOf(1) }
     LaunchedEffect(scale) { onZoomChange(scale > 1f) }
+
+    // How far the zoomed page may travel before blank space appears at an edge: at scale s the layer
+    // overhangs the viewport by (s - 1)/2 of it on each side. At 1x this pins the page back to centre.
+    fun clampOffset(x: Float, y: Float, atScale: Float): Offset {
+        val maxX = (atScale - 1f) * widthPx / 2f
+        val maxY = (atScale - 1f) * heightPx / 2f
+        return Offset(x.coerceIn(-maxX, maxX), y.coerceIn(-maxY, maxY))
+    }
 
     Box(
         Modifier
             .fillMaxSize()
-            .onSizeChanged { widthPx = it.width.coerceAtLeast(1) }
+            .onSizeChanged {
+                widthPx = it.width.coerceAtLeast(1)
+                heightPx = it.height.coerceAtLeast(1)
+            }
             .pointerInput(url, tapToTurn) {
                 detectTapGestures(
-                    onDoubleTap = { if (scale > 1f) { scale = 1f; offsetX = 0f; offsetY = 0f } else scale = 2f },
+                    onDoubleTap = { tap ->
+                        if (scale > 1f) {
+                            scale = 1f
+                            offsetX = 0f
+                            offsetY = 0f
+                        } else {
+                            // Zoom into what was tapped, not into the middle of the page. The layer
+                            // scales about the box's centre, so the tapped point only stays under the
+                            // finger if the layer also slides by how far that point is off centre,
+                            // times the zoom it just gained.
+                            val shift = 1f - DOUBLE_TAP_SCALE
+                            val moved = clampOffset(
+                                x = shift * (tap.x - widthPx / 2f),
+                                y = shift * (tap.y - heightPx / 2f),
+                                atScale = DOUBLE_TAP_SCALE,
+                            )
+                            offsetX = moved.x
+                            offsetY = moved.y
+                            scale = DOUBLE_TAP_SCALE
+                        }
+                    },
                     onTap = { pos ->
                         if (tapToTurn && scale <= 1f) {
                             val third = widthPx / 3f
@@ -863,7 +898,11 @@ private fun ZoomablePage(
                             val panChange = event.calculatePan()
                             if (zoomChange != 1f || panChange != Offset.Zero) {
                                 scale = (scale * zoomChange).coerceIn(1f, 5f)
-                                if (scale > 1f) { offsetX += panChange.x; offsetY += panChange.y } else { offsetX = 0f; offsetY = 0f }
+                                // Clamped rather than free: a pan that could drag the page off the
+                                // screen would also undo the anchoring a double-tap zoom just did.
+                                val moved = clampOffset(offsetX + panChange.x, offsetY + panChange.y, scale)
+                                offsetX = moved.x
+                                offsetY = moved.y
                                 event.changes.forEach { if (it.positionChanged()) it.consume() }
                             }
                         }
