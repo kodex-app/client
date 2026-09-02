@@ -16,6 +16,8 @@ kotlin {
         compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
         // The shared module ships the network-security config and launcher assets it needs.
         androidResources { enable = true }
+        // Plain JVM unit tests for commonTest — the settings parsers have no Android in them.
+        withHostTest {}
     }
 
     listOf(
@@ -29,6 +31,10 @@ kotlin {
     }
 
     sourceSets {
+        commonTest.dependencies {
+            implementation(kotlin("test"))
+        }
+
         commonMain.dependencies {
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)

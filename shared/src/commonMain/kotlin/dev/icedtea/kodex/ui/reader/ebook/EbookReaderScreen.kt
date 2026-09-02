@@ -96,6 +96,8 @@ import dev.icedtea.kodex.platform.TTS_RATES
 import dev.icedtea.kodex.platform.TtsVoice
 import dev.icedtea.kodex.ui.KodexBottomSheet
 import dev.icedtea.kodex.ui.collectAsStateSafe
+import dev.icedtea.kodex.ui.persistSetting
+import dev.icedtea.kodex.ui.rememberSnackbar
 import dev.icedtea.kodex.ui.reader.ChapterListSheet
 import dev.icedtea.kodex.ui.reader.ChapterTransitionPage
 import dev.icedtea.kodex.ui.reader.IncognitoBadge
@@ -205,6 +207,7 @@ fun EbookReaderScreen(
 ) {
     val server by session.activeServer.collectAsStateSafe()
     val scope = rememberCoroutineScope()
+    val snackbar = rememberSnackbar()
     val orientation = dev.icedtea.kodex.platform.rememberOrientationController()
     val openUrl = dev.icedtea.kodex.platform.rememberUrlOpener()
 
@@ -611,7 +614,10 @@ fun EbookReaderScreen(
         prefs = next
         call(prefsCommand(next.forPage(appIsDark)))
         val s = server ?: return
-        scope.launch { runCatching { saveEbookOverride(api, s.baseUrl, s.apiKey, source.seriesId, next) } }
+        // Detached, like the progress saves: a settings write started on the composition's scope is
+        // cancelled the moment the reader is disposed, and leaving right after changing something is
+        // exactly when people leave — which silently dropped the change they had just made.
+        session.persistSetting(snackbar, "Couldn't save reader settings.") { saveEbookOverride(api, s.baseUrl, s.apiKey, source.seriesId, next) }
     }
 
     // Auto has to keep up with the app it follows: the phone crossing into night mode (or the user
@@ -883,13 +889,20 @@ fun EbookReaderScreen(
                 onSaveDefault = {
                     val s = server ?: return@EbookSettingsSheet
                     val p = prefs ?: return@EbookSettingsSheet
-                    scope.launch { runCatching { saveEbookDefault(api, s.baseUrl, s.apiKey, p) } }
+                    session.persistSetting(snackbar, "Couldn't save reader settings.") { saveEbookDefault(api, s.baseUrl, s.apiKey, p) }
                 },
                 onReset = {
                     val s = server ?: return@EbookSettingsSheet
-                    prefs = defaultPrefs
-                    call(prefsCommand(defaultPrefs.forPage(appIsDark)))
-                    scope.launch { runCatching { resetEbookOverride(api, s.baseUrl, s.apiKey, source.seriesId) } }
+                    // With a series, reset drops the override and the book follows the user default
+                    // again. Without one there is no override to drop — the default key is where this
+                    // book's settings live — so reset means the built-in prefs, which is what
+                    // resetEbookOverride stores. Showing `defaultPrefs` there would leave the sheet
+                    // claiming one thing while the server held another.
+                    val resetTo = if (source.seriesId != null) defaultPrefs else EbookPrefs()
+                    if (source.seriesId == null) defaultPrefs = resetTo
+                    prefs = resetTo
+                    call(prefsCommand(resetTo.forPage(appIsDark)))
+                    session.persistSetting(snackbar, "Couldn't save reader settings.") { resetEbookOverride(api, s.baseUrl, s.apiKey, source.seriesId) }
                 },
             )
         }

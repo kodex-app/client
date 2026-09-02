@@ -136,6 +136,8 @@ import dev.icedtea.kodex.platform.StatusBarIcons
 import dev.icedtea.kodex.platform.SystemBarsHidden
 import dev.icedtea.kodex.ui.KodexBottomSheet
 import dev.icedtea.kodex.ui.collectAsStateSafe
+import dev.icedtea.kodex.ui.persistSetting
+import dev.icedtea.kodex.ui.rememberSnackbar
 import dev.icedtea.kodex.ui.catalog.imageErrorText
 import coil3.SingletonImageLoader
 import coil3.compose.LocalPlatformContext
@@ -287,6 +289,7 @@ fun ImageReaderScreen(
     val server by session.activeServer.collectAsStateSafe()
     val context = LocalPlatformContext.current
     val scope = rememberCoroutineScope()
+    val snackbar = rememberSnackbar()
     val orientation = dev.icedtea.kodex.platform.rememberOrientationController()
     val openUrl = dev.icedtea.kodex.platform.rememberUrlOpener()
 
@@ -332,7 +335,9 @@ fun ImageReaderScreen(
         if (next.mode == MODE_AUTO && prefs?.mode != MODE_AUTO) autoMode = null
         prefs = next
         val s = server ?: return
-        scope.launch { runCatching { saveReaderOverride(api, s.baseUrl, s.apiKey, source.kind, source.seriesId, next) } }
+        // Detached for the same reason the progress save is: the composition's scope dies with the
+        // reader, and closing it right after a settings change would cancel the write mid-flight.
+        session.persistSetting(snackbar, "Couldn't save reader settings.") { saveReaderOverride(api, s.baseUrl, s.apiKey, source.kind, source.seriesId, next) }
     }
 
     val p = prefs
@@ -423,7 +428,7 @@ fun ImageReaderScreen(
     fun updatePreload(v: Int) {
         preload = v.coerceIn(0, PRELOAD_MAX)
         val s = server ?: return
-        scope.launch { runCatching { savePreloadCount(api, s.baseUrl, s.apiKey, preload) } }
+        session.persistSetting(snackbar, "Couldn't save reader settings.") { savePreloadCount(api, s.baseUrl, s.apiKey, preload) }
     }
 
     fun confirmBoundary(boundary: Boundary) {
@@ -630,16 +635,19 @@ fun ImageReaderScreen(
                 onChange = ::update,
                 onSaveDefault = {
                     val s = server ?: return@SettingsSheet
-                    scope.launch { runCatching { saveReaderDefault(api, s.baseUrl, s.apiKey, source.kind, p) } }
+                    session.persistSetting(snackbar, "Couldn't save reader settings.") { saveReaderDefault(api, s.baseUrl, s.apiKey, source.kind, p) }
                 },
                 onReset = {
                     val s = server ?: return@SettingsSheet
-                    scope.launch {
-                        runCatching { resetReaderOverride(api, s.baseUrl, s.apiKey, source.kind, source.seriesId) }
-                        val wasAuto = prefs?.mode == MODE_AUTO
-                        prefs = defaultPrefs
-                        if (defaultPrefs.mode == MODE_AUTO && !wasAuto) autoMode = null
-                    }
+                    session.persistSetting(snackbar, "Couldn't save reader settings.") { resetReaderOverride(api, s.baseUrl, s.apiKey, source.kind, source.seriesId) }
+                    // As in the ebook reader: with no series the default key holds this book's own
+                    // settings, so resetting it lands on the built-in prefs rather than on a user
+                    // default that no longer exists.
+                    val resetTo = if (source.seriesId != null) defaultPrefs else defaultReaderPrefs(source.kind)
+                    if (source.seriesId == null) defaultPrefs = resetTo
+                    val wasAuto = prefs?.mode == MODE_AUTO
+                    prefs = resetTo
+                    if (resetTo.mode == MODE_AUTO && !wasAuto) autoMode = null
                     settingsOpen = false
                 },
             )

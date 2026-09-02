@@ -30,7 +30,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.icedtea.kodex.auth.SessionManager
 import dev.icedtea.kodex.network.KodexApi
+import dev.icedtea.kodex.ui.persistSetting
 import dev.icedtea.kodex.ui.LoadedContent
 import dev.icedtea.kodex.ui.collectAsStateSafe
 import kotlinx.coroutines.launch
@@ -73,7 +73,7 @@ fun SettingsScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) {
                 load = { val s = server!!; SettingsData(api.userSettings(s.baseUrl, s.apiKey), api.libraries(s.baseUrl, s.apiKey)) },
             ) { data ->
                 val s = server ?: return@LoadedContent
-                SettingsForm(s.baseUrl, s.apiKey, api, data.settings, data.libraries)
+                SettingsForm(session, s.baseUrl, s.apiKey, api, data.settings, data.libraries)
             }
         }
     }
@@ -85,13 +85,14 @@ private const val CHAPTER_SORT_DEFAULT = "number,desc"
 
 @Composable
 private fun SettingsForm(
+    session: SessionManager,
     baseUrl: String,
     apiKey: String,
     api: KodexApi,
     initial: JsonObject,
     libraries: List<dev.icedtea.kodex.network.LibraryDto>,
 ) {
-    val scope = rememberCoroutineScope()
+    val snackbar = dev.icedtea.kodex.ui.rememberSnackbar()
 
     var autoUpdate by remember {
         mutableStateOf(initial["series.autoUpdateOnOpen"]?.jsonPrimitive?.booleanOrNull ?: true)
@@ -109,8 +110,11 @@ private fun SettingsForm(
     var comicPrefs by remember { mutableStateOf(dev.icedtea.kodex.ui.reader.parseReaderDefault(initial, "comic")) }
     var pdfPrefs by remember { mutableStateOf(dev.icedtea.kodex.ui.reader.parseReaderDefault(initial, "pdf")) }
 
+    // On the session's scope, not this screen's: toggling a setting and going straight back is the
+    // ordinary way to use this screen, and a write started here would be cancelled by that very
+    // navigation. Failures now say so instead of leaving the switch showing a value nobody stored.
     fun save(key: String, value: kotlinx.serialization.json.JsonElement) {
-        scope.launch { runCatching { api.saveUserSetting(baseUrl, apiKey, key, value) } }
+        session.persistSetting(snackbar) { api.saveUserSetting(baseUrl, apiKey, key, value) }
     }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
@@ -127,11 +131,11 @@ private fun SettingsForm(
         SectionHeader("Reader defaults")
         ReaderDefaultsRows("Comics", comicPrefs) { p ->
             comicPrefs = p
-            scope.launch { runCatching { dev.icedtea.kodex.ui.reader.saveReaderDefault(api, baseUrl, apiKey, "comic", p) } }
+            session.persistSetting(snackbar) { dev.icedtea.kodex.ui.reader.saveReaderDefault(api, baseUrl, apiKey, "comic", p) }
         }
         ReaderDefaultsRows("PDF", pdfPrefs) { p ->
             pdfPrefs = p
-            scope.launch { runCatching { dev.icedtea.kodex.ui.reader.saveReaderDefault(api, baseUrl, apiKey, "pdf", p) } }
+            session.persistSetting(snackbar) { dev.icedtea.kodex.ui.reader.saveReaderDefault(api, baseUrl, apiKey, "pdf", p) }
         }
 
         HorizontalDivider(Modifier.padding(vertical = 8.dp))

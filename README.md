@@ -72,6 +72,7 @@ auto-selects the most recently used one.
 
 ```bash
 ./gradlew :androidApp:assembleDebug           # Android APK
+./gradlew :shared:testAndroidHostTest         # commonTest, on the JVM (no device needed)
 # iOS: open iosApp in Xcode on a Mac (see iosApp/README.md)
 ```
 
