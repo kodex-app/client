@@ -266,6 +266,9 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
                     onOpenBook = openBook,
                     onShowBookDetails = showBookDetails,
                     onOpenSeries = openSeries,
+                    onOpenSourceReader = { providerId, chapterId, seriesId, chapterName ->
+                        backStack.add(DetailRoute.SourceReader(providerId, chapterId, seriesId, chapterName, incognito = incognito))
+                    },
                     onOpenBrowseReader = { source, chapterId, chapterName ->
                         backStack.add(DetailRoute.SourceReader(source.providerId, chapterId, null, chapterName, source, incognito = incognito))
                     },

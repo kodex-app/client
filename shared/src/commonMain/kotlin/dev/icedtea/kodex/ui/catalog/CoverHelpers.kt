@@ -4,6 +4,7 @@ import dev.icedtea.kodex.network.BookDto
 import dev.icedtea.kodex.network.KeepReadingDto
 import dev.icedtea.kodex.network.SeriesDto
 import dev.icedtea.kodex.ui.main.OpenBrowseReader
+import dev.icedtea.kodex.ui.main.OpenSourceReader
 import dev.icedtea.kodex.ui.main.SourceSeriesContext
 import io.ktor.http.encodeURLParameter
 
@@ -72,9 +73,11 @@ fun keepReadingCover(baseUrl: String, entry: KeepReadingDto): String = when {
 }
 
 /**
- * Where a "Continue reading" card goes. A downloaded book and a followed series both have a screen of
- * their own, so those open it; a chapter read straight from Browse has none — its series isn't in any
- * library — so it resumes in the reader, with the source's identity so chapter navigation still works.
+ * Where a "Continue reading" card goes: straight back into the reader, at the entry you stopped on —
+ * the local reader for a downloaded book, the streamed reader for a chapter (with the followed
+ * series' id when it is in a library, or the source series' identity when it was read from Browse,
+ * so chapter navigation works either way). Only an entry with no chapter to resume falls back to the
+ * series' own screen.
  *
  * Shared by the Home rail and its "See all" so tapping the same entry does the same thing on both.
  */
@@ -82,20 +85,27 @@ fun openKeepReading(
     entry: KeepReadingDto,
     onOpenBook: (String) -> Unit,
     onOpenSeries: (String) -> Unit,
+    onOpenSourceReader: OpenSourceReader,
     onOpenBrowseReader: OpenBrowseReader,
 ) {
     val provider = entry.providerId
     val chapter = entry.chapterId
     val sourceSeries = entry.sourceSeriesId
+    val seriesId = entry.seriesId
     when {
         entry.isBook && entry.bookId != null -> onOpenBook(entry.bookId)
-        entry.seriesId != null -> onOpenSeries(entry.seriesId)
-        provider == null || chapter == null || sourceSeries == null -> Unit
-        else -> onOpenBrowseReader(
-            SourceSeriesContext(provider, sourceSeries, entry.seriesName.ifBlank { entry.title.orEmpty() }, entry.coverUrl),
-            chapter,
-            entry.title,
-        )
+        provider == null || chapter == null -> if (seriesId != null) onOpenSeries(seriesId)
+        // Read while browsing (no local series): re-open with the source series' identity so the
+        // reader can rebuild its chapter navigation from the source's live list.
+        seriesId == null ->
+            if (sourceSeries != null) {
+                onOpenBrowseReader(
+                    SourceSeriesContext(provider, sourceSeries, entry.seriesName.ifBlank { entry.title.orEmpty() }, entry.coverUrl),
+                    chapter,
+                    entry.title,
+                )
+            }
+        else -> onOpenSourceReader(provider, chapter, seriesId, entry.title)
     }
 }
 

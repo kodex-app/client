@@ -74,6 +74,7 @@ fun HomeTab(
     /** Long-press: the book's details, since a tap now reads it. */
     onShowBookDetails: (String) -> Unit = {},
     onOpenSeries: (String) -> Unit = {},
+    onOpenSourceReader: OpenSourceReader = { _, _, _, _ -> },
     onOpenBrowseReader: OpenBrowseReader = { _, _, _ -> },
     onSeeAll: (dev.icedtea.kodex.ui.catalog.SeeAllKind) -> Unit = {},
 ) {
@@ -137,7 +138,7 @@ fun HomeTab(
                             key = { "${it.kind}-${it.bookId ?: it.chapterId}" },
                             onSeeAll = { onSeeAll(dev.icedtea.kodex.ui.catalog.SeeAllKind.KEEP_READING) },
                         ) { k ->
-                            KeepReadingCard(baseUrl, apiKey, k, onOpenBook, onShowBookDetails, onOpenSeries, onOpenBrowseReader)
+                            KeepReadingCard(baseUrl, apiKey, k, onOpenBook, onShowBookDetails, onOpenSeries, onOpenSourceReader, onOpenBrowseReader)
                         }
                     }
                     if (s.data.recentSeries.isNotEmpty()) item {
@@ -172,7 +173,8 @@ fun HomeTab(
 
 /**
  * One "Continue reading" card. The rail spans both reading paths, so the card shows the series it
- * belongs to over the entry you're part-way through, and resolves its own cover and destination.
+ * belongs to over the entry you're part-way through, and resolves its own cover and destination —
+ * a tap resumes reading, so a book's details stay on the long-press.
  */
 @Composable
 private fun KeepReadingCard(
@@ -182,6 +184,7 @@ private fun KeepReadingCard(
     onOpenBook: (String) -> Unit,
     onShowBookDetails: (String) -> Unit,
     onOpenSeries: (String) -> Unit,
+    onOpenSourceReader: OpenSourceReader,
     onOpenBrowseReader: OpenBrowseReader,
 ) {
     val bookId = entry.bookId.takeIf { entry.isBook }
@@ -191,7 +194,7 @@ private fun KeepReadingCard(
         title = entry.seriesName.ifBlank { entry.title.orEmpty() },
         subtitle = entry.title,
         unread = null,
-        onClick = { openKeepReading(entry, onOpenBook, onOpenSeries, onOpenBrowseReader) },
+        onClick = { openKeepReading(entry, onOpenBook, onOpenSeries, onOpenSourceReader, onOpenBrowseReader) },
         onLongClick = bookId?.let { { onShowBookDetails(it) } },
     )
 }

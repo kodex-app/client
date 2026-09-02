@@ -298,17 +298,21 @@ function onRelocate(e) {
     else if (atStart) frac = 0
     else if (frac >= 1) frac = 0.99
   } else {
-    atEnd = foliateFrac >= 0.999
-    atStart = foliateFrac <= 0.001
-    // Same one-page case in scrolled flow (and in any section that fits on one screen): foliate's
-    // fraction never leaves 0 because nothing scrolls, so 0.999 is unreachable. The renderer reporting
-    // both boundaries at once means there is nothing left to read here — treat it as finished, and let
-    // a swipe hand over to the neighbouring chapter rather than dead-ending.
-    if (view && view.renderer && view.renderer.atStart && view.renderer.atEnd) {
-      atStart = true
-      atEnd = true
-      frac = 1
-    }
+    // Boundary state from foliate's own getters here too, for the same reason as above: they are
+    // exact where the reported fraction is not. `renderer.atEnd` is true only when no further section
+    // remains *and* its last page is showing (see paginator's `#adjacentIndex`), whereas the fraction
+    // of a long multi-section book settles a hair under 1 on that very page — leaving `atEnd` false,
+    // and with it the end-of-book swipe and the toolbar's page-forward doing nothing at all. The
+    // fraction test stays as the fallback for the moment before a renderer exists.
+    const renderer = view && view.renderer
+    atEnd = renderer ? !!renderer.atEnd : foliateFrac >= 0.999
+    atStart = renderer ? !!renderer.atStart : foliateFrac <= 0.001
+    // A section that fits on one screen is at both ends at once — including the one-page case in
+    // scrolled flow, where the fraction never leaves 0 because nothing scrolls. Nothing is left to
+    // read there, so the end wins and a swipe hands over to the neighbouring book rather than
+    // dead-ending.
+    if (atEnd) frac = 1
+    else if (atStart && foliateFrac <= 0.001) frac = 0
   }
 
   const section = d.section && typeof d.section.current === 'number' ? d.section : null
@@ -552,6 +556,11 @@ async function boot() {
     document.getElementById('view').appendChild(view)
     // Bound before open() so the very first chapter document is covered too.
     view.addEventListener('load', (e) => bindDocument(e.detail && e.detail.doc))
+    // And this document, for the margin either side of the text: a gesture starting there is outside
+    // every chapter iframe, so nothing bound above ever hears it — foliate turns the page from it,
+    // while the tap and the run-off-the-end went unreported. Events inside an iframe do not bubble
+    // out to here, so nothing is handled twice.
+    bindDocument(document)
 
     await view.open(book)
 

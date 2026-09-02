@@ -30,6 +30,7 @@ import dev.icedtea.kodex.ui.EmptyMessage
 import dev.icedtea.kodex.ui.LoadedContent
 import dev.icedtea.kodex.ui.collectAsStateSafe
 import dev.icedtea.kodex.ui.main.OpenBrowseReader
+import dev.icedtea.kodex.ui.main.OpenSourceReader
 
 /** What a "See all" screen shows — backs Home's per-section View-all. */
 enum class SeeAllKind { KEEP_READING, RECENT_BOOKS, RECENT_SERIES, UPDATED_SERIES }
@@ -52,6 +53,7 @@ fun SeeAllScreen(
     onOpenBook: (String) -> Unit,
     /** Long-press: the book's details, since a tap now reads it. */
     onShowBookDetails: (String) -> Unit = {},
+    onOpenSourceReader: OpenSourceReader = { _, _, _, _ -> },
     onOpenBrowseReader: OpenBrowseReader = { _, _, _ -> },
 ) {
     val server by session.activeServer.collectAsStateSafe()
@@ -106,7 +108,7 @@ fun SeeAllScreen(
                                     title = k.seriesName.ifBlank { k.title.orEmpty() },
                                     subtitle = k.title,
                                     unread = null,
-                                    onClick = { openKeepReading(k, onOpenBook, onOpenSeries, onOpenBrowseReader) },
+                                    onClick = { openKeepReading(k, onOpenBook, onOpenSeries, onOpenSourceReader, onOpenBrowseReader) },
                                     width = null,
                                     onLongClick = k.bookId.takeIf { k.isBook }?.let { id -> { onShowBookDetails(id) } },
                                 )

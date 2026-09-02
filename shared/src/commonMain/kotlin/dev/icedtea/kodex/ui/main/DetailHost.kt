@@ -211,6 +211,7 @@ fun DetailHost(
                 onOpenSeries = onOpenSeries,
                 onOpenBook = onOpenBook,
                 onShowBookDetails = onShowBookDetails,
+                onOpenSourceReader = onOpenSourceReader,
                 onOpenBrowseReader = onOpenBrowseReader,
             )
 
