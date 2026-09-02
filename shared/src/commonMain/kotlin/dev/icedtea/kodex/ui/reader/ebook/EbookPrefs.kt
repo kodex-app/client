@@ -15,6 +15,16 @@ const val FLOW_SCROLLED = "scrolled"
 const val THEME_LIGHT = "light"
 const val THEME_SEPIA = "sepia"
 const val THEME_DARK = "dark"
+
+/**
+ * Follow the app's appearance: dark app → the dark page, light app → sepia rather than white, which
+ * is the paper-like counterpart of a light UI and the gentler of the two on a lit screen.
+ *
+ * The app's own value — the web reader has no such mode, so it is resolved to a real theme before
+ * ever reaching the page (see [forPage]). A book set to Auto here and opened in the browser falls
+ * back to that reader's default rather than following anything.
+ */
+const val THEME_AUTO = "auto"
 const val COLUMNS_AUTO = "auto"
 const val COLUMNS_ONE = "one"
 const val COLUMNS_TWO = "two"
@@ -72,6 +82,18 @@ data class EbookPrefs(
 /** Effective prefs plus the resolved default, which "reset to default" falls back to. */
 data class ResolvedEbookPrefs(val effective: EbookPrefs, val default: EbookPrefs)
 
+/** The theme actually rendered: [THEME_AUTO] resolved against whether the app is drawing dark. */
+fun EbookPrefs.resolvedTheme(dark: Boolean): String =
+    if (theme == THEME_AUTO) (if (dark) THEME_DARK else THEME_SEPIA) else theme
+
+/**
+ * These prefs as the page should receive them. `reader.js` knows three themes and would fall through
+ * to its default on a fourth, so [THEME_AUTO] is resolved here — the stored value keeps saying
+ * "auto", and only what goes over the wire is a concrete theme.
+ */
+fun EbookPrefs.forPage(dark: Boolean): EbookPrefs =
+    if (theme == THEME_AUTO) copy(theme = resolvedTheme(dark)) else this
+
 private const val DEFAULT_KEY = "reader.epub"
 private fun seriesKey(seriesId: String) = "reader.epub.series.$seriesId"
 
@@ -83,7 +105,7 @@ private fun coerce(p: EbookPrefs): EbookPrefs {
     fun pick(v: String, allowed: List<String>, fb: String) = if (v in allowed) v else fb
     return p.copy(
         flow = pick(p.flow, listOf(FLOW_PAGINATED, FLOW_SCROLLED), d.flow),
-        theme = pick(p.theme, listOf(THEME_LIGHT, THEME_SEPIA, THEME_DARK), d.theme),
+        theme = pick(p.theme, listOf(THEME_AUTO, THEME_LIGHT, THEME_SEPIA, THEME_DARK), d.theme),
         fontFamily = p.fontFamily.ifBlank { d.fontFamily },
         columns = pick(p.columns, listOf(COLUMNS_AUTO, COLUMNS_ONE, COLUMNS_TWO), d.columns),
         fontSize = p.fontSize.coerceIn(FONT_SIZE_MIN, FONT_SIZE_MAX),

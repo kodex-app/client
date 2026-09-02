@@ -39,13 +39,18 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 
 /**
@@ -59,6 +64,27 @@ import androidx.compose.ui.unit.dp
 
 /** Horizontal inset every part of a settings sheet lines up on. */
 internal val SheetGutter = 20.dp
+
+/**
+ * Put on the scrolling middle of a settings sheet, above its `verticalScroll`, so scrolling the
+ * settings cannot dismiss the sheet.
+ *
+ * Material hands the sheet whatever a nested scroll leaves unconsumed, which is how a list dragged
+ * down from its top edge pulls the sheet shut. That reads fine for a long list and badly for a panel:
+ * the scrolling part here is a short strip between a pinned header and a pinned footer, so it is
+ * against one of its ends most of the time and every flick that runs past that end was closing the
+ * sheet mid-adjustment. Swallowing the leftovers keeps the two gestures apart — the content scrolls,
+ * and the sheet is still dragged by its handle, its header, its tabs or its footer.
+ */
+@Composable
+internal fun rememberSheetScrollGuard(): NestedScrollConnection = remember {
+    object : NestedScrollConnection {
+        override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset =
+            if (source == NestedScrollSource.UserInput) available else Offset.Zero
+
+        override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity = available
+    }
+}
 
 @Composable
 internal fun ReaderSettingsHeader(title: String, subtitle: String? = null) {

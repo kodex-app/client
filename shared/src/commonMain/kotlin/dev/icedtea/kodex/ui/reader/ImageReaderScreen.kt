@@ -1687,6 +1687,7 @@ private fun SettingsSheet(
             // fill = false so a short sheet stays short; the cap in KodexBottomSheet turns a long one
             // into a scroll rather than pushing the footer off the bottom.
             Modifier.weight(1f, fill = false)
+                .nestedScroll(rememberSheetScrollGuard())
                 .verticalScroll(rememberScrollState())
                 .padding(start = SheetGutter, end = SheetGutter, bottom = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),

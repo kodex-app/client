@@ -78,6 +78,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -119,6 +120,7 @@ import dev.icedtea.kodex.ui.reader.disabled
 import dev.icedtea.kodex.ui.reader.readerBarColor
 import dev.icedtea.kodex.ui.reader.readerBarContentColor
 import dev.icedtea.kodex.ui.reader.readerBarRaisedColor
+import dev.icedtea.kodex.ui.reader.rememberSheetScrollGuard
 import com.multiplatform.webview.web.WebView
 import com.multiplatform.webview.web.rememberWebViewNavigator
 import com.multiplatform.webview.web.rememberWebViewState
@@ -364,6 +366,11 @@ fun EbookReaderScreen(
         prefs = resolved.effective
     }
 
+    // What THEME_AUTO follows. Read off the app's own scheme rather than the system directly, so a
+    // book set to Auto matches the app in front of the user even when they have pinned light or dark
+    // in Appearance; with Appearance left on System (the default) this is the system theme.
+    val appIsDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+
     val bootPrefs = prefs
     LaunchedEffect(bootPrefs != null, server?.id, engine) {
         val s = server ?: return@LaunchedEffect
@@ -377,7 +384,7 @@ fun EbookReaderScreen(
             put("imageProxy", source.origin is EbookOrigin.SourceChapter)
             put("initialLocator", source.initialLocator)
             put("initialFraction", source.initialFraction)
-            putJsonObject("prefs") { p.putInto(this) }
+            putJsonObject("prefs") { p.forPage(appIsDark).putInto(this) }
             put("pageAnim", pageAnim)
             put(
                 "fonts",
@@ -602,9 +609,17 @@ fun EbookReaderScreen(
 
     fun update(next: EbookPrefs) {
         prefs = next
-        call(prefsCommand(next))
+        call(prefsCommand(next.forPage(appIsDark)))
         val s = server ?: return
         scope.launch { runCatching { saveEbookOverride(api, s.baseUrl, s.apiKey, source.seriesId, next) } }
+    }
+
+    // Auto has to keep up with the app it follows: the phone crossing into night mode (or the user
+    // changing the theme in Appearance) re-themes the page under the reader that is already open.
+    // Re-sent rather than reloaded, so it costs a repaint and not the reading position.
+    LaunchedEffect(appIsDark, prefs?.theme, handle) {
+        val p = prefs ?: return@LaunchedEffect
+        if (p.theme == THEME_AUTO) call(prefsCommand(p.forPage(appIsDark)))
     }
 
     // Turning past either end raises the between-chapters overlay when a sibling exists; the page
@@ -621,7 +636,7 @@ fun EbookReaderScreen(
         transition = null
     }
 
-    val theme = prefs?.theme ?: THEME_LIGHT
+    val theme = (prefs ?: EbookPrefs()).resolvedTheme(appIsDark)
     val pageBg = ebookPageColor(theme)
 
     // Same rule as the image reader: the toolbar is what sits behind the status bar while the chrome
@@ -867,7 +882,7 @@ fun EbookReaderScreen(
                 onReset = {
                     val s = server ?: return@EbookSettingsSheet
                     prefs = defaultPrefs
-                    call(prefsCommand(defaultPrefs))
+                    call(prefsCommand(defaultPrefs.forPage(appIsDark)))
                     scope.launch { runCatching { resetEbookOverride(api, s.baseUrl, s.apiKey, source.seriesId) } }
                 },
             )
@@ -1349,7 +1364,9 @@ private fun EbookSettingsSheet(
         // The theme swatches sit above the tabs rather than inside one: it is the setting people
         // reopen this sheet for, and the only one whose effect is visible without reading a label.
         Column(Modifier.padding(horizontal = SheetGutter)) {
-            ReaderSettingsSwatches("Theme", prefs.theme, EBOOK_THEME_SWATCHES) { onChange(prefs.copy(theme = it)) }
+            val appIsDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+            val swatches = remember(appIsDark) { ebookThemeSwatches(appIsDark) }
+            ReaderSettingsSwatches("Theme", prefs.theme, swatches) { onChange(prefs.copy(theme = it)) }
         }
         Spacer(Modifier.height(16.dp))
         // Two short pages instead of one twelve-control scroll: text choices are made together and
@@ -1359,6 +1376,7 @@ private fun EbookSettingsSheet(
             // fill = false so a short tab keeps the sheet short; the cap in KodexBottomSheet still
             // turns a long one into a scroll rather than pushing the footer off the bottom.
             Modifier.weight(1f, fill = false)
+                .nestedScroll(rememberSheetScrollGuard())
                 .verticalScroll(rememberScrollState())
                 .padding(start = SheetGutter, end = SheetGutter, top = 14.dp, bottom = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1379,12 +1397,21 @@ private fun EbookSettingsSheet(
 
 private val EBOOK_SETTINGS_TABS = listOf("Text", "Page")
 
-/** Reading themes as swatches, so the choice is visible rather than named. */
-private val EBOOK_THEME_SWATCHES = listOf(
-    ReaderSwatch(THEME_LIGHT, "Light", ebookPageColor(THEME_LIGHT), ebookTextColor(THEME_LIGHT), "Aa"),
-    ReaderSwatch(THEME_SEPIA, "Sepia", ebookPageColor(THEME_SEPIA), ebookTextColor(THEME_SEPIA), "Aa"),
-    ReaderSwatch(THEME_DARK, "Dark", ebookPageColor(THEME_DARK), ebookTextColor(THEME_DARK), "Aa"),
-)
+/**
+ * Reading themes as swatches, so the choice is visible rather than named. Auto is painted in whatever
+ * it currently resolves to ([appIsDark]) — the tile is then a preview like the other three rather than
+ * a mystery box, and it repaints when the app changes appearance.
+ */
+private fun ebookThemeSwatches(appIsDark: Boolean): List<ReaderSwatch> {
+    fun swatch(id: String, label: String, paint: String = id) =
+        ReaderSwatch(id, label, ebookPageColor(paint), ebookTextColor(paint), "Aa")
+    return listOf(
+        swatch(THEME_AUTO, "Auto", paint = if (appIsDark) THEME_DARK else THEME_SEPIA),
+        swatch(THEME_LIGHT, "Light"),
+        swatch(THEME_SEPIA, "Sepia"),
+        swatch(THEME_DARK, "Dark"),
+    )
+}
 
 /** Everything about the type itself: which face, how big, how loose, how it sits on the line. */
 @Composable
