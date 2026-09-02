@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -63,8 +64,10 @@ import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.icedtea.kodex.auth.SessionManager
 import dev.icedtea.kodex.network.CheckBoxFilter
@@ -83,7 +86,6 @@ import dev.icedtea.kodex.network.SourceFilter
 import dev.icedtea.kodex.network.SourceSearchResult
 import dev.icedtea.kodex.network.TextFilterDto
 import dev.icedtea.kodex.network.TriStateFilter
-import dev.icedtea.kodex.ui.EmptyMessage
 import dev.icedtea.kodex.ui.KodexBottomSheet
 import dev.icedtea.kodex.ui.SelectionActionBar
 import dev.icedtea.kodex.ui.SelectionState
@@ -92,7 +94,7 @@ import dev.icedtea.kodex.ui.Tip
 import dev.icedtea.kodex.ui.catalog.CoverCard
 import dev.icedtea.kodex.ui.catalog.sourceCoverUrl
 import dev.icedtea.kodex.ui.collectAsStateSafe
-import dev.icedtea.kodex.ui.friendlyMessage
+import dev.icedtea.kodex.ui.serverErrorDetail
 import dev.icedtea.kodex.ui.rememberSelection
 import dev.icedtea.kodex.ui.nav.retain
 import dev.icedtea.kodex.ui.rememberSnackbar
@@ -209,9 +211,23 @@ fun SourceFeedScreen(
         val next = page + 1
         runCatching { fetch(next) }
             .onSuccess { items.addAll(it.items); page = next; hasNext = it.hasNextPage }
-            .onFailure { error = it.friendlyMessage(); hasNext = false }
+            .onFailure { error = it.serverErrorDetail(); hasNext = false }
         loading = false
     }
+
+    // Retry the page that failed. The failure cleared `hasNext`, so it has to be re-armed or
+    // loadNext() would return immediately.
+    fun retryMore() {
+        hasNext = true
+        error = null
+        scope.launch { loadNext() }
+    }
+
+    // The call behind whatever is on screen. Shown with every failure and with an empty result: a
+    // source that is down and one that is genuinely empty look identical until you can see which
+    // endpoint ran against which source id.
+    val endpoint = if (searching) "POST /api/v1/content-sources/${source.id}/search"
+    else "GET /api/v1/content-sources/${source.id}/$feed?page=${page + 1}"
 
     // Reload from scratch when the mode changes (feed / search submit / filter apply / retry). The
     // guard is what makes coming back free: the same mode is already loaded, so it is left alone.
@@ -365,8 +381,26 @@ fun SourceFeedScreen(
             Box(Modifier.fillMaxSize()) {
                 when {
                     items.isEmpty() && loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
-                    items.isEmpty() && error != null -> RetryBox(error!!) { reloadKey++ }
-                    items.isEmpty() -> EmptyMessage(if (searching) "No results." else "Nothing to show here.")
+                    items.isEmpty() && error != null -> ProblemBox(
+                        title = "Couldn't load ${source.displayName}",
+                        detail = error!!,
+                        endpoint = endpoint,
+                        onRetry = { reloadKey++ },
+                    )
+                    // Not "Nothing to show here": a source reports a failed fetch as an empty page (its
+                    // HTTP helper turns any error into a null document), so an empty feed is far more
+                    // often a broken source than an empty one. Say what actually happened and point at
+                    // where the real reason is, instead of implying the source is simply bare.
+                    items.isEmpty() -> ProblemBox(
+                        title = if (searching) "No results from ${source.displayName}"
+                        else "${source.displayName} returned nothing",
+                        detail = "The server reached the source and got 0 results back, without reporting an "
+                            + "error. " + (if (searching) "Either nothing matches this search, or the " else "The ")
+                            + "site is down, is blocking the server, or changed its layout - sources answer a "
+                            + "failed fetch with an empty page. The server log for this source has the real reason.",
+                        endpoint = endpoint,
+                        onRetry = { reloadKey++ },
+                    )
                     else -> FeedGrid(
                         baseUrl = server?.baseUrl ?: "",
                         apiKey = server?.apiKey ?: "",
@@ -374,6 +408,8 @@ fun SourceFeedScreen(
                         items = items,
                         gridState = gridState,
                         loadingMore = loading,
+                        moreError = error,
+                        onRetryMore = { retryMore() },
                         selection = selection,
                         followedIds = followedIds,
                         onOpen = onOpenSourceSeries,
@@ -612,12 +648,45 @@ private fun SourceFilter.reset(): SourceFilter = when (this) {
     else -> this
 }
 
+/**
+ * The full-screen "this didn't work" state: a headline, the verbatim reason (HTTP status plus the
+ * server's problem detail, or the transport failure), and the endpoint that was called. The reason is
+ * shown raw and selectable on purpose - it is the only thing that separates a blocked source from a
+ * broken plugin from a server that is down, and paraphrasing it loses exactly that.
+ */
 @Composable
-private fun RetryBox(message: String, onRetry: () -> Unit) {
-    Box(Modifier.fillMaxSize().padding(32.dp), Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            TextButton(onClick = onRetry, modifier = Modifier.padding(top = 12.dp)) { Text("Retry") }
+private fun ProblemBox(title: String, detail: String, endpoint: String, onRetry: () -> Unit) {
+    Box(Modifier.fillMaxSize().padding(24.dp), Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.verticalScroll(rememberScrollState()),
+        ) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+            )
+            SelectionContainer {
+                Text(
+                    detail,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+            SelectionContainer {
+                Text(
+                    endpoint,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+            TextButton(onClick = onRetry, modifier = Modifier.padding(top = 8.dp)) { Text("Retry") }
         }
     }
 }
@@ -630,6 +699,8 @@ private fun FeedGrid(
     items: List<SourceSearchResult>,
     gridState: LazyGridState,
     loadingMore: Boolean,
+    moreError: String?,
+    onRetryMore: () -> Unit,
     selection: SelectionState<String>,
     followedIds: Set<String>,
     onOpen: (SourceSearchResult) -> Unit,
@@ -660,6 +731,26 @@ private fun FeedGrid(
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Box(Modifier.fillMaxWidth().padding(16.dp), Alignment.Center) {
                     CircularProgressIndicator(Modifier.size(28.dp))
+                }
+            }
+        }
+        // A page that failed mid-scroll used to stop the feed silently - the spinner simply never came
+        // back. Say why, at the bottom where the scroll stopped, and offer that page again.
+        if (!loadingMore && moreError != null) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Column(
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    SelectionContainer {
+                        Text(
+                            "Couldn't load more - " + moreError,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                    TextButton(onClick = onRetryMore) { Text("Retry") }
                 }
             }
         }
