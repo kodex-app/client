@@ -615,7 +615,11 @@ fun ImageReaderScreen(
     }
 
     if (settingsOpen && p != null) {
-        KodexBottomSheet(onDismissRequest = { settingsOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        KodexBottomSheet(
+            onDismissRequest = { settingsOpen = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            fraction = SETTINGS_SHEET_FRACTION,
+        ) {
             SettingsSheet(
                 prefs = p,
                 effectiveMode = effectiveMode ?: MODE_PAGED,
@@ -1682,8 +1686,9 @@ private fun SettingsSheet(
     onReset: () -> Unit,
 ) {
     Column(Modifier.fillMaxWidth()) {
-        ReaderSettingsHeader("Reader settings", "Applies to this series")
         Column(
+            // Title included: only the footer is pinned, so the settings get the height instead.
+            //
             // fill = false so a short sheet stays short; the cap in KodexBottomSheet turns a long one
             // into a scroll rather than pushing the footer off the bottom.
             Modifier.weight(1f, fill = false)
@@ -1692,6 +1697,7 @@ private fun SettingsSheet(
                 .padding(start = SheetGutter, end = SheetGutter, bottom = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            ReaderSettingsHeader("Reader settings", "Applies to this series")
             ReaderSettingsCard {
                 ReaderSettingsSwatches("Background", prefs.bg, PAGE_BG_SWATCHES) { onChange(prefs.copy(bg = it)) }
             }

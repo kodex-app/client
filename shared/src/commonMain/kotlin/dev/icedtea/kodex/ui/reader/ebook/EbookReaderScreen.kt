@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -108,12 +107,13 @@ import dev.icedtea.kodex.ui.reader.ReaderSettingsCard
 import dev.icedtea.kodex.ui.reader.ReaderSettingsChips
 import dev.icedtea.kodex.ui.reader.ReaderSettingsFooter
 import dev.icedtea.kodex.ui.reader.ReaderSettingsHeader
+import dev.icedtea.kodex.ui.reader.ReaderSettingsSectionLabel
 import dev.icedtea.kodex.ui.reader.ReaderSettingsSegmented
 import dev.icedtea.kodex.ui.reader.ReaderSettingsSlider
 import dev.icedtea.kodex.ui.reader.ReaderSettingsStepper
 import dev.icedtea.kodex.ui.reader.ReaderSettingsSwatches
-import dev.icedtea.kodex.ui.reader.ReaderSettingsTabs
 import dev.icedtea.kodex.ui.reader.ReaderSwatch
+import dev.icedtea.kodex.ui.reader.SETTINGS_SHEET_FRACTION
 import dev.icedtea.kodex.ui.reader.SheetGutter
 import dev.icedtea.kodex.ui.reader.ToolbarButton
 import dev.icedtea.kodex.ui.reader.disabled
@@ -864,7 +864,13 @@ fun EbookReaderScreen(
     }
 
     if (settingsOpen) {
-        KodexBottomSheet(onDismissRequest = { settingsOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        // Taller than the app's other sheets: this one is a panel of settings, and the page behind it
+        // is a page of text you are not reading while adjusting how it looks.
+        KodexBottomSheet(
+            onDismissRequest = { settingsOpen = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            fraction = SETTINGS_SHEET_FRACTION,
+        ) {
             EbookSettingsSheet(
                 prefs = prefs ?: EbookPrefs(),
                 fonts = fonts,
@@ -1358,34 +1364,30 @@ private fun EbookSettingsSheet(
     onSaveDefault: () -> Unit,
     onReset: () -> Unit,
 ) {
-    var tab by remember { mutableStateOf(0) }
     Column(Modifier.fillMaxWidth()) {
-        ReaderSettingsHeader("Display", "Applies to this series")
-        // The theme swatches sit above the tabs rather than inside one: it is the setting people
-        // reopen this sheet for, and the only one whose effect is visible without reading a label.
-        Column(Modifier.padding(horizontal = SheetGutter)) {
-            val appIsDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-            val swatches = remember(appIsDark) { ebookThemeSwatches(appIsDark) }
-            ReaderSettingsSwatches("Theme", prefs.theme, swatches) { onChange(prefs.copy(theme = it)) }
-        }
-        Spacer(Modifier.height(16.dp))
-        // Two short pages instead of one twelve-control scroll: text choices are made together and
-        // page choices are made together, and neither half now pushes the other off the screen.
-        ReaderSettingsTabs(EBOOK_SETTINGS_TABS, tab) { tab = it }
         Column(
-            // fill = false so a short tab keeps the sheet short; the cap in KodexBottomSheet still
-            // turns a long one into a scroll rather than pushing the footer off the bottom.
+            // Everything but the footer scrolls as one run: two tabs still did not fit a phone
+            // between the pinned chrome, so they bought a mode and a tab row's worth of height
+            // without buying the thing tabs are for. The cards carry the grouping instead.
+            //
+            // fill = false so a short sheet stays short; the cap in KodexBottomSheet turns a long one
+            // into a scroll rather than pushing the footer off the bottom.
             Modifier.weight(1f, fill = false)
                 .nestedScroll(rememberSheetScrollGuard())
                 .verticalScroll(rememberScrollState())
-                .padding(start = SheetGutter, end = SheetGutter, top = 14.dp, bottom = 14.dp),
+                .padding(start = SheetGutter, end = SheetGutter, bottom = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (tab == 0) {
-                EbookTextSettings(prefs, fonts, bundledFonts, onChange)
-            } else {
-                EbookPageSettings(prefs, pageAnim, onPageAnim, orientation, onOrientation, onChange)
-            }
+            ReaderSettingsHeader("Display", "Applies to this series")
+            // Theme leads: it is the setting people reopen this sheet for, and the only one whose
+            // effect is visible without reading a label.
+            val appIsDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+            val swatches = remember(appIsDark) { ebookThemeSwatches(appIsDark) }
+            ReaderSettingsSwatches("Theme", prefs.theme, swatches) { onChange(prefs.copy(theme = it)) }
+            ReaderSettingsSectionLabel("Text")
+            EbookTextSettings(prefs, fonts, bundledFonts, onChange)
+            ReaderSettingsSectionLabel("Page")
+            EbookPageSettings(prefs, pageAnim, onPageAnim, orientation, onOrientation, onChange)
         }
         ReaderSettingsFooter(
             note = "\"Save as default\" applies these to every book without its own settings.",
@@ -1394,8 +1396,6 @@ private fun EbookSettingsSheet(
         )
     }
 }
-
-private val EBOOK_SETTINGS_TABS = listOf("Text", "Page")
 
 /**
  * Reading themes as swatches, so the choice is visible rather than named. Auto is painted in whatever

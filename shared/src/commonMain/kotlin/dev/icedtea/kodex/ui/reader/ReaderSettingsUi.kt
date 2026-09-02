@@ -1,6 +1,5 @@
 package dev.icedtea.kodex.ui.reader
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -38,7 +37,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,15 +64,21 @@ import androidx.compose.ui.unit.dp
 internal val SheetGutter = 20.dp
 
 /**
+ * How much of the window a reader's settings sheet may take, against the 0.75 the app's other sheets
+ * use. These two are panels rather than pickers — a dozen controls read in one scroll — and the page
+ * behind is one nobody is reading while adjusting how it looks.
+ */
+internal const val SETTINGS_SHEET_FRACTION = 0.9f
+
+/**
  * Put on the scrolling middle of a settings sheet, above its `verticalScroll`, so scrolling the
  * settings cannot dismiss the sheet.
  *
  * Material hands the sheet whatever a nested scroll leaves unconsumed, which is how a list dragged
- * down from its top edge pulls the sheet shut. That reads fine for a long list and badly for a panel:
- * the scrolling part here is a short strip between a pinned header and a pinned footer, so it is
- * against one of its ends most of the time and every flick that runs past that end was closing the
- * sheet mid-adjustment. Swallowing the leftovers keeps the two gestures apart — the content scrolls,
- * and the sheet is still dragged by its handle, its header, its tabs or its footer.
+ * down from its top edge pulls the sheet shut. That reads fine for a long list and badly for a panel
+ * of controls: every flick that runs past an end of the settings was closing the sheet mid-adjustment.
+ * Swallowing the leftovers keeps the two gestures apart — the settings scroll, and the sheet is still
+ * dragged by its handle or its footer.
  */
 @Composable
 internal fun rememberSheetScrollGuard(): NestedScrollConnection = remember {
@@ -86,9 +90,13 @@ internal fun rememberSheetScrollGuard(): NestedScrollConnection = remember {
     }
 }
 
+/**
+ * Sheet title. Scrolls with the settings rather than being pinned above them: a panel this size needs
+ * its height for controls, and the sheet's own drag handle already says what can be grabbed.
+ */
 @Composable
 internal fun ReaderSettingsHeader(title: String, subtitle: String? = null) {
-    Column(Modifier.fillMaxWidth().padding(start = SheetGutter, end = SheetGutter, bottom = 14.dp)) {
+    Column(Modifier.fillMaxWidth().padding(bottom = 2.dp)) {
         Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         if (subtitle != null) {
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -96,46 +104,16 @@ internal fun ReaderSettingsHeader(title: String, subtitle: String? = null) {
     }
 }
 
-/**
- * Pill tabs, for a sheet with more settings than fit a screen. Deliberately not a TabRow: an
- * underlined tab in a bottom sheet reads as a second app bar, while the pill reads as what it is —
- * a switch between two short pages of the same panel.
- */
+/** Names a run of cards in a long sheet, so a scroll past it still reads as sections rather than a list. */
 @Composable
-internal fun ReaderSettingsTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit) {
-    Surface(
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = SheetGutter),
-    ) {
-        Row(Modifier.padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            tabs.forEachIndexed { index, label ->
-                val active = index == selected
-                val container by animateColorAsState(
-                    if (active) MaterialTheme.colorScheme.primary else Color.Transparent,
-                )
-                val content by animateColorAsState(
-                    if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Box(
-                    Modifier.weight(1f)
-                        .clip(CircleShape)
-                        .background(container)
-                        .clickable { onSelect(index) }
-                        .padding(vertical = 10.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        label,
-                        color = content,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
-                        maxLines = 1,
-                    )
-                }
-            }
-        }
-    }
+internal fun ReaderSettingsSectionLabel(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 4.dp, top = 4.dp),
+    )
 }
 
 /** Rounded container grouping the controls that belong together. */
