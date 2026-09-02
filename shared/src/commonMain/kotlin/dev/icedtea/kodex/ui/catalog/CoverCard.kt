@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -30,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import dev.icedtea.kodex.ui.nav.retain
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -302,8 +304,14 @@ fun <T> CoverSection(
     items: List<T>,
     key: (T) -> Any,
     onSeeAll: (() -> Unit)? = null,
+    /**
+     * Set it to keep how far the rail is scrolled while a card's screen is open — opening a cover
+     * unmounts the rail, and without this it comes back scrolled to the start. Unique per screen.
+     */
+    stateKey: String? = null,
     card: @Composable (T) -> Unit,
 ) {
+    val railState = retain(stateKey) { LazyListState() }
     Column {
         androidx.compose.foundation.layout.Row(
             Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, bottom = 12.dp),
@@ -320,6 +328,7 @@ fun <T> CoverSection(
             }
         }
         LazyRow(
+            state = railState,
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
         ) {

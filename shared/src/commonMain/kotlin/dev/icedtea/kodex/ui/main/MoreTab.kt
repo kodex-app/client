@@ -1,5 +1,6 @@
 package dev.icedtea.kodex.ui.main
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -10,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -48,6 +48,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.icedtea.kodex.auth.SessionManager
 import dev.icedtea.kodex.ui.collectAsStateSafe
+import dev.icedtea.kodex.ui.nav.retain
 
 /**
  * "More" is the app's hub: account/server summary, entry points to Downloads / Settings / About, and
@@ -78,9 +79,12 @@ fun MoreTab(
     val incognito by appSettings.incognitoMode.collectAsStateSafe()
     val isManager = user?.let { it.isAdmin || it.isManager } == true
     val isAdmin = user?.isAdmin == true
+    // Retained, not remembered: opening any row unmounts this tab, so a plain rememberScrollState
+    // would send you back to the top of the hub on every return. See RetainedState.kt.
+    val scroll = retain("more:scroll") { ScrollState(0) }
 
     Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 12.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 12.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Card(Modifier.fillMaxWidth()) {

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -39,6 +40,7 @@ import dev.icedtea.kodex.ui.catalog.seriesUnreadBadge
 import dev.icedtea.kodex.ui.catalog.sourceLabel
 import dev.icedtea.kodex.ui.collectAsStateSafe
 import dev.icedtea.kodex.ui.friendlyMessage
+import dev.icedtea.kodex.ui.nav.retain
 
 // Rail titles, shared by the section headers and the "See all" screens so the two can't drift.
 private const val RAIL_CONTINUE = "Continue reading"
@@ -82,14 +84,20 @@ fun HomeTab(
     // Source labels for the cover cards; cached per server, so this is a lookup after the first load.
     val sourceNames = rememberSourceNames(session, api)
     var reloadKey by remember { mutableStateOf(0) }
-    var state by remember { mutableStateOf<HomeUiState>(HomeUiState.Loading) }
+    // Retained, not remembered: opening a cover unmounts the whole tab area, so a plain `remember`
+    // sent Home back to the spinner and the top of the rails on every return. Held here, the rails
+    // stay on screen and refresh underneath — the same deal LoadedContent gives the other tabs.
+    var state by retain("home:state") { mutableStateOf<HomeUiState>(HomeUiState.Loading) }
+    val listState = retain("home:scroll") { LazyListState() }
     // Distinct from the cold-load spinner: a pull keeps the current rails on screen and shows the
     // indicator instead of blanking Home back to a spinner.
     var refreshing by remember { mutableStateOf(false) }
 
     androidx.compose.runtime.LaunchedEffect(server?.id, reloadKey) {
         val current = server ?: run { refreshing = false; return@LaunchedEffect }
-        if (!refreshing) state = HomeUiState.Loading
+        // Blank back to the spinner only when there is nothing to show; re-entering the tab with rails
+        // already loaded refreshes them in place, which is what keeps the scroll position meaningful.
+        if (!refreshing && state !is HomeUiState.Ready) state = HomeUiState.Loading
         state = runCatching { api.home(current.baseUrl, current.apiKey) }
             .fold(
                 onSuccess = { HomeUiState.Ready(it) },
@@ -127,6 +135,7 @@ fun HomeTab(
                 }
             } else {
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(24.dp),
@@ -137,22 +146,23 @@ fun HomeTab(
                             s.data.keepReading,
                             key = { "${it.kind}-${it.bookId ?: it.chapterId}" },
                             onSeeAll = { onSeeAll(dev.icedtea.kodex.ui.catalog.SeeAllKind.KEEP_READING) },
+                            stateKey = "rail:continue",
                         ) { k ->
                             KeepReadingCard(baseUrl, apiKey, k, onOpenBook, onShowBookDetails, onOpenSeries, onOpenSourceReader, onOpenBrowseReader)
                         }
                     }
                     if (s.data.recentSeries.isNotEmpty()) item {
-                        CoverSection(RAIL_RECENT_SERIES, s.data.recentSeries, key = { it.id }, onSeeAll = { onSeeAll(dev.icedtea.kodex.ui.catalog.SeeAllKind.RECENT_SERIES) }) { series ->
+                        CoverSection(RAIL_RECENT_SERIES, s.data.recentSeries, key = { it.id }, onSeeAll = { onSeeAll(dev.icedtea.kodex.ui.catalog.SeeAllKind.RECENT_SERIES) }, stateKey = "rail:recent-series") { series ->
                             SeriesCard(baseUrl, apiKey, series, sourceNames) { onOpenSeries(it.id) }
                         }
                     }
                     if (s.data.recentlyUpdatedSeries.isNotEmpty()) item {
-                        CoverSection(RAIL_UPDATED, s.data.recentlyUpdatedSeries, key = { it.id }, onSeeAll = { onSeeAll(dev.icedtea.kodex.ui.catalog.SeeAllKind.UPDATED_SERIES) }) { series ->
+                        CoverSection(RAIL_UPDATED, s.data.recentlyUpdatedSeries, key = { it.id }, onSeeAll = { onSeeAll(dev.icedtea.kodex.ui.catalog.SeeAllKind.UPDATED_SERIES) }, stateKey = "rail:updated") { series ->
                             SeriesCard(baseUrl, apiKey, series, sourceNames) { onOpenSeries(it.id) }
                         }
                     }
                     if (s.data.recentBooks.isNotEmpty()) item {
-                        CoverSection(RAIL_RECENT_BOOKS, s.data.recentBooks, key = { it.id }, onSeeAll = { onSeeAll(dev.icedtea.kodex.ui.catalog.SeeAllKind.RECENT_BOOKS) }) { b ->
+                        CoverSection(RAIL_RECENT_BOOKS, s.data.recentBooks, key = { it.id }, onSeeAll = { onSeeAll(dev.icedtea.kodex.ui.catalog.SeeAllKind.RECENT_BOOKS) }, stateKey = "rail:recent-books") { b ->
                             CoverCard(
                                 coverUrl = bookCoverUrl(baseUrl, b.id),
                                 apiKey = apiKey,

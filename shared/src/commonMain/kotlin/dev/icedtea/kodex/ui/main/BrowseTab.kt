@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -58,6 +59,7 @@ import dev.icedtea.kodex.network.SourceDescriptor
 import dev.icedtea.kodex.ui.EmptyMessage
 import dev.icedtea.kodex.ui.LoadedContent
 import dev.icedtea.kodex.ui.collectAsStateSafe
+import dev.icedtea.kodex.ui.nav.retain
 
 /** Browse installed content sources — favourites + recents on top, grouped by language, with filters. */
 @Composable
@@ -94,8 +96,11 @@ private fun SourceList(
 ) {
     val favorites by sourcePrefs.favorites.collectAsStateSafe()
     val recents by sourcePrefs.recents.collectAsStateSafe()
-    var filter by remember { mutableStateOf("") }
-    var kind by remember { mutableStateOf<String?>(null) }
+    // Retained for the same reason as the scroll position: opening a source and coming back to an
+    // unfiltered list loses the search you narrowed it down with. The language menu below stays a
+    // plain `remember` — a popup that was open should not reappear on return.
+    var filter by retain("browse:filter") { mutableStateOf("") }
+    var kind by retain("browse:kind") { mutableStateOf<String?>(null) }
     // Which language groups are hidden — server-persisted with the other Browse prefs, so the web UI
     // and this screen always agree on what's filtered out. Empty = every language shown.
     val hiddenLangs by sourcePrefs.hiddenLanguages.collectAsStateSafe()
@@ -208,7 +213,13 @@ private fun SourceList(
                 }
             }
         }
-        LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
+        // Retained: opening a source unmounts this list, and without it the long grouped list of
+        // sources came back scrolled to the top. See nav/RetainedState.kt.
+        val listState = retain("browse:scroll") { LazyListState() }
+        LazyColumn(
+            state = listState,
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+        ) {
             fun sourceItems(list: List<SourceDescriptor>, prefix: String, showLanguage: Boolean = false) {
                 items(list, key = { "$prefix-${it.id}" }) { source ->
                     SourceRow(

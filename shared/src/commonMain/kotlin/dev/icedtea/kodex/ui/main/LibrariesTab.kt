@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -63,6 +64,7 @@ import dev.icedtea.kodex.ui.EmptyMessage
 import dev.icedtea.kodex.ui.LoadedContent
 import dev.icedtea.kodex.ui.collectAsStateSafe
 import dev.icedtea.kodex.ui.isoEpochMillis
+import dev.icedtea.kodex.ui.nav.retain
 import dev.icedtea.kodex.ui.catalog.ColorBadge
 import dev.icedtea.kodex.ui.catalog.CoverThumb
 import dev.icedtea.kodex.ui.catalog.seriesCoverUrl
@@ -84,6 +86,9 @@ fun LibrariesTab(
     onArrange: () -> Unit,
 ) {
     val server by session.activeServer.collectAsStateSafe()
+    // Retained: drilling into a library unmounts the tab, so a grid state remembered here would put
+    // you back at the top of the tiles on return. See nav/RetainedState.kt.
+    val gridState = retain("libraries:grid") { LazyGridState() }
     val storedSort by appSettings.librariesSort.collectAsStateSafe()
     val sort = remember(storedSort) { LibrariesSort.parse(storedSort) }
 
@@ -120,8 +125,11 @@ fun LibrariesTab(
         if (libraries.isEmpty()) {
             EmptyMessage("No libraries yet.\nCreate one on your server to see it here.")
         } else {
-            var query by remember(libraries) { mutableStateOf("") }
-            var filter by remember(libraries) { mutableStateOf(LibrariesFilter()) }
+            // Retained alongside the list itself: coming back from a library to a cleared search box
+            // showed a different set of tiles than the one you left, which reads as the filter having
+            // been thrown away rather than the screen having been restored.
+            var query by retain("libraries:query") { mutableStateOf("") }
+            var filter by retain("libraries:filter") { mutableStateOf(LibrariesFilter()) }
             val kinds = remember(libraries) {
                 libraries.mapNotNull { it.mediaKind?.takeIf(String::isNotBlank) }.distinct().sorted()
             }
@@ -153,6 +161,7 @@ fun LibrariesTab(
                     // more instead of stretching two tiles across the screen.
                     LazyVerticalGrid(
                         columns = GridCells.Adaptive(168.dp),
+                        state = gridState,
                         modifier = Modifier.weight(1f),
                         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),

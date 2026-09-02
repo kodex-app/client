@@ -1,5 +1,7 @@
 package dev.icedtea.kodex.ui.reader.ebook
 
+import dev.icedtea.kodex.network.BundledFontDto
+import dev.icedtea.kodex.network.CustomFontDto
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.ui.reader.settingsKeyPart
 import kotlinx.serialization.Serializable
@@ -189,6 +191,29 @@ internal fun parseEbookPrefs(settings: JsonObject, seriesId: String?): ResolvedE
 suspend fun saveEbookOverride(api: KodexApi, baseUrl: String, apiKey: String, seriesId: String?, prefs: EbookPrefs) {
     val key = if (seriesId != null) seriesKey(seriesId) else DEFAULT_KEY
     api.saveUserSetting(baseUrl, apiKey, key, prefsJson.encodeToJsonElement(prefs))
+}
+
+/** The user's default ebook prefs, parsed from an already-fetched settings object (no request). */
+fun parseEbookDefault(settings: JsonObject): EbookPrefs = parseEbookPrefs(settings, seriesId = null).default
+
+/**
+ * What the font picker offers, in the order the web reader offers it: the book's own fonts, the faces
+ * the server ships, then the user's uploads. Built here rather than at each picker so the reader and
+ * the defaults screen cannot end up listing different fonts.
+ *
+ * [current] is included when it names one of the legacy `serif`/`sans`/`mono` stacks — no longer
+ * offered, still rendered, and shown only while it is what the book is set to, so the picker has a
+ * selection to point at.
+ */
+fun ebookFontOptions(
+    current: String,
+    bundled: List<BundledFontDto>,
+    custom: List<CustomFontDto>,
+): List<Pair<String, String>> = buildList {
+    add(FONT_PUBLISHER to "Publisher")
+    bundled.forEach { add("bundled:${it.id}" to it.family.ifBlank { it.id }) }
+    custom.forEach { add("custom:${it.id}" to it.family.ifBlank { "Custom" }) }
+    LEGACY_FONT_STACKS[current]?.let { add(current to it) }
 }
 
 /** Save the current prefs as the user-wide default (used by series without an override of their own). */

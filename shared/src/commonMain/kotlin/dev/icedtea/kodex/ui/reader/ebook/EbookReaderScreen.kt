@@ -1434,16 +1434,7 @@ private fun EbookTextSettings(
     bundledFonts: List<BundledFontDto>,
     onChange: (EbookPrefs) -> Unit,
 ) {
-    // The same list the web offers: the book's own fonts, the server's shipped faces, then the
-    // user's uploads. The generic `serif`/`sans`/`mono` stacks are legacy values — still rendered
-    // when a stored pref names one, but only shown here so that pref has a visible selection.
-    val fontOptions = buildList {
-        add(FONT_PUBLISHER to "Publisher")
-        bundledFonts.forEach { add("bundled:${it.id}" to it.family.ifBlank { it.id }) }
-        fonts.forEach { add("custom:${it.id}" to it.family.ifBlank { "Custom" }) }
-        val legacy = LEGACY_FONT_STACKS[prefs.fontFamily]
-        if (legacy != null) add(prefs.fontFamily to legacy)
-    }
+    val fontOptions = ebookFontOptions(prefs.fontFamily, bundledFonts, fonts)
     ReaderSettingsCard {
         ReaderSettingsSelect("Font", prefs.fontFamily, fontOptions) { onChange(prefs.copy(fontFamily = it)) }
         ReaderSettingsStepper(
