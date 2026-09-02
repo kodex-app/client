@@ -1710,14 +1710,15 @@ private fun SettingsSheet(
                 ReaderSettingsSwatches("Background", prefs.bg, PAGE_BG_SWATCHES) { onChange(prefs.copy(bg = it)) }
             }
             ReaderSettingsCard {
-                ReaderSettingsSegmented(
+                // "Continuous" is wider than a third of the control column, so this one is a select.
+                ReaderSettingsSelect(
                     "Layout",
                     prefs.mode,
                     listOf(MODE_AUTO to "Auto", MODE_PAGED to "Paged", MODE_CONTINUOUS to "Continuous"),
                 ) {
                     onChange(prefs.copy(mode = it))
                 }
-                ReaderSettingsSegmented(
+                ReaderSettingsSelect(
                     "Fit",
                     prefs.zoom,
                     listOf(ZOOM_HEIGHT to "Height", ZOOM_WIDTH to "Width", ZOOM_ORIGINAL to "Original"),
@@ -1743,19 +1744,20 @@ private fun SettingsSheet(
             ReaderSettingsCard {
                 // Lives here now that the toolbar's rotation button became the reading-mode picker. Unlike the
                 // rest of the sheet this isn't a stored preference — it lasts as long as the reader is open.
-                ReaderSettingsSegmented(
-                    "Screen orientation",
+                ReaderSettingsSelect(
+                    "Orientation",
                     orientation.name,
                     dev.icedtea.kodex.platform.ScreenOrientation.entries.map { it.name to it.name.lowercase().replaceFirstChar(Char::uppercase) },
                     caption = "Lasts until you leave the reader.",
                 ) { picked ->
                     onOrientation(dev.icedtea.kodex.platform.ScreenOrientation.valueOf(picked))
                 }
-                ReaderSettingsChips(
-                    "Preload pages",
+                // Five segments would leave ~14dp of text apiece, so this one is a select too.
+                ReaderSettingsSelect(
+                    "Preload",
                     preload.toString(),
                     PRELOAD_OPTIONS.map { it.toString() to it.toString() },
-                    caption = "How many pages ahead to fetch. Applies everywhere, not just here.",
+                    caption = "Pages fetched ahead. Applies everywhere, not just here.",
                 ) { picked ->
                     picked.toIntOrNull()?.let(onPreload)
                 }

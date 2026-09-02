@@ -106,11 +106,11 @@ import dev.icedtea.kodex.ui.reader.ReadModeButton
 import dev.icedtea.kodex.ui.reader.ReaderEdge
 import dev.icedtea.kodex.ui.reader.ReaderModeOption
 import dev.icedtea.kodex.ui.reader.ReaderSettingsCard
-import dev.icedtea.kodex.ui.reader.ReaderSettingsChips
 import dev.icedtea.kodex.ui.reader.ReaderSettingsFooter
 import dev.icedtea.kodex.ui.reader.ReaderSettingsHeader
 import dev.icedtea.kodex.ui.reader.ReaderSettingsSectionLabel
 import dev.icedtea.kodex.ui.reader.ReaderSettingsSegmented
+import dev.icedtea.kodex.ui.reader.ReaderSettingsSelect
 import dev.icedtea.kodex.ui.reader.ReaderSettingsSlider
 import dev.icedtea.kodex.ui.reader.ReaderSettingsStepper
 import dev.icedtea.kodex.ui.reader.ReaderSettingsSwatches
@@ -1445,7 +1445,7 @@ private fun EbookTextSettings(
         if (legacy != null) add(prefs.fontFamily to legacy)
     }
     ReaderSettingsCard {
-        ReaderSettingsChips("Font", prefs.fontFamily, fontOptions) { onChange(prefs.copy(fontFamily = it)) }
+        ReaderSettingsSelect("Font", prefs.fontFamily, fontOptions) { onChange(prefs.copy(fontFamily = it)) }
         ReaderSettingsStepper(
             label = "Text size",
             value = "${prefs.fontSize}%",
@@ -1464,15 +1464,15 @@ private fun EbookTextSettings(
         )
     }
     ReaderSettingsCard {
-        ReaderSettingsSegmented(
+        ReaderSettingsSelect(
             "Alignment",
             prefs.textAlign,
             listOf(ALIGN_AUTO to "Auto", ALIGN_LEFT to "Left", ALIGN_JUSTIFY to "Justify"),
         ) {
             onChange(prefs.copy(textAlign = it))
         }
-        ReaderSettingsSegmented(
-            "Paragraph indent",
+        ReaderSettingsSelect(
+            "Indent",
             prefs.indent?.toString() ?: "auto",
             listOf("auto" to "Auto", "0.0" to "None", "1.0" to "1em", "2.0" to "2em"),
         ) {
@@ -1527,8 +1527,8 @@ private fun EbookPageSettings(
     ReaderSettingsCard {
         // Lives here now that the toolbar's rotation button became the reading-mode picker. Unlike the
         // rest of the sheet this isn't a stored preference — it lasts as long as the reader is open.
-        ReaderSettingsSegmented(
-            "Screen orientation",
+        ReaderSettingsSelect(
+            "Orientation",
             orientation.name,
             dev.icedtea.kodex.platform.ScreenOrientation.entries.map { it.name to it.name.lowercase().replaceFirstChar(Char::uppercase) },
             caption = "Lasts until you leave the reader.",

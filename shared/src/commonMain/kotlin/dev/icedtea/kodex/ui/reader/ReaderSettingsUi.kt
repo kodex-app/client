@@ -3,27 +3,27 @@ package dev.icedtea.kodex.ui.reader
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,7 +37,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -132,25 +135,15 @@ internal fun ReaderSettingsCard(modifier: Modifier = Modifier, content: @Composa
     }
 }
 
-/** Label line shared by the stacked controls: name on the left, current value or a caption on the right. */
+/** Label for a control too wide for a row's control column — the swatch pickers, which span both. */
 @Composable
-private fun FieldLabel(text: String, value: String? = null) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            text,
-            Modifier.weight(1f),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        if (value != null) {
-            Text(
-                value,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
-    }
+private fun FieldLabel(text: String) {
+    Text(
+        text,
+        Modifier.fillMaxWidth(),
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 @Composable
@@ -159,9 +152,57 @@ private fun Caption(text: String) {
 }
 
 /**
- * A small, fixed set of choices — two to four — as one segmented control filling the card's width.
- * The tick Material puts in the selected segment is dropped: it costs half the label's room on a
- * phone, and a filled segment already says which one is on.
+ * How a settings row divides: name on the left, control on the right.
+ *
+ * The control gets the larger share because it is the part that has to hold real words. Even so it is
+ * finite — roughly 190dp on a phone — which is what decides between a segmented control and a select
+ * at each call site: three segments leave about 60dp each, so "Justify" fits there and "Continuous"
+ * does not. A setting whose options outgrow that becomes a select, which shows one value and puts the
+ * rest in a menu, and so never has a width it cannot honour.
+ */
+private const val LABEL_WEIGHT = 0.35f
+private const val CONTROL_WEIGHT = 0.65f
+
+/**
+ * One row of a settings card: label left, control right, caption (when there is one) under both.
+ *
+ * Two lines are allowed for the label — a row stays readable when a long name wraps, and shortening
+ * every name to fit one line costs more than the wrap does.
+ */
+@Composable
+private fun SettingRow(
+    label: String,
+    caption: String? = null,
+    control: @Composable RowScope.() -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                label,
+                Modifier.weight(LABEL_WEIGHT).padding(end = 12.dp),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Row(
+                Modifier.weight(CONTROL_WEIGHT),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+                content = control,
+            )
+        }
+        if (caption != null) Caption(caption)
+    }
+}
+
+/**
+ * A small, fixed set of short choices as one segmented control in the row's control column. Short is
+ * the constraint: see [LABEL_WEIGHT] for what that column can hold, and use [ReaderSettingsSelect]
+ * for anything longer.
+ *
+ * The tick Material puts in the selected segment is dropped — it costs half the label's room, and a
+ * filled segment already says which one is on.
  */
 @Composable
 internal fun ReaderSettingsSegmented(
@@ -171,8 +212,7 @@ internal fun ReaderSettingsSegmented(
     caption: String? = null,
     onSelect: (String) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        FieldLabel(label)
+    SettingRow(label, caption) {
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
             options.forEachIndexed { index, (id, text) ->
                 SegmentedButton(
@@ -187,45 +227,77 @@ internal fun ReaderSettingsSegmented(
                 )
             }
         }
-        if (caption != null) Caption(caption)
     }
 }
 
-/** Open-ended choices (fonts, preload counts) — chips that scroll rather than a segment that shrinks. */
+/**
+ * A list too long to lay out: the current value on a tonal field, the rest in a menu.
+ *
+ * What the fonts need. There are the book's own, every face the server ships, and every one the user
+ * has uploaded — a chip row for that is a horizontal scroll with most of its options off the right
+ * edge, where nothing tells you they are there or how many.
+ */
 @Composable
-internal fun ReaderSettingsChips(
+internal fun ReaderSettingsSelect(
     label: String,
     value: String,
     options: List<Pair<String, String>>,
     caption: String? = null,
     onSelect: (String) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        FieldLabel(label)
-        Row(
-            Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            options.forEach { (id, text) ->
-                val selected = value == id
-                FilterChip(
-                    selected = selected,
-                    onClick = { onSelect(id) },
-                    shape = CircleShape,
-                    label = { Text(text, maxLines = 1) },
-                    leadingIcon = if (selected) {
-                        { Icon(Icons.Outlined.Check, null, Modifier.size(FilterChipDefaults.IconSize)) }
-                    } else {
-                        null
-                    },
-                )
+    var open by remember { mutableStateOf(false) }
+    SettingRow(label, caption) {
+        Box {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                // The stepper's tint, so the two controls read as the same kind of thing.
+                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.fillMaxWidth().clickable { open = true },
+            ) {
+                Row(
+                    Modifier.padding(start = 14.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        // A stored value the list doesn't carry still shows itself rather than a blank.
+                        options.firstOrNull { it.first == value }?.second ?: value,
+                        Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Icon(Icons.Outlined.ArrowDropDown, contentDescription = null)
+                }
+            }
+            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                options.forEach { (id, text) ->
+                    val selected = id == value
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            )
+                        },
+                        onClick = {
+                            open = false
+                            onSelect(id)
+                        },
+                        trailingIcon = if (selected) {
+                            { Icon(Icons.Outlined.Check, null, tint = MaterialTheme.colorScheme.primary) }
+                        } else {
+                            null
+                        },
+                    )
+                }
             }
         }
-        if (caption != null) Caption(caption)
     }
 }
 
-/** Label on the left, a tonal minus / value / plus pill on the right. */
+/** A tonal minus / value / plus pill in the control column. */
 @Composable
 internal fun ReaderSettingsStepper(
     label: String,
@@ -235,13 +307,7 @@ internal fun ReaderSettingsStepper(
     onDecrease: () -> Unit,
     onIncrease: () -> Unit,
 ) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            label,
-            Modifier.weight(1f),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+    SettingRow(label) {
         Surface(
             shape = CircleShape,
             // Tinted rather than another surface step: the card is already surfaceContainerHigh, and
@@ -268,7 +334,7 @@ internal fun ReaderSettingsStepper(
     }
 }
 
-/** Continuous value: name and readout on one line, the slider under them at full width. */
+/** Continuous value: the slider in the control column with its readout pinned to the right of it. */
 @Composable
 internal fun ReaderSettingsSlider(
     label: String,
@@ -278,9 +344,25 @@ internal fun ReaderSettingsSlider(
     steps: Int = 0,
     onValueChange: (Float) -> Unit,
 ) {
-    Column {
-        FieldLabel(label, valueText)
-        Slider(value = value, onValueChange = onValueChange, valueRange = valueRange, steps = steps)
+    SettingRow(label) {
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            valueRange = valueRange,
+            steps = steps,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            valueText,
+            // Fixed width: the readout changes as you drag, and a width that changes with it would
+            // shove the slider sideways under your thumb.
+            Modifier.widthIn(min = 44.dp).padding(start = 8.dp),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+            textAlign = TextAlign.End,
+            maxLines = 1,
+        )
     }
 }
 
@@ -291,14 +373,7 @@ internal fun ReaderSettingsToggle(
     description: String? = null,
     onCheckedChange: (Boolean) -> Unit,
 ) {
-    Row(
-        Modifier.fillMaxWidth().clickable { onCheckedChange(!checked) },
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(label, style = MaterialTheme.typography.bodyLarge)
-            if (description != null) Caption(description)
-        }
+    SettingRow(label, caption = description) {
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
