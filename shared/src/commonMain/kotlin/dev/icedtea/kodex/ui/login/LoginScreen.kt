@@ -87,7 +87,7 @@ fun LoginScreen(session: SessionManager) {
                             busy = true
                             scope.launch {
                                 session.selectServer(server)
-                                    .onFailure { error = it.friendlyMessage() }
+                                    .onFailure { error = it.friendlyMessage(signIn = true) }
                                 busy = false
                             }
                         },
@@ -104,7 +104,7 @@ fun LoginScreen(session: SessionManager) {
                             busy = true
                             scope.launch {
                                 session.addServer(label, url, email, password)
-                                    .onFailure { error = it.friendlyMessage() }
+                                    .onFailure { error = it.friendlyMessage(signIn = true) }
                                 busy = false
                             }
                         },
