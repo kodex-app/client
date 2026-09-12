@@ -387,17 +387,18 @@ fun SourceFeedScreen(
                         endpoint = endpoint,
                         onRetry = { reloadKey++ },
                     )
-                    // Not "Nothing to show here": a source reports a failed fetch as an empty page (its
-                    // HTTP helper turns any error into a null document), so an empty feed is far more
-                    // often a broken source than an empty one. Say what actually happened and point at
-                    // where the real reason is, instead of implying the source is simply bare.
+                    // A failed fetch lands in the branch above, never here: sources report their
+                    // failures now instead of answering with an empty page. So an empty feed really is
+                    // an empty answer - but "Nothing to show here" still leaves the two readings
+                    // (genuinely empty vs. a parser that stopped matching) indistinguishable, so name them.
                     items.isEmpty() -> ProblemBox(
                         title = if (searching) "No results from ${source.displayName}"
                         else "${source.displayName} returned nothing",
-                        detail = "The server reached the source and got 0 results back, without reporting an "
-                            + "error. " + (if (searching) "Either nothing matches this search, or the " else "The ")
-                            + "site is down, is blocking the server, or changed its layout - sources answer a "
-                            + "failed fetch with an empty page. The server log for this source has the real reason.",
+                        detail = "The source answered without an error but sent back no items. "
+                            + (if (searching) "Either nothing matches this search, or " else "Either there is "
+                            + "genuinely nothing here, or ")
+                            + "the site changed its layout and the plugin no longer finds anything on it - "
+                            + "the server log for this source says which.",
                         endpoint = endpoint,
                         onRetry = { reloadKey++ },
                     )
