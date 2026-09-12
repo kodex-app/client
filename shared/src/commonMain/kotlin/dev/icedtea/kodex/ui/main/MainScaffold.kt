@@ -302,6 +302,7 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
                     onOpenLibraries = { backStack.add(DetailRoute.Libraries) },
                     onOpenLabels = { backStack.add(DetailRoute.Labels) },
                     onOpenPlugins = { backStack.add(DetailRoute.Plugins) },
+                    onOpenLnReaderPlugins = { backStack.add(DetailRoute.LnReaderPlugins) },
                     onOpenUsers = { backStack.add(DetailRoute.Users) },
                     onOpenTasks = { backStack.add(DetailRoute.Tasks) },
                     onOpenServerActions = { backStack.add(DetailRoute.ServerActions) },

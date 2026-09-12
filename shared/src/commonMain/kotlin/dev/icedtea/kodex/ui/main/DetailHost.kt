@@ -20,6 +20,7 @@ import dev.icedtea.kodex.ui.manage.MigrateScreen
 import dev.icedtea.kodex.ui.manage.BackupScreen
 import dev.icedtea.kodex.ui.manage.LogsScreen
 import dev.icedtea.kodex.ui.manage.NetworkSettingsScreen
+import dev.icedtea.kodex.ui.manage.LnReaderPluginsScreen
 import dev.icedtea.kodex.ui.manage.PluginRepositoriesScreen
 import dev.icedtea.kodex.ui.manage.PluginsScreen
 import dev.icedtea.kodex.ui.manage.ServerActionsScreen
@@ -57,6 +58,7 @@ sealed interface DetailRoute {
     data object Libraries : DetailRoute
     data object Labels : DetailRoute
     data object Plugins : DetailRoute
+    data object LnReaderPlugins : DetailRoute
     data object Users : DetailRoute
     data object Tasks : DetailRoute
     data object ServerActions : DetailRoute
@@ -183,6 +185,9 @@ fun DetailHost(
 
         is DetailRoute.PluginRepositories ->
             PluginRepositoriesScreen(session, api, onBack)
+
+        is DetailRoute.LnReaderPlugins ->
+            LnReaderPluginsScreen(session, api, onBack)
 
         is DetailRoute.Users ->
             UsersScreen(session, api, onBack)

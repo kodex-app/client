@@ -21,6 +21,7 @@ import androidx.compose.material.icons.outlined.Backup
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.Info
@@ -66,6 +67,7 @@ fun MoreTab(
     onOpenLibraries: () -> Unit = {},
     onOpenLabels: () -> Unit = {},
     onOpenPlugins: () -> Unit = {},
+    onOpenLnReaderPlugins: () -> Unit = {},
     onOpenUsers: () -> Unit = {},
     onOpenTasks: () -> Unit = {},
     onOpenServerActions: () -> Unit = {},
@@ -180,6 +182,8 @@ fun MoreTab(
                     if (isAdmin) {
                         HorizontalDivider(Modifier.padding(start = 56.dp))
                         HubRow(Icons.Outlined.Extension, "Plugins", "Install and manage content sources", onOpenPlugins)
+                        HorizontalDivider(Modifier.padding(start = 56.dp))
+                        HubRow(Icons.AutoMirrored.Outlined.MenuBook, "LNReader plugins", "Novel sources from the LNReader repository", onOpenLnReaderPlugins)
                     }
                 }
             }

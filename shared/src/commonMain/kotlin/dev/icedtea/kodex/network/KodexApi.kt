@@ -406,6 +406,55 @@ class KodexApi(private val client: HttpClient) {
     suspend fun checkPluginUpdates(baseUrl: String, apiKey: String): PluginUpdateStatusDto =
         client.post("$baseUrl/api/v1/plugins/check-updates") { header(HEADER_API_KEY, apiKey) }.body()
 
+    // ── LNReader plugins ─────────────────────────────────────────────────────────────────────────
+
+    suspend fun lnreaderAvailable(baseUrl: String, apiKey: String, refresh: Boolean = false): List<LnReaderAvailableDto> =
+        client.get("$baseUrl/api/v1/lnreader/plugins/available") {
+            header(HEADER_API_KEY, apiKey)
+            if (refresh) parameter("refresh", true)
+        }.body()
+
+    suspend fun lnreaderInstalled(baseUrl: String, apiKey: String): List<LnReaderInstalledDto> =
+        client.get("$baseUrl/api/v1/lnreader/plugins") { header(HEADER_API_KEY, apiKey) }.body()
+
+    /** Installs, or updates to the repository's version. */
+    suspend fun lnreaderInstall(baseUrl: String, apiKey: String, id: String): LnReaderInstalledDto =
+        client.post("$baseUrl/api/v1/lnreader/plugins/${id.encodeURLPathPart()}") { header(HEADER_API_KEY, apiKey) }.body()
+
+    suspend fun lnreaderUninstall(baseUrl: String, apiKey: String, id: String) {
+        client.delete("$baseUrl/api/v1/lnreader/plugins/${id.encodeURLPathPart()}") { header(HEADER_API_KEY, apiKey) }
+    }
+
+    suspend fun lnreaderUpdateStatus(baseUrl: String, apiKey: String): LnReaderUpdateStatusDto =
+        client.get("$baseUrl/api/v1/lnreader/plugins/update-status") { header(HEADER_API_KEY, apiKey) }.body()
+
+    suspend fun lnreaderCheckUpdates(baseUrl: String, apiKey: String): LnReaderUpdateStatusDto =
+        client.post("$baseUrl/api/v1/lnreader/plugins/check-updates") { header(HEADER_API_KEY, apiKey) }.body()
+
+    suspend fun lnreaderUpdateAll(baseUrl: String, apiKey: String): List<LnReaderUpdateOutcome> =
+        client.post("$baseUrl/api/v1/lnreader/plugins/update-all") { header(HEADER_API_KEY, apiKey) }.body()
+
+    suspend fun lnreaderRepositories(baseUrl: String, apiKey: String, refresh: Boolean = false): List<LnReaderRepositoryDto> =
+        client.get("$baseUrl/api/v1/lnreader/repos") {
+            header(HEADER_API_KEY, apiKey)
+            if (refresh) parameter("refresh", true)
+        }.body()
+
+    /** Adds a repository by manifest URL; the server fetches it first and rejects what it can't read. */
+    suspend fun lnreaderAddRepository(baseUrl: String, apiKey: String, url: String): LnReaderRepositoryDto =
+        client.post("$baseUrl/api/v1/lnreader/repos") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(LnReaderAddRepositoryRequest(url))
+        }.body()
+
+    suspend fun lnreaderRemoveRepository(baseUrl: String, apiKey: String, url: String) {
+        client.delete("$baseUrl/api/v1/lnreader/repos") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("url", url)
+        }
+    }
+
     // ── Migration (Phase 3) ──────────────────────────────────────────────────────────────────────
 
     suspend fun migrationCandidates(baseUrl: String, apiKey: String, libraryId: String, seriesId: String, providerId: String, query: String?): List<SourceSearchResult> =

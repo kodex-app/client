@@ -63,6 +63,7 @@ Legend: `[x]` done · `[~]` partial (built, gaps listed) · `[ ]` not started
 - [x] Metadata edit sheets — series (title/summary/publisher/status/language/genres/tags · **labels multi-select** · **locked fields**, partial PATCH) + book (title/number/summary/tags · **authors name+role rows** · **locked fields**) + book identifiers/links shown
 - [x] Labels — create / rename / delete (More → Labels, admin-gated)
 - [x] Plugins — Installed (enable/disable/update/uninstall · **schema-driven per-plugin settings sheet**: STRING/SECRET/BOOLEAN/INTEGER/ENUM) · Browse & install from repository · check-updates · **repository CRUD** (add/edit/enable/remove, write-only tokens) — More → Plugins, admin
+- [x] LNReader plugins — one list of the repository's ~280 novel sources (installed first; search · language chips · installed-only) · install / update / uninstall · per-source settings via the same schema sheet (the plugin's `pluginSettings`, User-Agent override, pasted site storage for `webStorageUtilized` plugins) · check-updates / update-all · repositories dialog (add/remove manifest URLs). No sideload on mobile (web UI only). Mirrors `/api/v1/lnreader/*` — More → LNReader plugins, admin
 - [x] Migration: MigrateSeries — pick target source, find matches, choose carry-over (read/metadata/downloads), migrate (Series detail → Migrate)
 
 ## Phase 4 — server admin
