@@ -139,6 +139,16 @@ fun NetworkSettingsScreen(session: SessionManager, api: KodexApi, onBack: () -> 
             var remoteBrowser by remember(current) { mutableStateOf(current.remoteBrowserEnabled) }
             var remoteBrowserUrl by remember(current) { mutableStateOf(current.remoteBrowserUrl) }
 
+            // Only sections that are switched on are checked; the server silently treats an unusable value as
+            // "off" (NetworkSettings.*Active), so Save stays disabled until every enabled section is complete.
+            val hostError = if (proxyEnabled && host.isBlank()) "Enter the proxy host" else null
+            val portError = if (proxyEnabled && port.toIntOrNull()?.let { it in 1..65535 } != true) "Port must be between 1 and 65535" else null
+            val dohError = if (dohEnabled && !isUrl(dohUrl, "https")) "Enter an https:// URL" else null
+            val solverUrlError = if (solverEnabled && !isUrl(solverUrl, "http", "https")) "Enter an http:// or https:// URL" else null
+            val solverTimeoutError = if (solverEnabled && solverTimeout.toIntOrNull()?.let { it in 5..300 } != true) "Timeout must be between 5 and 300 seconds" else null
+            val remoteBrowserError = if (remoteBrowser && !isUrl(remoteBrowserUrl, "ws", "wss")) "Enter a ws:// or wss:// URL" else null
+            val valid = listOf(hostError, portError, dohError, solverUrlError, solverTimeoutError, remoteBrowserError).all { it == null }
+
             SettingsSectionHeader("Proxy")
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
@@ -156,13 +166,23 @@ fun NetworkSettingsScreen(session: SessionManager, api: KodexApi, onBack: () -> 
                             }
                         }
                         Spacer(Modifier.height(8.dp))
-                        OutlinedTextField(host, { host = it }, singleLine = true, label = { Text("Host") }, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(
+                            value = host,
+                            onValueChange = { host = it },
+                            singleLine = true,
+                            label = { Text("Host") },
+                            isError = hostError != null,
+                            supportingText = hostError?.let { { Text(it) } },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                         Spacer(Modifier.height(8.dp))
                         OutlinedTextField(
                             value = port,
                             onValueChange = { port = it.filter { c -> c.isDigit() } },
                             singleLine = true,
                             label = { Text("Port") },
+                            isError = portError != null,
+                            supportingText = portError?.let { { Text(it) } },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -195,7 +215,8 @@ fun NetworkSettingsScreen(session: SessionManager, api: KodexApi, onBack: () -> 
                             onValueChange = { dohUrl = it },
                             singleLine = true,
                             label = { Text("Resolver URL") },
-                            supportingText = { Text("e.g. https://cloudflare-dns.com/dns-query") },
+                            isError = dohError != null,
+                            supportingText = { Text(dohError ?: "e.g. https://cloudflare-dns.com/dns-query") },
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
@@ -215,13 +236,23 @@ fun NetworkSettingsScreen(session: SessionManager, api: KodexApi, onBack: () -> 
                     ToggleRow("Use a solver", solverEnabled) { solverEnabled = it }
                     if (solverEnabled) {
                         Spacer(Modifier.height(8.dp))
-                        OutlinedTextField(solverUrl, { solverUrl = it }, singleLine = true, label = { Text("Solver URL") }, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(
+                            value = solverUrl,
+                            onValueChange = { solverUrl = it },
+                            singleLine = true,
+                            label = { Text("Solver URL") },
+                            isError = solverUrlError != null,
+                            supportingText = { Text(solverUrlError ?: "e.g. http://localhost:8191") },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                         Spacer(Modifier.height(8.dp))
                         OutlinedTextField(
                             value = solverTimeout,
                             onValueChange = { solverTimeout = it.filter { c -> c.isDigit() } },
                             singleLine = true,
                             label = { Text("Timeout (seconds)") },
+                            isError = solverTimeoutError != null,
+                            supportingText = solverTimeoutError?.let { { Text(it) } },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -247,7 +278,8 @@ fun NetworkSettingsScreen(session: SessionManager, api: KodexApi, onBack: () -> 
                             onValueChange = { remoteBrowserUrl = it },
                             singleLine = true,
                             label = { Text("DevTools WebSocket URL") },
-                            supportingText = { Text("e.g. ws://browserless:3000?token=…") },
+                            isError = remoteBrowserError != null,
+                            supportingText = { Text(remoteBrowserError ?: "e.g. ws://browserless:3000?token=…") },
                             modifier = Modifier.fillMaxWidth(),
                         )
                     } else {
@@ -292,7 +324,7 @@ fun NetworkSettingsScreen(session: SessionManager, api: KodexApi, onBack: () -> 
 
             Spacer(Modifier.height(20.dp))
             Button(
-                enabled = !busy,
+                enabled = !busy && valid,
                 onClick = {
                     val s = server ?: return@Button
                     busy = true
@@ -326,6 +358,15 @@ fun NetworkSettingsScreen(session: SessionManager, api: KodexApi, onBack: () -> 
 }
 
 private const val BROWSER_HINT = "The browser starts on the first source that needs it and stops on its own after a few minutes without pages. \"Open a page…\" lets you log in or pass an anti-bot check by hand; the cookies go to the Mihon extensions."
+
+/** `scheme://host…` with one of the given schemes and a non-empty host — enough to catch a bare hostname or a typo'd scheme. */
+private fun isUrl(value: String, vararg schemes: String): Boolean {
+    val v = value.trim()
+    val scheme = schemes.firstOrNull { v.startsWith("$it://", ignoreCase = true) } ?: return false
+    val rest = v.substring(scheme.length + 3)
+    val authority = rest.takeWhile { it != '/' && it != '?' && it != '#' }
+    return authority.substringAfter('@').substringBefore(':').isNotBlank()
+}
 
 private fun formatSeconds(seconds: Long): String = if (seconds < 60) "$seconds s" else "${seconds / 60} min"
 
