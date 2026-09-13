@@ -192,7 +192,7 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
             onOpenMigrate = { seriesId, providerId, sourceSeriesId, title ->
                 backStack.add(DetailRoute.Migrate(seriesId, providerId, sourceSeriesId, title))
             },
-            onOpenPluginRepositories = { backStack.add(DetailRoute.PluginRepositories) },
+            onOpenMihonBrowser = { backStack.add(it) },
             onBack = { popDetail() },
         )
       }
@@ -301,8 +301,9 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
                     onOpenAbout = { backStack.add(DetailRoute.About) },
                     onOpenLibraries = { backStack.add(DetailRoute.Libraries) },
                     onOpenLabels = { backStack.add(DetailRoute.Labels) },
-                    onOpenPlugins = { backStack.add(DetailRoute.Plugins) },
+                    onOpenMihonExtensions = { backStack.add(DetailRoute.MihonExtensions) },
                     onOpenLnReaderPlugins = { backStack.add(DetailRoute.LnReaderPlugins) },
+                    onOpenMetadataProviders = { backStack.add(DetailRoute.MetadataProviders) },
                     onOpenUsers = { backStack.add(DetailRoute.Users) },
                     onOpenTasks = { backStack.add(DetailRoute.Tasks) },
                     onOpenServerActions = { backStack.add(DetailRoute.ServerActions) },

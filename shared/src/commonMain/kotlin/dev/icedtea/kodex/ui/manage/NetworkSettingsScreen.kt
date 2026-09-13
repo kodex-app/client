@@ -13,6 +13,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -41,40 +43,68 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import dev.icedtea.kodex.auth.SessionManager
 import dev.icedtea.kodex.network.KodexApi
+import dev.icedtea.kodex.network.BrowserStatusDto
 import dev.icedtea.kodex.network.NetworkSettingsDto
 import dev.icedtea.kodex.network.NetworkSettingsRequest
 import dev.icedtea.kodex.ui.InlineLoadError
 import dev.icedtea.kodex.ui.collectAsStateSafe
 import dev.icedtea.kodex.ui.friendlyMessage
 import dev.icedtea.kodex.ui.rememberSnackbar
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private val PROXY_TYPES = listOf("HTTP", "SOCKS4", "SOCKS5")
 
 /**
- * How the *server* reaches the internet: proxy, DNS-over-HTTPS, and the Cloudflare solver that content
- * sources fall back to. Nothing here affects this app's own connection to the server.
+ * How the *server* reaches the internet: proxy, DNS-over-HTTPS, the Cloudflare solver that content
+ * sources fall back to, and the browser Mihon sources use as their WebView (a remote browserless, or
+ * the Chromium on the server). Nothing here affects this app's own connection to the server.
  *
  * Saved as one whole object — the API replaces the record rather than patching fields — so the screen
  * edits a local copy and sends it on Save.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NetworkSettingsScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) {
+fun NetworkSettingsScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit, onOpenPage: (String) -> Unit = {}) {
     val server by session.activeServer.collectAsStateSafe()
     val snackbar = rememberSnackbar()
     val scope = rememberCoroutineScope()
 
     var loaded by remember { mutableStateOf<NetworkSettingsDto?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var browser by remember { mutableStateOf<BrowserStatusDto?>(null) }
+    var stopping by remember { mutableStateOf(false) }
+    var openUrl by remember { mutableStateOf<String?>(null) }
     var loadError by remember { mutableStateOf<String?>(null) }
     var reload by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(server?.id, reload) {
         val s = server ?: return@LaunchedEffect
         runCatching { api.networkSettings(s.baseUrl, s.apiKey) }.fold(
-            onSuccess = { loaded = it; loadError = null },
+            onSuccess = { loaded = it; browser = it.browser; loadError = null },
             onFailure = { loadError = it.friendlyMessage() },
+        )
+        // The browser starts and stops on its own; keep its line current while the screen is open.
+        while (true) {
+            delay(5_000)
+            runCatching { api.browserStatus(s.baseUrl, s.apiKey) }.onSuccess { browser = it }
+        }
+    }
+
+    openUrl?.let { draft ->
+        var value by remember(draft) { mutableStateOf(draft) }
+        AlertDialog(
+            onDismissRequest = { openUrl = null },
+            title = { Text("Open a page") },
+            text = {
+                Column {
+                    Text("Opens a URL in the server's browser so you can log in or pass an anti-bot check by hand; cookies go to the Mihon extensions.", style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(value, { value = it }, singleLine = true, placeholder = { Text("https://") }, modifier = Modifier.fillMaxWidth())
+                }
+            },
+            confirmButton = { TextButton(enabled = value.isNotBlank(), onClick = { openUrl = null; onOpenPage(value.trim()) }) { Text("Open") } },
+            dismissButton = { TextButton(onClick = { openUrl = null }) { Text("Cancel") } },
         )
     }
 
@@ -106,6 +136,8 @@ fun NetworkSettingsScreen(session: SessionManager, api: KodexApi, onBack: () -> 
             var solverEnabled by remember(current) { mutableStateOf(current.cloudflareSolverEnabled) }
             var solverUrl by remember(current) { mutableStateOf(current.cloudflareSolverUrl) }
             var solverTimeout by remember(current) { mutableStateOf(current.cloudflareSolverTimeoutSeconds.toString()) }
+            var remoteBrowser by remember(current) { mutableStateOf(current.remoteBrowserEnabled) }
+            var remoteBrowserUrl by remember(current) { mutableStateOf(current.remoteBrowserUrl) }
 
             SettingsSectionHeader("Proxy")
             Card(Modifier.fillMaxWidth()) {
@@ -198,6 +230,67 @@ fun NetworkSettingsScreen(session: SessionManager, api: KodexApi, onBack: () -> 
             }
 
             Spacer(Modifier.height(20.dp))
+            SettingsSectionHeader("Browser (Mihon WebView)")
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(
+                        "Some Mihon sources need a real browser: page scripts that compute image URLs, or anti-bot interstitials. Off: the Chromium/Chrome/Edge installed on the server runs headless. On: a remote headless browser (browserless) is used instead.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    ToggleRow("Use a remote browser (browserless)", remoteBrowser) { remoteBrowser = it }
+                    if (remoteBrowser) {
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = remoteBrowserUrl,
+                            onValueChange = { remoteBrowserUrl = it },
+                            singleLine = true,
+                            label = { Text("DevTools WebSocket URL") },
+                            supportingText = { Text("e.g. ws://browserless:3000?token=…") },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            current.embeddedBrowser?.let { "Using the browser on the server: $it" }
+                                ?: "No Chromium/Chrome/Edge found on the server — sources that need a WebView will report it.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (current.embeddedBrowser != null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    browser?.let { b ->
+                        Spacer(Modifier.height(12.dp))
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            val state = when {
+                                !b.running -> "Not running"
+                                b.pagesOpen > 0 -> "Running · ${b.pagesOpen}/${b.maxPages} pages"
+                                else -> "Idle" + (b.idleSeconds?.let { " for ${formatSeconds(it)}" } ?: "")
+                            }
+                            Text(state, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                            TextButton(enabled = b.mode != "none", onClick = { openUrl = "" }) { Text("Open a page…") }
+                            if (b.running) TextButton(enabled = !stopping, onClick = {
+                                val s = server ?: return@TextButton
+                                stopping = true
+                                scope.launch {
+                                    runCatching { api.stopBrowser(s.baseUrl, s.apiKey) }.fold(
+                                        onSuccess = { browser = it; snackbar?.show("Browser stopped; it starts again on the next source that needs it") },
+                                        onFailure = { snackbar?.show(it.friendlyMessage()) },
+                                    )
+                                    stopping = false
+                                }
+                            }) { Text("Stop") }
+                        }
+                        Text(
+                            BROWSER_HINT,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
             Button(
                 enabled = !busy,
                 onClick = {
@@ -216,6 +309,8 @@ fun NetworkSettingsScreen(session: SessionManager, api: KodexApi, onBack: () -> 
                             cloudflareSolverEnabled = solverEnabled,
                             cloudflareSolverUrl = solverUrl.trim(),
                             cloudflareSolverTimeoutSeconds = solverTimeout.toIntOrNull() ?: 60,
+                            remoteBrowserEnabled = remoteBrowser,
+                            remoteBrowserUrl = remoteBrowserUrl.trim(),
                         )
                         runCatching { api.saveNetworkSettings(s.baseUrl, s.apiKey, request) }.fold(
                             onSuccess = { loaded = it; snackbar?.show("Network settings saved") },
@@ -229,6 +324,10 @@ fun NetworkSettingsScreen(session: SessionManager, api: KodexApi, onBack: () -> 
         }
     }
 }
+
+private const val BROWSER_HINT = "The browser starts on the first source that needs it and stops on its own after a few minutes without pages. \"Open a page…\" lets you log in or pass an anti-bot check by hand; the cookies go to the Mihon extensions."
+
+private fun formatSeconds(seconds: Long): String = if (seconds < 60) "$seconds s" else "${seconds / 60} min"
 
 @Composable
 private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {

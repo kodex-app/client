@@ -62,6 +62,8 @@ fun SourceConfigSheet(
     onDismiss: () -> Unit,
     /** Called with a message to show once saving finishes, successfully or not. */
     onSaved: (String) -> Unit,
+    /** A metadata provider's config lives under `/metadata-providers`; content sources are the default. */
+    metadata: Boolean = false,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
@@ -73,7 +75,7 @@ fun SourceConfigSheet(
     val edited = remember { mutableStateMapOf<String, String>() }
 
     LaunchedEffect(providerId) {
-        runCatching { api.sourceConfig(baseUrl, apiKey, providerId) }
+        runCatching { api.sourceConfig(baseUrl, apiKey, providerId, metadata) }
             .onSuccess { config = it }
             .onFailure { failed = true }
     }
@@ -120,7 +122,7 @@ fun SourceConfigSheet(
                             onClick = {
                                 busy = true
                                 scope.launch {
-                                    runCatching { api.saveSourceConfig(baseUrl, apiKey, providerId, edited.toMap()) }
+                                    runCatching { api.saveSourceConfig(baseUrl, apiKey, providerId, edited.toMap(), metadata) }
                                         .fold(
                                             onSuccess = { onSaved("Settings saved") },
                                             onFailure = { onSaved(it.friendlyMessage()) },

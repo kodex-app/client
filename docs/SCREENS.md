@@ -62,7 +62,9 @@ Legend: `[x]` done · `[~]` partial (built, gaps listed) · `[ ]` not started
 - [x] Libraries CRUD — create (LOCAL server-side folder picker via `/filesystem` · WEB source+kind), edit, delete, refresh/deep-scan/analyze, reorder, hide, hide-from-homepage (More → Libraries)
 - [x] Metadata edit sheets — series (title/summary/publisher/status/language/genres/tags · **labels multi-select** · **locked fields**, partial PATCH) + book (title/number/summary/tags · **authors name+role rows** · **locked fields**) + book identifiers/links shown
 - [x] Labels — create / rename / delete (More → Labels, admin-gated)
-- [x] Plugins — Installed (enable/disable/update/uninstall · **schema-driven per-plugin settings sheet**: STRING/SECRET/BOOLEAN/INTEGER/ENUM) · Browse & install from repository · check-updates · **repository CRUD** (add/edit/enable/remove, write-only tokens) — More → Plugins, admin
+- [x] **Mihon extensions** — the Keiyoushi repository's 1300+ extensions (installed first; search · installed-only · 18+ · language chips · repo badge) · install / update / uninstall · per-source settings via the schema sheet (the extension's own preferences; a picker when an extension bundles several sources) · **Open in browser** (below) · check-updates / update-all · repositories dialog (name/badge, "N of M run here (JAR)" or "APK only", signing key, add/remove). Mirrors `/api/v1/mihon/*` — More → Mihon extensions, admin. No sideload on mobile (web UI only)
+- [x] **Interactive browser** (`MihonBrowserScreen`) — the Mihon "WebView" screen driven remotely: the server's browser page as long-polled JPEG frames, tap = click, drag = scroll, a text row (send + Enter + Backspace) for typing, address bar, page back/reload, Save cookies, Done. Reached from an extension's "Open in browser" and from Network → Browser → "Open a page…" (any URL, e.g. to pass a check by hand). Cookies land in the extension jar
+- [x] **Metadata providers** — the eleven built-in providers (AniList, ComicVine, MangaUpdates, …) with their schema-driven settings sheet (`/metadata-providers/{id}/config`) — More → Metadata providers, admin. *(replaces the former PF4J Plugins / Plugin repositories screens: the server dropped PF4J on 2026-09-13)*
 - [x] LNReader plugins — one list of the repository's ~280 novel sources (installed first; search · language chips · installed-only) · install / update / uninstall · per-source settings via the same schema sheet (the plugin's `pluginSettings`, User-Agent override, pasted site storage for `webStorageUtilized` plugins) · check-updates / update-all · repositories dialog (add/remove manifest URLs). No sideload on mobile (web UI only). Mirrors `/api/v1/lnreader/*` — More → LNReader plugins, admin
 - [x] Migration: MigrateSeries — pick target source, find matches, choose carry-over (read/metadata/downloads), migrate (Series detail → Migrate)
 
@@ -81,7 +83,9 @@ signed-in user's own).
   custom interval, keep-count, thumbnails, encryption password). Uploading an archive to restore and
   downloading one to the device stay on the web UI: both need a file picker the app doesn't have
 - [x] **Network settings** — proxy (HTTP/SOCKS4/SOCKS5 + credentials) · DNS-over-HTTPS · Cloudflare
-  solver; write-only password fields (blank keeps the stored one)
+  solver · **Browser (Mihon WebView)**: remote browserless toggle + DevTools URL or the server's own
+  Chromium, live status (running/idle/pages, polled) with Stop and "Open a page…"; write-only password
+  fields (blank keeps the stored one)
 - [x] **Logs viewer** — recent buffer with a level filter + the server-side debug-logging toggle.
   Reads `/server/logs` on demand rather than holding the `/stream` SSE open beside the event bus
 - [x] **TOTP / 2FA** (More → Security) — enroll (secret + "open in authenticator app" rather than a

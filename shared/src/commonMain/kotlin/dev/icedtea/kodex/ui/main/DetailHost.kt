@@ -21,8 +21,9 @@ import dev.icedtea.kodex.ui.manage.BackupScreen
 import dev.icedtea.kodex.ui.manage.LogsScreen
 import dev.icedtea.kodex.ui.manage.NetworkSettingsScreen
 import dev.icedtea.kodex.ui.manage.LnReaderPluginsScreen
-import dev.icedtea.kodex.ui.manage.PluginRepositoriesScreen
-import dev.icedtea.kodex.ui.manage.PluginsScreen
+import dev.icedtea.kodex.ui.manage.MetadataProvidersScreen
+import dev.icedtea.kodex.ui.manage.MihonBrowserScreen
+import dev.icedtea.kodex.ui.manage.MihonExtensionsScreen
 import dev.icedtea.kodex.ui.manage.ServerActionsScreen
 import dev.icedtea.kodex.ui.manage.TasksScreen
 import dev.icedtea.kodex.ui.manage.UsersScreen
@@ -57,8 +58,12 @@ sealed interface DetailRoute {
     data object About : DetailRoute
     data object Libraries : DetailRoute
     data object Labels : DetailRoute
-    data object Plugins : DetailRoute
+    data object MihonExtensions : DetailRoute
     data object LnReaderPlugins : DetailRoute
+    data object MetadataProviders : DetailRoute
+
+    /** A page in the server's browser: at [url], or at the site of the Mihon source [sourceId]. */
+    data class MihonBrowser(val url: String? = null, val sourceId: String? = null, val title: String = "") : DetailRoute
     data object Users : DetailRoute
     data object Tasks : DetailRoute
     data object ServerActions : DetailRoute
@@ -66,7 +71,6 @@ sealed interface DetailRoute {
     data object Backup : DetailRoute
     data object NetworkSettings : DetailRoute
     data object Logs : DetailRoute
-    data object PluginRepositories : DetailRoute
     data class SeeAll(val kind: dev.icedtea.kodex.ui.catalog.SeeAllKind) : DetailRoute
     data class Migrate(
         val seriesId: String,
@@ -117,7 +121,8 @@ fun DetailHost(
     onOpenSourceReaderIncognito: OpenSourceReader,
     onOpenBrowseReaderIncognito: OpenBrowseReader,
     onOpenMigrate: (seriesId: String, providerId: String, sourceSeriesId: String, title: String) -> Unit,
-    onOpenPluginRepositories: () -> Unit,
+    /** Opens a page in the server's browser (interactive WebView). */
+    onOpenMihonBrowser: (DetailRoute.MihonBrowser) -> Unit,
     /** Swap the open reader for the series it belongs to (local series detail, or a source series). */
     onOpenSeriesFromReader: (DetailRoute) -> Unit,
     onBack: () -> Unit,
@@ -180,14 +185,17 @@ fun DetailHost(
         is DetailRoute.Labels ->
             LabelsScreen(session, api, onBack)
 
-        is DetailRoute.Plugins ->
-            PluginsScreen(session, api, onBack, onOpenRepositories = onOpenPluginRepositories)
+        is DetailRoute.MihonExtensions ->
+            MihonExtensionsScreen(session, api, onBack, onOpenBrowser = { sourceId, title -> onOpenMihonBrowser(DetailRoute.MihonBrowser(sourceId = sourceId, title = title)) })
 
-        is DetailRoute.PluginRepositories ->
-            PluginRepositoriesScreen(session, api, onBack)
+        is DetailRoute.MihonBrowser ->
+            MihonBrowserScreen(session, api, route.url, route.sourceId, route.title, onBack)
 
         is DetailRoute.LnReaderPlugins ->
             LnReaderPluginsScreen(session, api, onBack)
+
+        is DetailRoute.MetadataProviders ->
+            MetadataProvidersScreen(session, api, onBack)
 
         is DetailRoute.Users ->
             UsersScreen(session, api, onBack)
@@ -205,7 +213,7 @@ fun DetailHost(
             BackupScreen(session, api, onBack)
 
         is DetailRoute.NetworkSettings ->
-            NetworkSettingsScreen(session, api, onBack)
+            NetworkSettingsScreen(session, api, onBack, onOpenPage = { url -> onOpenMihonBrowser(DetailRoute.MihonBrowser(url = url)) })
 
         is DetailRoute.Logs ->
             LogsScreen(session, api, onBack)

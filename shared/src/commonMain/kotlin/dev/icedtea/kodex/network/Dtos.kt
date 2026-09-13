@@ -126,6 +126,13 @@ data class NetworkSettingsDto(
     val cloudflareSolverEnabled: Boolean = false,
     val cloudflareSolverUrl: String = "",
     val cloudflareSolverTimeoutSeconds: Int = 60,
+    /** Mihon WebView: a remote browser (browserless DevTools endpoint) instead of the server's Chromium. */
+    val remoteBrowserEnabled: Boolean = false,
+    val remoteBrowserUrl: String = "",
+    /** The Chromium/Chrome/Edge found on the server (used when the remote browser is off), or null. */
+    val embeddedBrowser: String? = null,
+    /** Live state of the shared headless browser. */
+    val browser: BrowserStatusDto = BrowserStatusDto(),
 )
 
 /** [proxyPassword] null keeps the stored one, "" clears it. */
@@ -142,6 +149,8 @@ data class NetworkSettingsRequest(
     val cloudflareSolverEnabled: Boolean,
     val cloudflareSolverUrl: String,
     val cloudflareSolverTimeoutSeconds: Int,
+    val remoteBrowserEnabled: Boolean = false,
+    val remoteBrowserUrl: String = "",
 )
 
 // ── Logs ─────────────────────────────────────────────────────────────────────────────────────────
@@ -160,31 +169,6 @@ data class LogEntryDto(
 @Serializable
 data class DebugModeDto(val enabled: Boolean)
 
-
-// ── Plugin repositories ──────────────────────────────────────────────────────────────────────────
-
-/** A source of installable plugins. [hasToken] reports storage, never the token itself. */
-@Serializable
-data class PluginRepositoryDto(
-    val id: String,
-    val name: String,
-    val url: String,
-    val enabled: Boolean = true,
-    val hasToken: Boolean = false,
-)
-
-@Serializable
-data class CreateRepositoryRequest(val name: String, val url: String, val token: String? = null)
-
-/** Null fields are unchanged. A token can only be replaced or cleared, never read back. */
-@Serializable
-data class UpdateRepositoryRequest(
-    val name: String? = null,
-    val url: String? = null,
-    val enabled: Boolean? = null,
-    val token: String? = null,
-    val clearToken: Boolean? = null,
-)
 
 // ── Content-source configuration ─────────────────────────────────────────────────────────────────
 

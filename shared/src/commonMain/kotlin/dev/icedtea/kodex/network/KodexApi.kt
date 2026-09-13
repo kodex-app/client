@@ -376,35 +376,131 @@ class KodexApi(private val client: HttpClient) {
         client.delete("$baseUrl/api/v1/labels/$labelId") { header(HEADER_API_KEY, apiKey) }
     }
 
-    // ── Plugins (Phase 3) ────────────────────────────────────────────────────────────────────────
+    // ── Mihon extensions (Keiyoushi JAR builds run by the server's kodex-mihon runtime) ────────
 
-    suspend fun installedPlugins(baseUrl: String, apiKey: String): List<InstalledPluginDto> =
-        client.get("$baseUrl/api/v1/plugins") { header(HEADER_API_KEY, apiKey) }.body()
-
-    suspend fun availablePlugins(baseUrl: String, apiKey: String): List<AvailablePluginDto> =
-        client.get("$baseUrl/api/v1/plugins/available") { header(HEADER_API_KEY, apiKey) }.body()
-
-    suspend fun refreshAvailablePlugins(baseUrl: String, apiKey: String): List<AvailablePluginDto> =
-        client.post("$baseUrl/api/v1/plugins/refresh-available") { header(HEADER_API_KEY, apiKey) }.body()
-
-    suspend fun installPlugin(baseUrl: String, apiKey: String, pluginId: String, version: String): List<InstalledPluginDto> =
-        client.post("$baseUrl/api/v1/plugins/install") {
+    suspend fun mihonAvailable(baseUrl: String, apiKey: String, refresh: Boolean = false): List<MihonAvailableDto> =
+        client.get("$baseUrl/api/v1/mihon/extensions/available") {
             header(HEADER_API_KEY, apiKey)
-            contentType(ContentType.Application.Json)
-            setBody(InstallRequest(pluginId, version))
+            if (refresh) parameter("refresh", "true")
         }.body()
 
-    suspend fun uninstallPlugin(baseUrl: String, apiKey: String, pluginId: String) {
-        client.delete("$baseUrl/api/v1/plugins/$pluginId") { header(HEADER_API_KEY, apiKey) }
+    suspend fun mihonInstalled(baseUrl: String, apiKey: String): List<MihonInstalledDto> =
+        client.get("$baseUrl/api/v1/mihon/extensions") { header(HEADER_API_KEY, apiKey) }.body()
+
+    /** Installs, or updates to the repository's version. */
+    suspend fun mihonInstall(baseUrl: String, apiKey: String, packageName: String): MihonInstalledDto =
+        client.post("$baseUrl/api/v1/mihon/extensions/${packageName.encodeURLPathPart()}") { header(HEADER_API_KEY, apiKey) }.body()
+
+    suspend fun mihonUninstall(baseUrl: String, apiKey: String, packageName: String) {
+        client.delete("$baseUrl/api/v1/mihon/extensions/${packageName.encodeURLPathPart()}") { header(HEADER_API_KEY, apiKey) }
     }
 
-    /** [action] is "enable", "disable", or "update". */
-    suspend fun pluginAction(baseUrl: String, apiKey: String, pluginId: String, action: String) {
-        client.post("$baseUrl/api/v1/plugins/$pluginId/$action") { header(HEADER_API_KEY, apiKey) }
+    suspend fun mihonUpdateStatus(baseUrl: String, apiKey: String): MihonUpdateStatusDto =
+        client.get("$baseUrl/api/v1/mihon/extensions/update-status") { header(HEADER_API_KEY, apiKey) }.body()
+
+    suspend fun mihonCheckUpdates(baseUrl: String, apiKey: String): MihonUpdateStatusDto =
+        client.post("$baseUrl/api/v1/mihon/extensions/check-updates") { header(HEADER_API_KEY, apiKey) }.body()
+
+    suspend fun mihonUpdateAll(baseUrl: String, apiKey: String): List<MihonUpdateOutcome> =
+        client.post("$baseUrl/api/v1/mihon/extensions/update-all") { header(HEADER_API_KEY, apiKey) }.body()
+
+    suspend fun mihonRepositories(baseUrl: String, apiKey: String, refresh: Boolean = false): List<MihonRepositoryDto> =
+        client.get("$baseUrl/api/v1/mihon/repos") {
+            header(HEADER_API_KEY, apiKey)
+            if (refresh) parameter("refresh", "true")
+        }.body()
+
+    /** The server fetches the index before storing the URL, so a typo or an APK-only repo is reported at once. */
+    suspend fun mihonAddRepository(baseUrl: String, apiKey: String, url: String): MihonRepositoryDto =
+        client.post("$baseUrl/api/v1/mihon/repos") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(MihonAddRepositoryRequest(url))
+        }.body()
+
+    suspend fun mihonRemoveRepository(baseUrl: String, apiKey: String, url: String) {
+        client.delete("$baseUrl/api/v1/mihon/repos") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("url", url)
+        }
     }
 
-    suspend fun checkPluginUpdates(baseUrl: String, apiKey: String): PluginUpdateStatusDto =
-        client.post("$baseUrl/api/v1/plugins/check-updates") { header(HEADER_API_KEY, apiKey) }.body()
+    // ── Interactive browser pages (admin): a page in the server's browser, driven from here ──────
+
+    suspend fun browserOpen(baseUrl: String, apiKey: String, url: String?, sourceId: String?): MihonBrowserSessionDto =
+        client.post("$baseUrl/api/v1/mihon/browser/sessions") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(MihonBrowserOpenRequest(url, sourceId))
+        }.body()
+
+    suspend fun browserSession(baseUrl: String, apiKey: String, id: String): MihonBrowserSessionDto =
+        client.get("$baseUrl/api/v1/mihon/browser/sessions/$id") { header(HEADER_API_KEY, apiKey) }.body()
+
+    /**
+     * The newest JPEG frame newer than [since], or null when none arrived within the server's wait
+     * (204). Returns the bytes with the frame sequence from `X-Frame-Seq`.
+     */
+    suspend fun browserFrame(baseUrl: String, apiKey: String, id: String, since: Long): Pair<ByteArray, Long>? {
+        val response = client.get("$baseUrl/api/v1/mihon/browser/sessions/$id/frame") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("since", since)
+        }
+        if (response.status == HttpStatusCode.NoContent) return null
+        val seq = response.headers["X-Frame-Seq"]?.toLongOrNull() ?: since
+        return response.body<ByteArray>() to seq
+    }
+
+    suspend fun browserNavigate(baseUrl: String, apiKey: String, id: String, url: String): MihonBrowserSessionDto =
+        client.post("$baseUrl/api/v1/mihon/browser/sessions/$id/navigate") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(MihonBrowserNavigateRequest(url))
+        }.body()
+
+    /** [action] is "back", "reload" or "save-cookies". */
+    suspend fun browserAction(baseUrl: String, apiKey: String, id: String, action: String): MihonBrowserSessionDto =
+        client.post("$baseUrl/api/v1/mihon/browser/sessions/$id/$action") { header(HEADER_API_KEY, apiKey) }.body()
+
+    suspend fun browserMouse(baseUrl: String, apiKey: String, id: String, event: MihonBrowserMouseRequest) {
+        client.post("$baseUrl/api/v1/mihon/browser/sessions/$id/mouse") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(event)
+        }
+    }
+
+    suspend fun browserText(baseUrl: String, apiKey: String, id: String, text: String) {
+        client.post("$baseUrl/api/v1/mihon/browser/sessions/$id/text") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(MihonBrowserTextRequest(text))
+        }
+    }
+
+    /** A DOM key name: Enter, Backspace, Tab, Escape, Delete, Arrow*, Home, End, PageUp, PageDown. */
+    suspend fun browserKey(baseUrl: String, apiKey: String, id: String, key: String) {
+        client.post("$baseUrl/api/v1/mihon/browser/sessions/$id/key") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(MihonBrowserKeyRequest(key))
+        }
+    }
+
+    suspend fun browserClose(baseUrl: String, apiKey: String, id: String) {
+        client.delete("$baseUrl/api/v1/mihon/browser/sessions/$id") { header(HEADER_API_KEY, apiKey) }
+    }
+
+    // ── Metadata providers (built into the server) ───────────────────────────────────────────────
+
+    suspend fun metadataProviders(baseUrl: String, apiKey: String): List<MetadataProviderDto> =
+        client.get("$baseUrl/api/v1/metadata-providers") { header(HEADER_API_KEY, apiKey) }.body()
+
+    suspend fun browserStatus(baseUrl: String, apiKey: String): BrowserStatusDto =
+        client.get("$baseUrl/api/v1/server/network/browser") { header(HEADER_API_KEY, apiKey) }.body()
+
+    suspend fun stopBrowser(baseUrl: String, apiKey: String): BrowserStatusDto =
+        client.post("$baseUrl/api/v1/server/network/browser/stop") { header(HEADER_API_KEY, apiKey) }.body()
 
     // ── LNReader plugins ─────────────────────────────────────────────────────────────────────────
 
@@ -1050,37 +1146,14 @@ class KodexApi(private val client: HttpClient) {
             setBody(DebugModeDto(enabled))
         }.body<DebugModeDto>().enabled
 
-    // ── Plugin repositories and source configuration ─────────────────────────────────────────────
+    // ── Provider configuration (content sources and metadata providers) ─────────────────────────
 
-    suspend fun pluginRepositories(baseUrl: String, apiKey: String): List<PluginRepositoryDto> =
-        client.get("$baseUrl/api/v1/plugin-repositories") { header(HEADER_API_KEY, apiKey) }.body()
-
-    suspend fun addPluginRepository(baseUrl: String, apiKey: String, request: CreateRepositoryRequest): PluginRepositoryDto =
-        client.post("$baseUrl/api/v1/plugin-repositories") {
-            header(HEADER_API_KEY, apiKey)
-            contentType(ContentType.Application.Json)
-            setBody(request)
-        }.body()
-
-    suspend fun updatePluginRepository(
-        baseUrl: String,
-        apiKey: String,
-        id: String,
-        request: UpdateRepositoryRequest,
-    ): PluginRepositoryDto =
-        client.patch("$baseUrl/api/v1/plugin-repositories/$id") {
-            header(HEADER_API_KEY, apiKey)
-            contentType(ContentType.Application.Json)
-            setBody(request)
-        }.body()
-
-    suspend fun deletePluginRepository(baseUrl: String, apiKey: String, id: String) {
-        client.delete("$baseUrl/api/v1/plugin-repositories/$id") { header(HEADER_API_KEY, apiKey) }
-    }
-
-    /** A content source's admin-level configuration schema plus the values currently stored. */
-    suspend fun sourceConfig(baseUrl: String, apiKey: String, providerId: String): SourceConfigDto =
-        client.get("$baseUrl/api/v1/content-sources/$providerId/config") { header(HEADER_API_KEY, apiKey) }.body()
+    /**
+     * A provider's admin-level configuration schema plus the values currently stored. [metadata] picks
+     * the metadata-provider endpoint; the default is a content source.
+     */
+    suspend fun sourceConfig(baseUrl: String, apiKey: String, providerId: String, metadata: Boolean = false): SourceConfigDto =
+        client.get("$baseUrl/api/v1/${if (metadata) "metadata-providers" else "content-sources"}/$providerId/config") { header(HEADER_API_KEY, apiKey) }.body()
 
     /** Values keyed by field. Omit a SECRET's key to keep the stored secret; send "" to clear it. */
     suspend fun saveSourceConfig(
@@ -1088,8 +1161,9 @@ class KodexApi(private val client: HttpClient) {
         apiKey: String,
         providerId: String,
         values: Map<String, String>,
+        metadata: Boolean = false,
     ): SourceConfigDto =
-        client.put("$baseUrl/api/v1/content-sources/$providerId/config") {
+        client.put("$baseUrl/api/v1/${if (metadata) "metadata-providers" else "content-sources"}/$providerId/config") {
             header(HEADER_API_KEY, apiKey)
             contentType(ContentType.Application.Json)
             setBody(values)

@@ -66,8 +66,9 @@ fun MoreTab(
     onOpenAbout: () -> Unit,
     onOpenLibraries: () -> Unit = {},
     onOpenLabels: () -> Unit = {},
-    onOpenPlugins: () -> Unit = {},
+    onOpenMihonExtensions: () -> Unit = {},
     onOpenLnReaderPlugins: () -> Unit = {},
+    onOpenMetadataProviders: () -> Unit = {},
     onOpenUsers: () -> Unit = {},
     onOpenTasks: () -> Unit = {},
     onOpenServerActions: () -> Unit = {},
@@ -181,9 +182,11 @@ fun MoreTab(
                     HubRow(Icons.Outlined.LocalOffer, "Labels", "Create and manage metadata labels", onOpenLabels)
                     if (isAdmin) {
                         HorizontalDivider(Modifier.padding(start = 56.dp))
-                        HubRow(Icons.Outlined.Extension, "Plugins", "Install and manage content sources", onOpenPlugins)
+                        HubRow(Icons.Outlined.Extension, "Mihon extensions", "Comic and manga sources from the Keiyoushi repository", onOpenMihonExtensions)
                         HorizontalDivider(Modifier.padding(start = 56.dp))
                         HubRow(Icons.AutoMirrored.Outlined.MenuBook, "LNReader plugins", "Novel sources from the LNReader repository", onOpenLnReaderPlugins)
+                        HorizontalDivider(Modifier.padding(start = 56.dp))
+                        HubRow(Icons.Outlined.Info, "Metadata providers", "API keys for AniList, ComicVine, MangaUpdates and more", onOpenMetadataProviders)
                     }
                 }
             }

@@ -77,44 +77,6 @@ data class UpdateSeriesMetadataRequest(
 @Serializable
 data class LabelRequest(val name: String)
 
-// ── Plugins ─────────────────────────────────────────────────────────────────────────────────────
-
-@Serializable
-data class InstalledPluginDto(
-    val id: String,
-    val name: String = "",
-    val version: String = "",
-    val state: String = "",
-    val kind: String? = null,
-)
-
-@Serializable
-data class AvailablePluginDto(
-    val id: String,
-    val name: String = "",
-    val description: String? = null,
-    val provider: String? = null,
-    val latestVersion: String = "",
-    val kind: String? = null,
-)
-
-@Serializable
-data class InstallRequest(val pluginId: String, val version: String)
-
-@Serializable
-data class PluginUpdateDto(
-    val id: String,
-    val name: String = "",
-    val installedVersion: String? = null,
-    val latestVersion: String? = null,
-)
-
-@Serializable
-data class PluginUpdateStatusDto(
-    val checkedAt: String? = null,
-    val updates: List<PluginUpdateDto> = emptyList(),
-)
-
 // ── Migration ───────────────────────────────────────────────────────────────────────────────────
 
 @Serializable
