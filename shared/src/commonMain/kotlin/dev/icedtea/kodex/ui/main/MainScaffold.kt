@@ -304,6 +304,7 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
                     onOpenMihonExtensions = { backStack.add(DetailRoute.MihonExtensions) },
                     onOpenLnReaderPlugins = { backStack.add(DetailRoute.LnReaderPlugins) },
                     onOpenMetadataProviders = { backStack.add(DetailRoute.MetadataProviders) },
+                    onOpenExtensionRepositories = { backStack.add(DetailRoute.ExtensionRepositories) },
                     onOpenUsers = { backStack.add(DetailRoute.Users) },
                     onOpenTasks = { backStack.add(DetailRoute.Tasks) },
                     onOpenServerActions = { backStack.add(DetailRoute.ServerActions) },

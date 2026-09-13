@@ -210,7 +210,9 @@ fun SourceFeedScreen(
         error = null
         val next = page + 1
         runCatching { fetch(next) }
-            .onSuccess { items.addAll(it.items); page = next; hasNext = it.hasNextPage }
+            // An empty page ends the feed even when the source claims more: otherwise a blocked or
+            // broken source keeps the load-more chain going forever.
+            .onSuccess { items.addAll(it.items); page = next; hasNext = it.hasNextPage && it.items.isNotEmpty() }
             .onFailure { error = it.serverErrorDetail(); hasNext = false }
         loading = false
     }

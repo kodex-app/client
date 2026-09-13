@@ -36,6 +36,16 @@ class SessionManager(
     val currentUser: StateFlow<UserDto?> = _currentUser.asStateFlow()
 
     /**
+     * The saved connection whose API key the server just rejected. Set by [keyRejected] when any
+     * call to the active server comes back 401 — the key was revoked, or the server was reset — at
+     * which point the app has already dropped to the login screen. That screen reads this to open
+     * straight into a "sign in again" prompt for the connection instead of a generic picker whose
+     * every entry would fail the same way. Cleared by [reauthenticate] or [dismissExpired].
+     */
+    private val _expiredServer = MutableStateFlow<ServerConnection?>(null)
+    val expiredServer: StateFlow<ServerConnection?> = _expiredServer.asStateFlow()
+
+    /**
      * Run a fire-and-forget background task on the session's own scope. Used for reading-progress saves,
      * which must complete even when the screen that triggered them (the reader) is being disposed — a
      * `LaunchedEffect`/`rememberCoroutineScope` coroutine would be cancelled on dispose and drop the write.
@@ -149,6 +159,44 @@ class SessionManager(
         updated
     }
 
+    /**
+     * The server answered a request carrying [apiKey] with 401. If that is the active connection's
+     * key, the session is dead: no retry will succeed, so sign out now and remember which connection
+     * needs a fresh password. Wired to the HTTP client's validator, so it fires for every screen —
+     * nothing has to check status codes itself. Ignored for any other key (a stale 401 from a
+     * connection already replaced, or a Basic-auth login attempt, which carries no API key at all).
+     */
+    fun keyRejected(apiKey: String) {
+        val server = _activeServer.value ?: return
+        if (server.apiKey != apiKey) return
+        signOut()
+        _expiredServer.value = server
+    }
+
+    /**
+     * Mint a fresh key for a saved connection whose stored one no longer works, keeping its id so
+     * everything keyed to the connection survives. [email] defaults to the saved one but may be
+     * changed — the account may have been recreated under another address after a server reset.
+     */
+    suspend fun reauthenticate(server: ServerConnection, email: String, password: String): Result<ServerConnection> =
+        runCatching {
+            require(email.isNotBlank() && password.isNotBlank()) { "Enter your email and password" }
+            val created = api.createApiKey(server.baseUrl, email, password, comment = "Kodex mobile")
+            val me = api.getMe(server.baseUrl, created.key)
+            val renewed = server.copy(email = me.email, apiKey = created.key, lastUsedAt = nowMillis())
+            store.upsert(renewed)
+            _servers.value = store.getServers()
+            _expiredServer.value = null
+            _activeServer.value = renewed
+            _currentUser.value = me
+            renewed
+        }
+
+    /** The user backed out of the "sign in again" prompt; show the plain server picker. */
+    fun dismissExpired() {
+        _expiredServer.value = null
+    }
+
     /** Leave the active server (back to login) but keep it saved. */
     fun signOut() {
         _activeServer.value = null
@@ -159,5 +207,6 @@ class SessionManager(
         store.remove(server.id)
         _servers.value = store.getServers()
         if (_activeServer.value?.id == server.id) signOut()
+        if (_expiredServer.value?.id == server.id) dismissExpired()
     }
 }

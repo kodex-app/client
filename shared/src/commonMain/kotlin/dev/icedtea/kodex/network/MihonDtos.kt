@@ -82,7 +82,8 @@ data class MihonUpdateOutcome(
 @Serializable
 data class MihonRepositoryDto(
     val url: String,
-    val builtIn: Boolean = false,
+    /** Off = kept in the list but neither fetched nor merged into the extension list. */
+    val enabled: Boolean = true,
     val indexUrl: String? = null,
     val name: String? = null,
     val badgeLabel: String? = null,
@@ -97,6 +98,12 @@ data class MihonRepositoryDto(
 
 @Serializable
 data class MihonAddRepositoryRequest(val url: String)
+
+@Serializable
+data class RepositoryEnabledRequest(val enabled: Boolean)
+
+@Serializable
+data class RepositoryOrderRequest(val urls: List<String>)
 
 // ── Interactive browser pages (`/api/v1/mihon/browser/sessions`, admin) ────────────────────────────
 

@@ -5,7 +5,7 @@ Compose Multiplatform mobile client for [Kodex](https://github.com/kodex-app) 鈥
 
 ## Stack
 
-- Kotlin 2.2 路 Compose Multiplatform 1.10.3 路 AGP 9.3.1 (Gradle 9.6.1)
+- Kotlin 2.4 路 Compose Multiplatform 1.12 路 AGP 9.4 (Gradle 9.6.1)
 - Ktor 3 client (OkHttp / Darwin engines) 路 kotlinx.serialization
 - multiplatform-settings for persistence
 

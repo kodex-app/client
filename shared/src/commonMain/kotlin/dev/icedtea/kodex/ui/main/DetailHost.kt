@@ -22,6 +22,7 @@ import dev.icedtea.kodex.ui.manage.LogsScreen
 import dev.icedtea.kodex.ui.manage.NetworkSettingsScreen
 import dev.icedtea.kodex.ui.manage.LnReaderPluginsScreen
 import dev.icedtea.kodex.ui.manage.MetadataProvidersScreen
+import dev.icedtea.kodex.ui.manage.ExtensionRepositoriesScreen
 import dev.icedtea.kodex.ui.manage.MihonBrowserScreen
 import dev.icedtea.kodex.ui.manage.MihonExtensionsScreen
 import dev.icedtea.kodex.ui.manage.ServerActionsScreen
@@ -61,6 +62,7 @@ sealed interface DetailRoute {
     data object MihonExtensions : DetailRoute
     data object LnReaderPlugins : DetailRoute
     data object MetadataProviders : DetailRoute
+    data object ExtensionRepositories : DetailRoute
 
     /** A page in the server's browser: at [url], or at the site of the Mihon source [sourceId]. */
     data class MihonBrowser(val url: String? = null, val sourceId: String? = null, val title: String = "") : DetailRoute
@@ -193,6 +195,9 @@ fun DetailHost(
 
         is DetailRoute.LnReaderPlugins ->
             LnReaderPluginsScreen(session, api, onBack)
+
+        is DetailRoute.ExtensionRepositories ->
+            ExtensionRepositoriesScreen(session, api, onBack)
 
         is DetailRoute.MetadataProviders ->
             MetadataProvidersScreen(session, api, onBack)

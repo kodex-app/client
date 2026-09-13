@@ -98,7 +98,9 @@ fun ServerConnectionScreen(session: SessionManager, onBack: () -> Unit) {
                 }
                 .onFailure {
                     saving = false
-                    error = it.friendlyMessage()
+                    // With a password typed, a 401 means the password was wrong; without one the
+                    // saved key was re-validated and refused (the app is about to sign out anyway).
+                    error = it.friendlyMessage(signIn = password.isNotBlank())
                 }
         }
     }

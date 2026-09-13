@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.LibraryBooks
 import androidx.compose.material.icons.automirrored.outlined.Article
+import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.Backup
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Download
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.LocalOffer
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Palette
@@ -69,6 +71,7 @@ fun MoreTab(
     onOpenMihonExtensions: () -> Unit = {},
     onOpenLnReaderPlugins: () -> Unit = {},
     onOpenMetadataProviders: () -> Unit = {},
+    onOpenExtensionRepositories: () -> Unit = {},
     onOpenUsers: () -> Unit = {},
     onOpenTasks: () -> Unit = {},
     onOpenServerActions: () -> Unit = {},
@@ -182,11 +185,13 @@ fun MoreTab(
                     HubRow(Icons.Outlined.LocalOffer, "Labels", "Create and manage metadata labels", onOpenLabels)
                     if (isAdmin) {
                         HorizontalDivider(Modifier.padding(start = 56.dp))
-                        HubRow(Icons.Outlined.Extension, "Mihon extensions", "Comic and manga sources from the Keiyoushi repository", onOpenMihonExtensions)
+                        HubRow(Icons.Outlined.Extension, "Mihon extensions", "Comic and manga sources from your Mihon repositories", onOpenMihonExtensions)
                         HorizontalDivider(Modifier.padding(start = 56.dp))
-                        HubRow(Icons.AutoMirrored.Outlined.MenuBook, "LNReader plugins", "Novel sources from the LNReader repository", onOpenLnReaderPlugins)
+                        HubRow(Icons.AutoMirrored.Outlined.MenuBook, "LNReader plugins", "Novel sources from your LNReader repositories", onOpenLnReaderPlugins)
                         HorizontalDivider(Modifier.padding(start = 56.dp))
                         HubRow(Icons.Outlined.Info, "Metadata providers", "API keys for AniList, ComicVine, MangaUpdates and more", onOpenMetadataProviders)
+                        HorizontalDivider(Modifier.padding(start = 56.dp))
+                        HubRow(Icons.Outlined.Storage, "Extension repositories", "Where the Mihon and LNReader lists come from", onOpenExtensionRepositories)
                     }
                 }
             }
@@ -218,9 +223,19 @@ fun MoreTab(
             }
         }
 
+        // Always reachable, even when every request is failing: this is the way out of a dead
+        // session without wiping the app. The connection stays saved for the sign-in screen.
         OutlinedButton(onClick = { session.signOut() }, modifier = Modifier.fillMaxWidth()) {
-            Text("Switch or add server")
+            Icon(Icons.AutoMirrored.Outlined.Logout, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("Sign out")
         }
+        Text(
+            "Saved servers are kept — switch or add one from the sign-in screen.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+        )
     }
 }
 

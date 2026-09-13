@@ -7,15 +7,19 @@ import dev.icedtea.kodex.data.SourcePrefsStore
 import dev.icedtea.kodex.network.EventBus
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.platform.createHttpClient
+import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.plugins.HttpResponseValidator
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logging
 import io.ktor.client.plugins.sse.SSE
+import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 
@@ -33,8 +37,27 @@ class AppGraph {
         coerceInputValues = true
     }
 
+    /**
+     * API keys the server has answered 401 to. Fed by the HTTP client below and drained into
+     * [SessionManager.keyRejected], which drops the app to the login screen when it was the active
+     * connection's key. A flow rather than a direct call only because the client is built before
+     * the session exists; buffered so a burst of 401s from one screen's parallel requests never
+     * blocks the response pipeline.
+     */
+    private val rejectedApiKeys = MutableSharedFlow<String>(extraBufferCapacity = 64)
+
     private val httpClient = createHttpClient {
         expectSuccess = true
+        HttpResponseValidator {
+            // Runs after expectSuccess has turned the 401 into a ClientRequestException, with the
+            // outgoing headers still attached — so only key-authenticated calls count. A failed
+            // Basic-auth sign-in is also a 401 but carries no key, and must not evict anyone.
+            handleResponseExceptionWithRequest { cause, request ->
+                if (cause is ClientRequestException && cause.response.status == HttpStatusCode.Unauthorized) {
+                    request.headers[KodexApi.HEADER_API_KEY]?.let(rejectedApiKeys::tryEmit)
+                }
+            }
+        }
         install(ContentNegotiation) { json(json) }
         install(Logging) { level = LogLevel.INFO }
         install(HttpTimeout) {
@@ -75,6 +98,7 @@ class AppGraph {
     val sourcePrefs = SourcePrefsStore(api, appScope)
 
     init {
+        appScope.launch { rejectedApiKeys.collect(session::keyRejected) }
         appScope.launch {
             session.activeServer.collect { server ->
                 if (server != null) {

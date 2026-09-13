@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package dev.icedtea.kodex.ui.manage
 
 import androidx.compose.foundation.background
@@ -15,8 +17,11 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
@@ -31,6 +36,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -43,6 +49,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -53,7 +60,6 @@ import dev.icedtea.kodex.auth.SessionManager
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.network.LnReaderAvailableDto
 import dev.icedtea.kodex.network.LnReaderInstalledDto
-import dev.icedtea.kodex.network.LnReaderRepositoryDto
 import dev.icedtea.kodex.ui.ErrorState
 import dev.icedtea.kodex.ui.collectAsStateSafe
 import dev.icedtea.kodex.ui.friendlyMessage
@@ -64,8 +70,9 @@ import kotlinx.coroutines.launch
  * LNReader plugins — the ~280 compiled novel sources of the LNReader plugin repository, run by the
  * server. One list (installed first) with search, language chips and an installed-only toggle;
  * install / update / uninstall per row, per-source settings through [SourceConfigSheet] (the plugin's
- * own `pluginSettings`, a User-Agent override, pasted site storage), and the repository list in a
- * dialog. Admin-only. Mirrors the web UI's Extensions › LNReader tab.
+ * own `pluginSettings`, a User-Agent override, pasted site storage). Sections per language, collapsed
+ * except "Installed". The repository list lives in [ExtensionRepositoriesScreen]. Admin-only. Mirrors
+ * the web UI's Extensions › LNReader tab.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -85,7 +92,6 @@ fun LnReaderPluginsScreen(session: SessionManager, api: KodexApi, onBack: () -> 
     var hiddenLangs by remember { mutableStateOf(setOf<String>()) }
     var busy by remember { mutableStateOf<String?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
-    var reposOpen by remember { mutableStateOf(false) }
     var configuring by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     LaunchedEffect(server?.id, reload) {
@@ -131,6 +137,20 @@ fun LnReaderPluginsScreen(session: SessionManager, api: KodexApi, onBack: () -> 
         }
     }
 
+    // Sectioned like the Mihon app: what is installed first, then one section per language (multi-language
+    // last), each a sticky band — a long repository reads as a table of contents, not one alphabetical wall.
+    // Expanded section keys: only what is installed starts open, languages stay folded until tapped.
+    var expanded by remember { mutableStateOf(setOf("installed")) }
+    val sections = remember(list) {
+        val byInstalled = list.partition { it.installed }
+        val langs = byInstalled.second.groupBy { it.lang }.entries
+            .sortedWith(compareBy<Map.Entry<String, List<LnReaderAvailableDto>>> { it.key == "all" }.thenBy { languageLabel(it.key).lowercase() })
+        buildList {
+            if (byInstalled.first.isNotEmpty()) add("installed" to ("Installed" to byInstalled.first))
+            langs.forEach { add(it.key to (languageLabel(it.key) to it.value)) }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -156,7 +176,6 @@ fun LnReaderPluginsScreen(session: SessionManager, api: KodexApi, onBack: () -> 
                             }
                         })
                         DropdownMenuItem(text = { Text("Refresh repositories") }, onClick = { menuOpen = false; refreshNext = true; reload++ })
-                        DropdownMenuItem(text = { Text("Repositories") }, onClick = { menuOpen = false; reposOpen = true })
                     }
                 },
             )
@@ -178,7 +197,7 @@ fun LnReaderPluginsScreen(session: SessionManager, api: KodexApi, onBack: () -> 
                     FilterChip(
                         selected = lang !in hiddenLangs,
                         onClick = { hiddenLangs = if (lang in hiddenLangs) hiddenLangs - lang else hiddenLangs + lang },
-                        label = { Text("${if (lang == "all") "multi" else lang} · $count") },
+                        label = { Text("${languageLabel(lang)} · $count") },
                         modifier = Modifier.padding(horizontal = 4.dp),
                     )
                 }
@@ -187,21 +206,32 @@ fun LnReaderPluginsScreen(session: SessionManager, api: KodexApi, onBack: () -> 
                 available == null && loadError != null -> ErrorState(loadError!!, onRetry = { reload++ })
                 available == null -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
                 list.isEmpty() -> Box(Modifier.fillMaxSize().padding(32.dp), Alignment.Center) {
-                    Text("No plugins match.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        if (rows.isEmpty()) "No repositories yet — add one under More › Extension repositories." else "No plugins match.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 else -> LazyColumn(Modifier.fillMaxSize()) {
                     item {
                         Text("${list.size} of ${rows.size} plugins", Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                             style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    items(list, key = { it.id }) { p ->
-                        PluginRow(
-                            p, busy == p.id,
-                            onInstall = { act(p.id, if (p.installed) "Updating ${p.name}…" else "Installing ${p.name}…") { val s = server!!; api.lnreaderInstall(s.baseUrl, s.apiKey, p.id) } },
-                            onUninstall = { act(p.id, "Uninstalled ${p.name}") { val s = server!!; api.lnreaderUninstall(s.baseUrl, s.apiKey, p.id) } },
-                            onConfigure = { p.sourceId?.let { configuring = it to p.name } },
-                        )
-                        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                    sections.forEach { (key, section) ->
+                        val (label, plugins) = section
+                        stickyHeader(key = "h:$key") {
+                            LanguageSectionHeader(label, plugins.size, expanded = key in expanded) {
+                                expanded = if (key in expanded) expanded - key else expanded + key
+                            }
+                        }
+                        if (key in expanded) items(plugins, key = { it.id }) { p ->
+                            PluginRow(
+                                p, busy == p.id,
+                                onInstall = { act(p.id, if (p.installed) "Updating ${p.name}…" else "Installing ${p.name}…") { val s = server!!; api.lnreaderInstall(s.baseUrl, s.apiKey, p.id) } },
+                                onUninstall = { act(p.id, "Uninstalled ${p.name}") { val s = server!!; api.lnreaderUninstall(s.baseUrl, s.apiKey, p.id) } },
+                                onConfigure = { p.sourceId?.let { configuring = it to p.name } },
+                            )
+                            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                        }
                     }
                 }
             }
@@ -220,14 +250,13 @@ fun LnReaderPluginsScreen(session: SessionManager, api: KodexApi, onBack: () -> 
             onSaved = { message -> configuring = null; snackbar?.show(message) },
         )
     }
-    if (reposOpen && s != null) {
-        LnReaderRepositoriesDialog(api, s.baseUrl, s.apiKey, onDismiss = { reposOpen = false; reload++ })
-    }
 }
 
 @Composable
 private fun PluginRow(p: LnReaderAvailableDto, busy: Boolean, onInstall: () -> Unit, onUninstall: () -> Unit, onConfigure: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
+    // The plugin's site, opened in the device's own browser.
+    val uriHandler = LocalUriHandler.current
     Row(Modifier.fillMaxWidth().padding(start = 16.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(
             Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
@@ -252,12 +281,16 @@ private fun PluginRow(p: LnReaderAvailableDto, busy: Boolean, onInstall: () -> U
         }
         when {
             busy -> CircularProgressIndicator(Modifier.padding(horizontal = 20.dp).size(20.dp), strokeWidth = 2.dp)
-            !p.installed -> TextButton(onClick = onInstall) { Text("Install") }
+            !p.installed -> Row(verticalAlignment = Alignment.CenterVertically) {
+                if (p.site.isNotBlank()) IconButton(onClick = { uriHandler.openUri(p.site) }) { Icon(Icons.Filled.OpenInBrowser, contentDescription = "Open site") }
+                TextButton(onClick = onInstall) { Text("Install") }
+            }
             else -> Box {
                 IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Actions") }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     if (p.updateAvailable) DropdownMenuItem(text = { Text("Update to v${p.version}") }, onClick = { menu = false; onInstall() })
                     if (p.sourceId != null) DropdownMenuItem(text = { Text("Settings") }, onClick = { menu = false; onConfigure() })
+                    if (p.site.isNotBlank()) DropdownMenuItem(text = { Text("Open site") }, onClick = { menu = false; uriHandler.openUri(p.site) })
                     DropdownMenuItem(text = { Text("Uninstall") }, onClick = { menu = false; onUninstall() })
                 }
             }
@@ -265,75 +298,3 @@ private fun PluginRow(p: LnReaderAvailableDto, busy: Boolean, onInstall: () -> U
     }
 }
 
-/** The plugin repositories (manifest URLs) the server browses — list, add (fetched first), remove. */
-@Composable
-private fun LnReaderRepositoriesDialog(api: KodexApi, baseUrl: String, apiKey: String, onDismiss: () -> Unit) {
-    val scope = rememberCoroutineScope()
-    var repos by remember { mutableStateOf<List<LnReaderRepositoryDto>?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var newUrl by remember { mutableStateOf("") }
-    var pending by remember { mutableStateOf(false) }
-    var reload by remember { mutableIntStateOf(0) }
-
-    LaunchedEffect(reload) {
-        runCatching { api.lnreaderRepositories(baseUrl, apiKey) }.fold(onSuccess = { repos = it; error = null }, onFailure = { error = it.friendlyMessage() })
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Repositories") },
-        text = {
-            Column {
-                when (val r = repos) {
-                    null -> if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error) else CircularProgressIndicator(Modifier.size(24.dp))
-                    else -> r.forEach { repo ->
-                        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(repo.url, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                Text(
-                                    listOfNotNull(if (repo.builtIn) "default" else null, repo.error?.let { "unreachable: $it" } ?: "${repo.pluginCount} plugins").joinToString(" · "),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (repo.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            TextButton(enabled = !pending, onClick = {
-                                scope.launch {
-                                    pending = true
-                                    runCatching { api.lnreaderRemoveRepository(baseUrl, apiKey, repo.url) }.onFailure { error = it.friendlyMessage() }
-                                    pending = false
-                                    reload++
-                                }
-                            }) { Text("Remove") }
-                        }
-                    }
-                }
-                OutlinedTextField(
-                    value = newUrl,
-                    onValueChange = { newUrl = it },
-                    placeholder = { Text("https://…/plugins.min.json") },
-                    singleLine = true,
-                    enabled = !pending,
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                )
-                Text(
-                    "Any plugins.min.json the LNReader app accepts. Repositories merge in order; a later one's entry replaces an earlier one with the same plugin id.",
-                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp),
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(enabled = newUrl.isNotBlank() && !pending, onClick = {
-                scope.launch {
-                    pending = true
-                    runCatching { api.lnreaderAddRepository(baseUrl, apiKey, newUrl.trim()) }.fold(
-                        onSuccess = { newUrl = ""; error = null },
-                        onFailure = { error = it.friendlyMessage() },
-                    )
-                    pending = false
-                    reload++
-                }
-            }) { Text("Add") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
-    )
-}

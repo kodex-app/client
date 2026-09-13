@@ -49,21 +49,31 @@ import dev.icedtea.kodex.auth.SessionManager
 import dev.icedtea.kodex.data.model.ServerConnection
 import dev.icedtea.kodex.ui.collectAsStateSafe
 import dev.icedtea.kodex.ui.friendlyMessage
+import dev.icedtea.kodex.ui.isUnauthorized
 import kotlinx.coroutines.launch
 
 /**
  * Entry screen: pick a previously-added server or add a new one. Saved servers are listed
  * most-recent-first (the top one is what launch auto-selects); adding a server mints an API key
  * from email + password and signs straight in.
+ *
+ * A saved connection whose key the server no longer accepts — because the app was signed out by a
+ * 401 ([SessionManager.expiredServer]) or because tapping it here was refused — opens a
+ * "sign in again" prompt for that connection instead: the address is known, only the password is
+ * missing, and re-adding the server from scratch would lose everything keyed to it.
  */
 @Composable
 fun LoginScreen(session: SessionManager) {
     val servers by session.servers.collectAsStateSafe()
+    val expired by session.expiredServer.collectAsStateSafe()
     val scope = rememberCoroutineScope()
 
     var showForm by remember { mutableStateOf(servers.isEmpty()) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    // A picker tap that came back 401 — the same dead-key situation as `expired`, just noticed here.
+    var refused by remember { mutableStateOf<ServerConnection?>(null) }
+    val reauth = expired ?: refused
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -78,7 +88,23 @@ fun LoginScreen(session: SessionManager) {
                 BrandHeader()
                 Spacer(Modifier.height(28.dp))
 
-                if (servers.isNotEmpty() && !showForm) {
+                if (reauth != null) {
+                    ReauthForm(
+                        server = reauth,
+                        busy = busy,
+                        onCancel = { error = null; refused = null; session.dismissExpired() },
+                        onSubmit = { email, password ->
+                            error = null
+                            busy = true
+                            scope.launch {
+                                session.reauthenticate(reauth, email, password)
+                                    .onSuccess { refused = null }
+                                    .onFailure { error = it.friendlyMessage(signIn = true) }
+                                busy = false
+                            }
+                        },
+                    )
+                } else if (servers.isNotEmpty() && !showForm) {
                     ServerPicker(
                         servers = servers,
                         busy = busy,
@@ -86,8 +112,12 @@ fun LoginScreen(session: SessionManager) {
                             error = null
                             busy = true
                             scope.launch {
-                                session.selectServer(server)
-                                    .onFailure { error = it.friendlyMessage(signIn = true) }
+                                session.selectServer(server).onFailure {
+                                    // A refused key isn't a typo'd password — there was none typed.
+                                    // Ask for one rather than blaming the user.
+                                    if (it.isUnauthorized) refused = server
+                                    else error = it.friendlyMessage(signIn = true)
+                                }
                                 busy = false
                             }
                         },
@@ -239,6 +269,73 @@ private fun ServerCard(
                     contentDescription = "Remove ${server.label}",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Password prompt for a saved connection whose key the server refused. Address and name are fixed
+ * (this is the same connection, renewed in place); the email is editable because a reset server
+ * may have the account under a different address.
+ */
+@Composable
+private fun ReauthForm(
+    server: ServerConnection,
+    busy: Boolean,
+    onCancel: () -> Unit,
+    onSubmit: (email: String, password: String) -> Unit,
+) {
+    var email by remember(server.id) { mutableStateOf(server.email) }
+    var password by remember(server.id) { mutableStateOf("") }
+    val canSubmit = email.isNotBlank() && password.isNotBlank() && !busy
+
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Sign in again", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "${server.label} (${server.displayHost}) no longer accepts the sign-in saved on this device — " +
+                    "the key may have been revoked or the server reset. Enter your password to renew it.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = email,
+                onValueChange = { email = it },
+                label = { Text("Email") },
+                singleLine = true,
+                enabled = !busy,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = password,
+                onValueChange = { password = it },
+                label = { Text("Password") },
+                singleLine = true,
+                enabled = !busy,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(4.dp))
+            Button(
+                onClick = { onSubmit(email.trim(), password) },
+                enabled = canSubmit,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (busy) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                } else {
+                    Text("Sign in")
+                }
+            }
+            TextButton(onClick = onCancel, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                Text("Back to saved servers")
             }
         }
     }

@@ -418,6 +418,33 @@ class KodexApi(private val client: HttpClient) {
             setBody(MihonAddRepositoryRequest(url))
         }.body()
 
+    /** Changes a repository's URL in place; the server fetches the new index before storing it. */
+    suspend fun mihonUpdateRepository(baseUrl: String, apiKey: String, url: String, newUrl: String): MihonRepositoryDto =
+        client.put("$baseUrl/api/v1/mihon/repos") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("url", url)
+            contentType(ContentType.Application.Json)
+            setBody(MihonAddRepositoryRequest(newUrl))
+        }.body()
+
+    /** Switches a repository on/off without forgetting it. */
+    suspend fun mihonSetRepositoryEnabled(baseUrl: String, apiKey: String, url: String, enabled: Boolean): MihonRepositoryDto =
+        client.patch("$baseUrl/api/v1/mihon/repos") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("url", url)
+            contentType(ContentType.Application.Json)
+            setBody(RepositoryEnabledRequest(enabled))
+        }.body()
+
+    /** The full new order — every configured URL exactly once. */
+    suspend fun mihonReorderRepositories(baseUrl: String, apiKey: String, urls: List<String>) {
+        client.put("$baseUrl/api/v1/mihon/repos/order") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(RepositoryOrderRequest(urls))
+        }
+    }
+
     suspend fun mihonRemoveRepository(baseUrl: String, apiKey: String, url: String) {
         client.delete("$baseUrl/api/v1/mihon/repos") {
             header(HEADER_API_KEY, apiKey)
@@ -543,6 +570,33 @@ class KodexApi(private val client: HttpClient) {
             contentType(ContentType.Application.Json)
             setBody(LnReaderAddRepositoryRequest(url))
         }.body()
+
+    /** Changes a repository's URL in place (its merge priority stays); the server fetches the new manifest first. */
+    suspend fun lnreaderUpdateRepository(baseUrl: String, apiKey: String, url: String, newUrl: String): LnReaderRepositoryDto =
+        client.put("$baseUrl/api/v1/lnreader/repos") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("url", url)
+            contentType(ContentType.Application.Json)
+            setBody(LnReaderAddRepositoryRequest(newUrl))
+        }.body()
+
+    /** Switches a repository on/off without forgetting it (its merge position is kept). */
+    suspend fun lnreaderSetRepositoryEnabled(baseUrl: String, apiKey: String, url: String, enabled: Boolean): LnReaderRepositoryDto =
+        client.patch("$baseUrl/api/v1/lnreader/repos") {
+            header(HEADER_API_KEY, apiKey)
+            parameter("url", url)
+            contentType(ContentType.Application.Json)
+            setBody(RepositoryEnabledRequest(enabled))
+        }.body()
+
+    /** The full new order — every configured URL exactly once; later entries win on a shared plugin id. */
+    suspend fun lnreaderReorderRepositories(baseUrl: String, apiKey: String, urls: List<String>) {
+        client.put("$baseUrl/api/v1/lnreader/repos/order") {
+            header(HEADER_API_KEY, apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(RepositoryOrderRequest(urls))
+        }
+    }
 
     suspend fun lnreaderRemoveRepository(baseUrl: String, apiKey: String, url: String) {
         client.delete("$baseUrl/api/v1/lnreader/repos") {
@@ -1169,12 +1223,13 @@ class KodexApi(private val client: HttpClient) {
             setBody(values)
         }.body()
 
-    private companion object {
+    companion object {
+        /** The auth header every authenticated call carries; public so the HTTP layer can recognise it. */
         const val HEADER_API_KEY = "X-API-Key"
-        const val HOME_ROW_SIZE = 20
-        const val SEARCH_SIZE = 50
-        const val LIBRARY_SERIES_SIZE = 200
-        const val SERIES_BOOKS_SIZE = 1000
-        const val PAGE_SIZE = 50
+        private const val HOME_ROW_SIZE = 20
+        private const val SEARCH_SIZE = 50
+        private const val LIBRARY_SERIES_SIZE = 200
+        private const val SERIES_BOOKS_SIZE = 1000
+        private const val PAGE_SIZE = 50
     }
 }

@@ -65,6 +65,9 @@ data class LnReaderUpdateOutcome(
 @Serializable
 data class LnReaderRepositoryDto(
     val url: String,
+    /** Off = kept in the list (and its merge position) but neither fetched nor merged. */
+    val enabled: Boolean = true,
+    /** Pre-seeded through the server's kodex.lnreader.repositories rather than added here. */
     val builtIn: Boolean = false,
     val pluginCount: Int = 0,
     val fetchedAt: String? = null,

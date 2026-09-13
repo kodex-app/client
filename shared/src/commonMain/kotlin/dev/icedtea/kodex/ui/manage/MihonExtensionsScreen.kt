@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package dev.icedtea.kodex.ui.manage
 
 import androidx.compose.foundation.background
@@ -15,8 +17,11 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
@@ -31,6 +36,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -43,6 +49,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -54,7 +61,6 @@ import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.network.MihonAvailableDto
 import dev.icedtea.kodex.network.MihonInstalledDto
 import dev.icedtea.kodex.network.MihonInstalledSourceDto
-import dev.icedtea.kodex.network.MihonRepositoryDto
 import dev.icedtea.kodex.network.MihonSourceDto
 import dev.icedtea.kodex.ui.ErrorState
 import dev.icedtea.kodex.ui.collectAsStateSafe
@@ -63,12 +69,13 @@ import dev.icedtea.kodex.ui.rememberSnackbar
 import kotlinx.coroutines.launch
 
 /**
- * Mihon extensions — the Keiyoushi repository's 1300+ Tachiyomi/Mihon extensions (their JVM JAR
- * builds), run by the server. One list (installed first) with search, an installed-only toggle, an
- * 18+ toggle and language chips; install / update / uninstall per row, per-source settings through
- * [SourceConfigSheet] (the extension's own preferences), "open in browser" to log in to a source's site
- * on the server, and the repository list in a dialog. Admin-only. Mirrors the web UI's Extensions ›
- * Mihon tab; sideloading a JAR stays on the web UI (no file picker here).
+ * Mihon extensions — the Tachiyomi/Mihon extensions of the configured repositories (their JVM JAR
+ * builds, e.g. Keiyoushi's 1300+), run by the server. Sections per language, collapsed except
+ * "Installed", with search, an installed-only toggle, an 18+ toggle and language chips; install /
+ * update / uninstall per row, per-source settings through [SourceConfigSheet] (the extension's own
+ * preferences), "Open site" in the device browser, and "Log in via server browser" for a source's
+ * site (cookies go to the extension). The repository list lives in [ExtensionRepositoriesScreen].
+ * Admin-only. Mirrors the web UI's Extensions › Mihon tab; sideloading a JAR stays on the web UI.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -95,7 +102,6 @@ fun MihonExtensionsScreen(
     var hiddenLangs by remember { mutableStateOf(setOf<String>()) }
     var busy by remember { mutableStateOf<String?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
-    var reposOpen by remember { mutableStateOf(false) }
     var configuring by remember { mutableStateOf<Pair<String, String>?>(null) }
     // An installed extension with several sources: which one to configure / open is asked in a dialog.
     var pickSource by remember { mutableStateOf<Pair<MihonInstalledDto, (MihonInstalledSourceDto) -> Unit>?>(null) }
@@ -152,6 +158,20 @@ fun MihonExtensionsScreen(
         }
     }
 
+    // Sectioned like the Mihon app: what is installed first, then one section per language (multi-language
+    // last), each a sticky band — a long repository reads as a table of contents, not one alphabetical wall.
+    // Expanded section keys: only what is installed starts open, languages stay folded until tapped.
+    var expanded by remember { mutableStateOf(setOf("installed")) }
+    val sections = remember(list) {
+        val byInstalled = list.partition { it.installed }
+        val langs = byInstalled.second.groupBy { it.lang }.entries
+            .sortedWith(compareBy<Map.Entry<String, List<MihonAvailableDto>>> { it.key == "all" }.thenBy { languageLabel(it.key).lowercase() })
+        buildList {
+            if (byInstalled.first.isNotEmpty()) add("installed" to ("Installed" to byInstalled.first))
+            langs.forEach { add(it.key to (languageLabel(it.key) to it.value)) }
+        }
+    }
+
     /** Runs [block] for the extension's single source, or asks which one when it bundles several. */
     fun withSource(e: MihonAvailableDto, block: (MihonInstalledSourceDto) -> Unit) {
         val inst = installedByPkg[e.packageName] ?: return
@@ -187,7 +207,6 @@ fun MihonExtensionsScreen(
                             }
                         })
                         DropdownMenuItem(text = { Text("Refresh repositories") }, onClick = { menuOpen = false; refreshNext = true; reload++ })
-                        DropdownMenuItem(text = { Text("Repositories") }, onClick = { menuOpen = false; reposOpen = true })
                     }
                 },
             )
@@ -212,7 +231,7 @@ fun MihonExtensionsScreen(
                     FilterChip(
                         selected = lang !in hiddenLangs,
                         onClick = { hiddenLangs = if (lang in hiddenLangs) hiddenLangs - lang else hiddenLangs + lang },
-                        label = { Text("${if (lang == "all") "multi" else lang} · $count") },
+                        label = { Text("${languageLabel(lang)} · $count") },
                         modifier = Modifier.padding(horizontal = 4.dp),
                     )
                 }
@@ -221,22 +240,33 @@ fun MihonExtensionsScreen(
                 available == null && loadError != null -> ErrorState(loadError!!, onRetry = { reload++ })
                 available == null -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
                 list.isEmpty() -> Box(Modifier.fillMaxSize().padding(32.dp), Alignment.Center) {
-                    Text("No extensions match.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        if (rows.isEmpty()) "No repositories yet — add one under More › Extension repositories." else "No extensions match.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 else -> LazyColumn(Modifier.fillMaxSize()) {
                     item {
                         Text("${list.size} of ${rows.size} extensions", Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                             style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    items(list, key = { it.packageName }) { e ->
-                        ExtensionRow(
-                            e, busy == e.packageName, multiRepo,
-                            onInstall = { act(e.packageName, if (e.installed) "Updating ${e.name}…" else "Installing ${e.name}…") { val s = server!!; api.mihonInstall(s.baseUrl, s.apiKey, e.packageName) } },
-                            onUninstall = { act(e.packageName, "Uninstalled ${e.name}") { val s = server!!; api.mihonUninstall(s.baseUrl, s.apiKey, e.packageName) } },
-                            onConfigure = { withSource(e) { src -> configuring = src.id to (if (src.lang != null) "${src.name} (${src.lang})" else src.name) } },
-                            onOpenBrowser = { withSource(e) { src -> onOpenBrowser(src.id, src.name) } },
-                        )
-                        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                    sections.forEach { (key, section) ->
+                        val (label, extensions) = section
+                        stickyHeader(key = "h:$key") {
+                            LanguageSectionHeader(label, extensions.size, expanded = key in expanded) {
+                                expanded = if (key in expanded) expanded - key else expanded + key
+                            }
+                        }
+                        if (key in expanded) items(extensions, key = { it.packageName }) { e ->
+                            ExtensionRow(
+                                e, busy == e.packageName, multiRepo,
+                                onInstall = { act(e.packageName, if (e.installed) "Updating ${e.name}…" else "Installing ${e.name}…") { val s = server!!; api.mihonInstall(s.baseUrl, s.apiKey, e.packageName) } },
+                                onUninstall = { act(e.packageName, "Uninstalled ${e.name}") { val s = server!!; api.mihonUninstall(s.baseUrl, s.apiKey, e.packageName) } },
+                                onConfigure = { withSource(e) { src -> configuring = src.id to (if (src.lang != null) "${src.name} (${src.lang})" else src.name) } },
+                                onOpenBrowser = { withSource(e) { src -> onOpenBrowser(src.id, src.name) } },
+                            )
+                            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                        }
                     }
                 }
             }
@@ -271,9 +301,6 @@ fun MihonExtensionsScreen(
             confirmButton = { TextButton(onClick = { pickSource = null }) { Text("Cancel") } },
         )
     }
-    if (reposOpen && s != null) {
-        MihonRepositoriesDialog(api, s.baseUrl, s.apiKey, onDismiss = { reposOpen = false; reload++ })
-    }
 }
 
 @Composable
@@ -287,6 +314,9 @@ private fun ExtensionRow(
     onOpenBrowser: () -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
+    // The source's website, opened in the device's own browser (the server-side browser is only for logging in).
+    val uriHandler = LocalUriHandler.current
+    val site = e.sources.firstOrNull { it.homeUrl.isNotBlank() }?.homeUrl
     Row(Modifier.fillMaxWidth().padding(start = 16.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(
             Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
@@ -317,13 +347,17 @@ private fun ExtensionRow(
         }
         when {
             busy -> CircularProgressIndicator(Modifier.padding(horizontal = 20.dp).size(20.dp), strokeWidth = 2.dp)
-            !e.installed -> TextButton(onClick = onInstall) { Text("Install") }
+            !e.installed -> Row(verticalAlignment = Alignment.CenterVertically) {
+                site?.let { url -> IconButton(onClick = { uriHandler.openUri(url) }) { Icon(Icons.Filled.OpenInBrowser, contentDescription = "Open site") } }
+                TextButton(onClick = onInstall) { Text("Install") }
+            }
             else -> Box {
                 IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Actions") }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     if (e.updateAvailable) DropdownMenuItem(text = { Text("Update to v${e.versionName}") }, onClick = { menu = false; onInstall() })
                     DropdownMenuItem(text = { Text("Settings") }, onClick = { menu = false; onConfigure() })
-                    DropdownMenuItem(text = { Text("Open in browser") }, onClick = { menu = false; onOpenBrowser() })
+                    site?.let { url -> DropdownMenuItem(text = { Text("Open site") }, onClick = { menu = false; uriHandler.openUri(url) }) }
+                    DropdownMenuItem(text = { Text("Log in via server browser") }, onClick = { menu = false; onOpenBrowser() })
                     DropdownMenuItem(text = { Text("Uninstall") }, onClick = { menu = false; onUninstall() })
                 }
             }
@@ -331,91 +365,3 @@ private fun ExtensionRow(
     }
 }
 
-/**
- * The extension repositories the server browses — Keiyoushi by default, any index URL the Mihon app
- * accepts. Only JAR builds run on the server, so each repository shows how many it has; an APK-only one
- * is flagged rather than silently contributing nothing.
- */
-@Composable
-private fun MihonRepositoriesDialog(api: KodexApi, baseUrl: String, apiKey: String, onDismiss: () -> Unit) {
-    val scope = rememberCoroutineScope()
-    var repos by remember { mutableStateOf<List<MihonRepositoryDto>?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var newUrl by remember { mutableStateOf("") }
-    var pending by remember { mutableStateOf(false) }
-    var reload by remember { mutableIntStateOf(0) }
-
-    LaunchedEffect(reload) {
-        runCatching { api.mihonRepositories(baseUrl, apiKey) }.fold(onSuccess = { repos = it; error = null }, onFailure = { error = it.friendlyMessage() })
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Repositories") },
-        text = {
-            Column {
-                when (val r = repos) {
-                    null -> if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error) else CircularProgressIndicator(Modifier.size(24.dp))
-                    else -> r.forEach { repo ->
-                        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    listOfNotNull(repo.name ?: repo.url, repo.badgeLabel?.let { "[$it]" }).joinToString(" "),
-                                    style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                )
-                                Text(repo.url, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                val status = when {
-                                    repo.error != null -> "unreachable: ${repo.error}"
-                                    repo.jarCount > 0 -> "${repo.jarCount} of ${repo.extensionCount} run here (JAR)"
-                                    else -> "APK only — nothing from it can run on the server"
-                                }
-                                Text(
-                                    status,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (repo.error != null || repo.jarCount == 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                repo.signingKey?.takeIf { it.isNotBlank() }?.let { key ->
-                                    Text("key ${key.take(8)}…${key.takeLast(8)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                            TextButton(enabled = !pending, onClick = {
-                                scope.launch {
-                                    pending = true
-                                    runCatching { api.mihonRemoveRepository(baseUrl, apiKey, repo.url) }.onFailure { error = it.friendlyMessage() }
-                                    pending = false
-                                    reload++
-                                }
-                            }) { Text("Remove") }
-                        }
-                    }
-                }
-                OutlinedTextField(
-                    value = newUrl,
-                    onValueChange = { newUrl = it },
-                    placeholder = { Text("https://…/index.json") },
-                    singleLine = true,
-                    enabled = !pending,
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                )
-                Text(
-                    "Any URL the Mihon app accepts (index.json, index.pb, repo.json, index.min.json). Only JAR builds run on the server; Keiyoushi publishes one for every extension, other repositories usually ship APKs only.",
-                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp),
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(enabled = newUrl.isNotBlank() && !pending, onClick = {
-                scope.launch {
-                    pending = true
-                    runCatching { api.mihonAddRepository(baseUrl, apiKey, newUrl.trim()) }.fold(
-                        onSuccess = { newUrl = ""; error = null },
-                        onFailure = { error = it.friendlyMessage() },
-                    )
-                    pending = false
-                    reload++
-                }
-            }) { Text("Add") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
-    )
-}

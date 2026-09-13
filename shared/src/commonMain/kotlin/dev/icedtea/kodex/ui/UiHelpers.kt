@@ -38,6 +38,10 @@ fun Throwable.friendlyMessage(signIn: Boolean = false): String = when (this) {
     else -> "Couldn't reach the server. Check the address and your connection."
 }
 
+/** True when the server answered 401 — the credentials or key were refused, not a transport failure. */
+val Throwable.isUnauthorized: Boolean
+    get() = this is ResponseException && response.status.value == 401
+
 /** One line per HTTP status: what happened, then the code for anyone reporting it. */
 private fun httpMessage(code: Int, signIn: Boolean): String = when (code) {
     400 -> "The server rejected the request (400)."
