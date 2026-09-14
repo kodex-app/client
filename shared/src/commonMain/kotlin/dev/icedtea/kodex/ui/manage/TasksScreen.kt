@@ -42,6 +42,8 @@ import dev.icedtea.kodex.auth.SessionManager
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.network.ServerEvent
 import dev.icedtea.kodex.network.TaskDto
+import dev.icedtea.kodex.network.cancelAllTasks
+import dev.icedtea.kodex.network.tasks
 import dev.icedtea.kodex.ui.EmptyMessage
 import dev.icedtea.kodex.ui.OnServerEvent
 import dev.icedtea.kodex.ui.TooltipIconButton

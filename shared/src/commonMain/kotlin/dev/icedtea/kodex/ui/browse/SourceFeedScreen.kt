@@ -86,6 +86,11 @@ import dev.icedtea.kodex.network.SourceFilter
 import dev.icedtea.kodex.network.SourceSearchResult
 import dev.icedtea.kodex.network.TextFilterDto
 import dev.icedtea.kodex.network.TriStateFilter
+import dev.icedtea.kodex.network.followWebSeries
+import dev.icedtea.kodex.network.followedExternalIds
+import dev.icedtea.kodex.network.sourceFeed
+import dev.icedtea.kodex.network.sourceFilters
+import dev.icedtea.kodex.network.sourceSearch
 import dev.icedtea.kodex.ui.KodexBottomSheet
 import dev.icedtea.kodex.ui.SelectionActionBar
 import dev.icedtea.kodex.ui.SelectionState

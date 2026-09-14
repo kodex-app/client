@@ -3,6 +3,8 @@ package dev.icedtea.kodex.ui.reader.ebook
 import dev.icedtea.kodex.network.BundledFontDto
 import dev.icedtea.kodex.network.CustomFontDto
 import dev.icedtea.kodex.network.KodexApi
+import dev.icedtea.kodex.network.saveUserSetting
+import dev.icedtea.kodex.network.userSettings
 import dev.icedtea.kodex.ui.reader.settingsKeyPart
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json

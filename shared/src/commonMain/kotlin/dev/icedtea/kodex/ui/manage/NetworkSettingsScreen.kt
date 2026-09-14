@@ -46,6 +46,10 @@ import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.network.BrowserStatusDto
 import dev.icedtea.kodex.network.NetworkSettingsDto
 import dev.icedtea.kodex.network.NetworkSettingsRequest
+import dev.icedtea.kodex.network.browserStatus
+import dev.icedtea.kodex.network.networkSettings
+import dev.icedtea.kodex.network.saveNetworkSettings
+import dev.icedtea.kodex.network.stopBrowser
 import dev.icedtea.kodex.ui.InlineLoadError
 import dev.icedtea.kodex.ui.collectAsStateSafe
 import dev.icedtea.kodex.ui.friendlyMessage

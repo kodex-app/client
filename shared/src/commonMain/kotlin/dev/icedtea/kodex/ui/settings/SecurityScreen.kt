@@ -42,6 +42,10 @@ import androidx.compose.ui.unit.dp
 import dev.icedtea.kodex.auth.SessionManager
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.network.TotpEnrollmentDto
+import dev.icedtea.kodex.network.changeOwnPassword
+import dev.icedtea.kodex.network.totpActivate
+import dev.icedtea.kodex.network.totpDisable
+import dev.icedtea.kodex.network.totpEnroll
 import dev.icedtea.kodex.platform.rememberUrlOpener
 import dev.icedtea.kodex.ui.collectAsStateSafe
 import dev.icedtea.kodex.ui.friendlyMessage

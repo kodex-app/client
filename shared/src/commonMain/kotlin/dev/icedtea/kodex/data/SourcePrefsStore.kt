@@ -1,6 +1,8 @@
 package dev.icedtea.kodex.data
 
 import dev.icedtea.kodex.network.KodexApi
+import dev.icedtea.kodex.network.saveUserSetting
+import dev.icedtea.kodex.network.userSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

@@ -41,6 +41,8 @@ import androidx.compose.ui.unit.dp
 import dev.icedtea.kodex.network.ConfigFieldDto
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.network.SourceConfigDto
+import dev.icedtea.kodex.network.saveSourceConfig
+import dev.icedtea.kodex.network.sourceConfig
 import dev.icedtea.kodex.ui.KodexBottomSheet
 import dev.icedtea.kodex.ui.friendlyMessage
 import kotlinx.coroutines.launch

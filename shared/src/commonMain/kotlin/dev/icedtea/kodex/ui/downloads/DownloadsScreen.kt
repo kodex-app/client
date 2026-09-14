@@ -34,6 +34,11 @@ import androidx.compose.ui.unit.dp
 import dev.icedtea.kodex.auth.SessionManager
 import dev.icedtea.kodex.network.DownloadJobDto
 import dev.icedtea.kodex.network.KodexApi
+import dev.icedtea.kodex.network.cancelAllDownloads
+import dev.icedtea.kodex.network.clearFinishedDownloads
+import dev.icedtea.kodex.network.downloadAction
+import dev.icedtea.kodex.network.downloads
+import dev.icedtea.kodex.network.retryFailedDownloads
 import dev.icedtea.kodex.ui.PagedList
 import dev.icedtea.kodex.ui.collectAsStateSafe
 import dev.icedtea.kodex.ui.rememberPagedList

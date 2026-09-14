@@ -1,6 +1,8 @@
 package dev.icedtea.kodex.ui.reader
 
 import dev.icedtea.kodex.network.KodexApi
+import dev.icedtea.kodex.network.saveUserSetting
+import dev.icedtea.kodex.network.userSettings
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement

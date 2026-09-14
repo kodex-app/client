@@ -90,6 +90,8 @@ import dev.icedtea.kodex.network.BookmarkDto
 import dev.icedtea.kodex.network.BundledFontDto
 import dev.icedtea.kodex.network.CustomFontDto
 import dev.icedtea.kodex.network.KodexApi
+import dev.icedtea.kodex.network.bundledFonts
+import dev.icedtea.kodex.network.customFonts
 import dev.icedtea.kodex.platform.StatusBarIcons
 import dev.icedtea.kodex.platform.SystemBarsHidden
 import dev.icedtea.kodex.platform.TTS_RATES

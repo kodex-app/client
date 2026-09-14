@@ -44,6 +44,10 @@ import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.network.MigrateRequest
 import dev.icedtea.kodex.network.SourceDescriptor
 import dev.icedtea.kodex.network.SourceSearchResult
+import dev.icedtea.kodex.network.contentSources
+import dev.icedtea.kodex.network.followedSeriesRef
+import dev.icedtea.kodex.network.migrateSeries
+import dev.icedtea.kodex.network.migrationCandidates
 import dev.icedtea.kodex.ui.collectAsStateSafe
 import dev.icedtea.kodex.ui.rememberSnackbar
 import kotlinx.coroutines.launch
@@ -80,7 +84,13 @@ fun MigrateScreen(
 
     LaunchedEffect(server?.id) {
         val s = server ?: return@LaunchedEffect
-        sources = runCatching { api.contentSources(s.baseUrl, s.apiKey) }.getOrDefault(emptyList()).filter { it.id != currentProviderId }
+        // Targets: same media kind as the origin (a comic can't move to a novel plugin), never itself,
+        // the origin's language first — that is almost always the wanted match.
+        val all = runCatching { api.contentSources(s.baseUrl, s.apiKey) }.getOrDefault(emptyList())
+        val from = all.firstOrNull { it.id == currentProviderId }
+        sources = all
+            .filter { it.id != currentProviderId && (from == null || it.mediaKind == from.mediaKind) }
+            .sortedWith(compareByDescending<SourceDescriptor> { from != null && it.language == from.language }.thenBy { it.displayName.lowercase() })
         libraryId = runCatching { api.followedSeriesRef(s.baseUrl, s.apiKey, currentProviderId, sourceSeriesId)?.libraryId }.getOrNull()
     }
 
@@ -129,7 +139,13 @@ fun MigrateScreen(
                 OutlinedButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth()) { Text(target?.displayName ?: "Choose a source") }
                 DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                     if (sources.isEmpty()) DropdownMenuItem(text = { Text("No other sources installed") }, onClick = { open = false }, enabled = false)
-                    sources.forEach { src -> DropdownMenuItem(text = { Text(src.displayName) }, onClick = { open = false; target = src; candidates = null }) }
+                    // One extension can bundle a source per language under one name (MangaDex × 60): a
+                    // duplicated name gets its language appended so the entries can be told apart.
+                    val dup = sources.groupingBy { it.displayName }.eachCount()
+                    sources.forEach { src ->
+                        val label = if ((dup[src.displayName] ?: 0) > 1) "${src.displayName} (${languageLabel(src.language ?: "all")})" else src.displayName
+                        DropdownMenuItem(text = { Text(label) }, onClick = { open = false; target = src; candidates = null })
+                    }
                 }
             }
 

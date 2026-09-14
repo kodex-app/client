@@ -3,6 +3,8 @@ package dev.icedtea.kodex.ui.browse
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.network.LibraryDto
 import dev.icedtea.kodex.network.MEDIA_KIND_BOOK
+import dev.icedtea.kodex.network.libraries
+import dev.icedtea.kodex.network.webLibrary
 
 /**
  * The WEB libraries a source's series may be followed into. A WEB library holds exactly one media kind

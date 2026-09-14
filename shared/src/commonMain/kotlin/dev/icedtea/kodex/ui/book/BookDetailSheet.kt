@@ -56,6 +56,14 @@ import dev.icedtea.kodex.network.AuthorDto
 import dev.icedtea.kodex.network.BookDto
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.network.UpdateBookMetadataRequest
+import dev.icedtea.kodex.network.analyzeBook
+import dev.icedtea.kodex.network.book
+import dev.icedtea.kodex.network.bookBookmarks
+import dev.icedtea.kodex.network.deleteBook
+import dev.icedtea.kodex.network.deleteBookmark
+import dev.icedtea.kodex.network.markBookRead
+import dev.icedtea.kodex.network.markBookUnread
+import dev.icedtea.kodex.network.updateBookMetadata
 import dev.icedtea.kodex.ui.KodexBottomSheet
 import dev.icedtea.kodex.ui.MetaChip
 import dev.icedtea.kodex.ui.catalog.CoverImage

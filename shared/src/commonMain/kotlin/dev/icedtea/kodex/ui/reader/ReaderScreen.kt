@@ -36,6 +36,15 @@ import dev.icedtea.kodex.network.BookDto
 import dev.icedtea.kodex.network.BookmarkDto
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.network.ReadProgressDto
+import dev.icedtea.kodex.network.addBookmark
+import dev.icedtea.kodex.network.addEbookBookmark
+import dev.icedtea.kodex.network.book
+import dev.icedtea.kodex.network.bookBookmarks
+import dev.icedtea.kodex.network.deleteBookmark
+import dev.icedtea.kodex.network.readProgress
+import dev.icedtea.kodex.network.saveReadProgress
+import dev.icedtea.kodex.network.seriesBooks
+import dev.icedtea.kodex.network.seriesDetail
 import dev.icedtea.kodex.ui.catalog.bookPageUrl
 import dev.icedtea.kodex.ui.collectAsStateSafe
 import dev.icedtea.kodex.ui.friendlyMessage

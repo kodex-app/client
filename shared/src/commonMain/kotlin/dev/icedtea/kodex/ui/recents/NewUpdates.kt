@@ -10,6 +10,7 @@ import dev.icedtea.kodex.auth.SessionManager
 import dev.icedtea.kodex.data.AppSettings
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.network.ServerEvent
+import dev.icedtea.kodex.network.updates
 import dev.icedtea.kodex.ui.OnServerEvent
 import dev.icedtea.kodex.ui.collectAsStateSafe
 import dev.icedtea.kodex.ui.isoEpochMillis

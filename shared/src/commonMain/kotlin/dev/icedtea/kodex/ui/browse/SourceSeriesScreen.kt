@@ -70,6 +70,13 @@ import dev.icedtea.kodex.network.ReadProgressDto
 import dev.icedtea.kodex.network.SourceChapter
 import dev.icedtea.kodex.network.SourceDescriptor
 import dev.icedtea.kodex.network.SourceSearchResult
+import dev.icedtea.kodex.network.downloadWebSeries
+import dev.icedtea.kodex.network.followWebSeries
+import dev.icedtea.kodex.network.followedSeriesRef
+import dev.icedtea.kodex.network.sourceChapters
+import dev.icedtea.kodex.network.sourceSeries
+import dev.icedtea.kodex.network.sourceSeriesProgress
+import dev.icedtea.kodex.network.unfollowWebSeries
 import dev.icedtea.kodex.ui.LoadedContent
 import dev.icedtea.kodex.ui.catalog.SeriesBackdrop
 import dev.icedtea.kodex.ui.nav.retain

@@ -46,6 +46,11 @@ import dev.icedtea.kodex.auth.SessionManager
 import dev.icedtea.kodex.network.HistoryEntryDto
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.network.UpdateDto
+import dev.icedtea.kodex.network.clearHistory
+import dev.icedtea.kodex.network.deleteHistoryEntry
+import dev.icedtea.kodex.network.history
+import dev.icedtea.kodex.network.libraries
+import dev.icedtea.kodex.network.updates
 import dev.icedtea.kodex.ui.PagedList
 import dev.icedtea.kodex.ui.catalog.DayHeader
 import dev.icedtea.kodex.ui.catalog.MediaRow

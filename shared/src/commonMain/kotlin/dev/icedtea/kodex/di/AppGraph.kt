@@ -5,6 +5,7 @@ import dev.icedtea.kodex.data.AppSettings
 import dev.icedtea.kodex.data.ServerStore
 import dev.icedtea.kodex.data.SourcePrefsStore
 import dev.icedtea.kodex.network.EventBus
+import dev.icedtea.kodex.network.HEADER_API_KEY
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.platform.createHttpClient
 import io.ktor.client.plugins.ClientRequestException
@@ -54,7 +55,7 @@ class AppGraph {
             // Basic-auth sign-in is also a 401 but carries no key, and must not evict anyone.
             handleResponseExceptionWithRequest { cause, request ->
                 if (cause is ClientRequestException && cause.response.status == HttpStatusCode.Unauthorized) {
-                    request.headers[KodexApi.HEADER_API_KEY]?.let(rejectedApiKeys::tryEmit)
+                    request.headers[HEADER_API_KEY]?.let(rejectedApiKeys::tryEmit)
                 }
             }
         }

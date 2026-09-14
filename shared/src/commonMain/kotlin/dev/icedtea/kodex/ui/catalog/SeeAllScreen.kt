@@ -26,6 +26,9 @@ import dev.icedtea.kodex.network.BookDto
 import dev.icedtea.kodex.network.KeepReadingDto
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.network.SeriesDto
+import dev.icedtea.kodex.network.homeBooks
+import dev.icedtea.kodex.network.homeKeepReading
+import dev.icedtea.kodex.network.homeSeries
 import dev.icedtea.kodex.ui.EmptyMessage
 import dev.icedtea.kodex.ui.LoadedContent
 import dev.icedtea.kodex.ui.collectAsStateSafe

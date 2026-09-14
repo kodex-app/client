@@ -27,6 +27,7 @@ import dev.icedtea.kodex.network.HomeDto
 import dev.icedtea.kodex.network.KeepReadingDto
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.network.SeriesDto
+import dev.icedtea.kodex.network.home
 import dev.icedtea.kodex.ui.catalog.CoverCard
 import dev.icedtea.kodex.ui.catalog.CoverSection
 import dev.icedtea.kodex.ui.catalog.bookCoverUrl

@@ -55,6 +55,15 @@ import dev.icedtea.kodex.auth.SessionManager
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.network.MihonBrowserMouseRequest
 import dev.icedtea.kodex.network.MihonBrowserSessionDto
+import dev.icedtea.kodex.network.browserAction
+import dev.icedtea.kodex.network.browserClose
+import dev.icedtea.kodex.network.browserFrame
+import dev.icedtea.kodex.network.browserKey
+import dev.icedtea.kodex.network.browserMouse
+import dev.icedtea.kodex.network.browserNavigate
+import dev.icedtea.kodex.network.browserOpen
+import dev.icedtea.kodex.network.browserSession
+import dev.icedtea.kodex.network.browserText
 import dev.icedtea.kodex.ui.collectAsStateSafe
 import dev.icedtea.kodex.ui.friendlyMessage
 import dev.icedtea.kodex.ui.rememberSnackbar

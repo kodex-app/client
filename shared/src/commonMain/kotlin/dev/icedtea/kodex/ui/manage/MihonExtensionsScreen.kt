@@ -62,6 +62,13 @@ import dev.icedtea.kodex.network.MihonAvailableDto
 import dev.icedtea.kodex.network.MihonInstalledDto
 import dev.icedtea.kodex.network.MihonInstalledSourceDto
 import dev.icedtea.kodex.network.MihonSourceDto
+import dev.icedtea.kodex.network.mihonAvailable
+import dev.icedtea.kodex.network.mihonCheckUpdates
+import dev.icedtea.kodex.network.mihonInstall
+import dev.icedtea.kodex.network.mihonInstalled
+import dev.icedtea.kodex.network.mihonUninstall
+import dev.icedtea.kodex.network.mihonUpdateAll
+import dev.icedtea.kodex.network.mihonUpdateStatus
 import dev.icedtea.kodex.ui.ErrorState
 import dev.icedtea.kodex.ui.collectAsStateSafe
 import dev.icedtea.kodex.ui.friendlyMessage

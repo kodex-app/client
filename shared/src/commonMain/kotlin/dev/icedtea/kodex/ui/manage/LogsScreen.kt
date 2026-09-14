@@ -48,6 +48,9 @@ import androidx.compose.ui.unit.sp
 import dev.icedtea.kodex.auth.SessionManager
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.network.LogEntryDto
+import dev.icedtea.kodex.network.debugMode
+import dev.icedtea.kodex.network.recentLogs
+import dev.icedtea.kodex.network.setDebugMode
 import dev.icedtea.kodex.ui.EmptyMessage
 import dev.icedtea.kodex.ui.ErrorState
 import dev.icedtea.kodex.ui.TooltipIconButton

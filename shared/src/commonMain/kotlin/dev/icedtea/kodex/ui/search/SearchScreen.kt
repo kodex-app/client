@@ -77,6 +77,14 @@ import dev.icedtea.kodex.network.LabelDto
 import dev.icedtea.kodex.network.SeriesDto
 import dev.icedtea.kodex.network.SourceDescriptor
 import dev.icedtea.kodex.network.SourceSearchResult
+import dev.icedtea.kodex.network.contentSources
+import dev.icedtea.kodex.network.labels
+import dev.icedtea.kodex.network.querySeries
+import dev.icedtea.kodex.network.searchBooks
+import dev.icedtea.kodex.network.seriesGenres
+import dev.icedtea.kodex.network.seriesLanguages
+import dev.icedtea.kodex.network.seriesTags
+import dev.icedtea.kodex.network.sourceSearch
 import dev.icedtea.kodex.ui.catalog.CoverCard
 import dev.icedtea.kodex.ui.catalog.bookCoverUrl
 import dev.icedtea.kodex.ui.catalog.bookSubtitle
