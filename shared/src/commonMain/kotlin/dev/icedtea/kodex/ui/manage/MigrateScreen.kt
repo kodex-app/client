@@ -49,6 +49,7 @@ import dev.icedtea.kodex.network.followedSeriesRef
 import dev.icedtea.kodex.network.migrateSeries
 import dev.icedtea.kodex.network.migrationCandidates
 import dev.icedtea.kodex.ui.collectAsStateSafe
+import dev.icedtea.kodex.ui.languageLabel
 import dev.icedtea.kodex.ui.rememberSnackbar
 import kotlinx.coroutines.launch
 

@@ -1,63 +1,45 @@
 package dev.icedtea.kodex.ui.main
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
-import androidx.compose.material3.Badge
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
-import coil3.compose.AsyncImage
 import io.ktor.http.Url
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import dev.icedtea.kodex.auth.SessionManager
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.network.SourceDescriptor
 import dev.icedtea.kodex.network.contentSources
 import dev.icedtea.kodex.ui.EmptyMessage
+import dev.icedtea.kodex.ui.LanguageFilterButton
+import dev.icedtea.kodex.ui.SourceAvatar
+import dev.icedtea.kodex.ui.SourceCard
+import dev.icedtea.kodex.ui.SourceFilterRow
+import dev.icedtea.kodex.ui.SourceListContentPadding
+import dev.icedtea.kodex.ui.SourceSearchField
+import dev.icedtea.kodex.ui.SourceSectionHeader
+import dev.icedtea.kodex.ui.catalog.ColorBadge
+import dev.icedtea.kodex.ui.languageLabel
 import dev.icedtea.kodex.ui.LoadedContent
 import dev.icedtea.kodex.ui.collectAsStateSafe
 import dev.icedtea.kodex.ui.nav.retain
@@ -105,7 +87,6 @@ private fun SourceList(
     // Which language groups are hidden — server-persisted with the other Browse prefs, so the web UI
     // and this screen always agree on what's filtered out. Empty = every language shown.
     val hiddenLangs by sourcePrefs.hiddenLanguages.collectAsStateSafe()
-    var langMenu by remember { mutableStateOf(false) }
 
     val byId = remember(sources) { sources.associateBy { it.id } }
     val favoriteSources = remember(sources, favorites) { sources.filter { it.id in favorites } }
@@ -115,10 +96,10 @@ private fun SourceList(
     // One entry per language present, the multi-language bucket included and pinned last, so every
     // group the list can render is toggleable (web parity).
     val langs = remember(sources) {
-        sources.map { langKey(it.language) }.distinct()
-            .sortedWith(compareBy({ it.isEmpty() }, { languageLabel(it) }))
+        sources.groupingBy { langKey(it.language) }.eachCount().entries
+            .sortedWith(compareBy({ it.key.isEmpty() }, { languageLabel(it.key).lowercase() }))
+            .map { it.key to it.value }
     }
-    val shownLangCount = langs.count { it !in hiddenLangs }
     val groups = remember(sources, filter, kind, hiddenLangs) {
         val f = filter.trim().lowercase()
         val visible = sources
@@ -132,78 +113,17 @@ private fun SourceList(
     }
 
     Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            OutlinedTextField(
-                value = filter,
-                onValueChange = { filter = it },
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("Filter sources") },
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (filter.isNotEmpty()) {
-                        IconButton(onClick = { filter = "" }) {
-                            Icon(Icons.Filled.Close, contentDescription = "Clear filter")
-                        }
-                    }
-                },
-                singleLine = true,
-                // Pill + tonal fill: reads as a search affordance rather than a form input, and the
-                // hairline box no longer competes with the cards below it.
-                shape = RoundedCornerShape(28.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    unfocusedBorderColor = Color.Transparent,
-                ),
-            )
-            if (langs.size > 1) {
-                Spacer(Modifier.size(8.dp))
-                Box {
-                    val someHidden = shownLangCount < langs.size
-                    IconButton(onClick = { langMenu = true }) {
-                        Icon(
-                            Icons.Filled.Language,
-                            contentDescription = "Filter by language",
-                            tint = if (someHidden) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    // Badge reads "shown of total", the same summary the web's Languages button spells out.
-                    // Anchored inside the button's bounds rather than with BadgedBox's outward offset,
-                    // which pushed a multi-character badge past the screen edge on this last-in-row button.
-                    if (someHidden) {
-                        Badge(Modifier.align(Alignment.TopEnd)) { Text("$shownLangCount/${langs.size}") }
-                    }
-                    DropdownMenu(expanded = langMenu, onDismissRequest = { langMenu = false }) {
-                        DropdownMenuItem(
-                            text = { Text("All languages") },
-                            onClick = { sourcePrefs.setHiddenLanguages(emptyList()) },
-                            leadingIcon = { if (!someHidden) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary) },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("None") },
-                            onClick = { sourcePrefs.setHiddenLanguages(langs) },
-                            leadingIcon = { if (shownLangCount == 0) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary) },
-                        )
-                        // A tick means "shown", matching the web menu's checkboxes; tapping hides the group.
-                        langs.forEach { l ->
-                            DropdownMenuItem(
-                                text = { Text(languageLabel(l)) },
-                                onClick = { sourcePrefs.toggleHiddenLanguage(l) },
-                                leadingIcon = { if (l !in hiddenLangs) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary) },
-                            )
-                        }
-                    }
-                }
+        SourceSearchField(filter, onValueChange = { filter = it }, placeholder = "Filter sources")
+        SourceFilterRow {
+            item {
+                LanguageFilterButton(
+                    languages = langs,
+                    hidden = hiddenLangs,
+                    onToggle = sourcePrefs::toggleHiddenLanguage,
+                    onSetHidden = sourcePrefs::setHiddenLanguages,
+                )
             }
-        }
-        if (kinds.size > 1) {
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+            if (kinds.size > 1) {
                 item { FilterChip(selected = kind == null, onClick = { kind = null }, label = { Text("All types") }) }
                 items(kinds, key = { it }) { k ->
                     FilterChip(
@@ -219,7 +139,7 @@ private fun SourceList(
         val listState = retain("browse:scroll") { LazyListState() }
         LazyColumn(
             state = listState,
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+            contentPadding = SourceListContentPadding,
         ) {
             fun sourceItems(list: List<SourceDescriptor>, prefix: String, showLanguage: Boolean = false) {
                 items(list, key = { "$prefix-${it.id}" }) { source ->
@@ -237,40 +157,18 @@ private fun SourceList(
             // only rows where the language isn't already stated by the section header — hence the
             // badge here and not there, where it would just repeat the heading on every row.
             if (favoriteSources.isNotEmpty()) {
-                item(key = "hdr-fav") { SourceSectionHeader("Favorites", favoriteSources.size) }
+                stickyHeader(key = "hdr-fav") { SourceSectionHeader("Favorites", favoriteSources.size) }
                 sourceItems(favoriteSources, "fav", showLanguage = true)
             }
             if (recentSources.isNotEmpty()) {
-                item(key = "hdr-recent") { SourceSectionHeader("Recently used", recentSources.size) }
+                stickyHeader(key = "hdr-recent") { SourceSectionHeader("Recently used", recentSources.size) }
                 sourceItems(recentSources, "recent", showLanguage = true)
             }
             groups.forEach { (language, list) ->
-                item(key = "hdr-${language.ifEmpty { "multi" }}") { SourceSectionHeader(languageLabel(language), list.size) }
+                stickyHeader(key = "hdr-${language.ifEmpty { "multi" }}") { SourceSectionHeader(languageLabel(language), list.size) }
                 sourceItems(list, "grp")
             }
         }
-    }
-}
-
-@Composable
-private fun SourceSectionHeader(text: String, count: Int) {
-    Row(
-        Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text.uppercase(),
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = 0.8.sp,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Spacer(Modifier.weight(1f))
-        Text(
-            "$count",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
@@ -283,47 +181,30 @@ private fun SourceRow(
     onToggleFavorite: () -> Unit,
     onOpen: (String) -> Unit,
 ) {
-    Card(
+    val fav = remember(source.website) { faviconUrl(source.website) }
+    SourceCard(
+        title = source.displayName,
+        avatar = { SourceAvatar(fav, source.displayName) },
         onClick = { onOpen("popular") },
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        badges = {
+            if (source.adultContent) ColorBadge("18+")
+            ColorBadge(source.kind)
+            if (showLanguage) ColorBadge(languageBadge(source.language))
+        },
     ) {
-        Row(
-            Modifier.fillMaxWidth().padding(start = 12.dp, top = 10.dp, bottom = 10.dp, end = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            SourceAvatar(source)
-            Spacer(Modifier.size(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    source.displayName,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.size(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (source.adultContent) dev.icedtea.kodex.ui.catalog.ColorBadge("18+")
-                    dev.icedtea.kodex.ui.catalog.ColorBadge(source.kind)
-                    if (showLanguage) dev.icedtea.kodex.ui.catalog.ColorBadge(languageBadge(source.language))
-                }
-            }
-            // Outlined when off, so a glance distinguishes favourites instead of every row showing
-            // the same amber star.
-            IconButton(onClick = onToggleFavorite) {
-                Icon(
-                    if (isFavorite) Icons.Filled.Star else Icons.Filled.StarBorder,
-                    contentDescription = if (isFavorite) "Unfavorite" else "Favorite",
-                    tint = if (isFavorite) FavoriteAmber else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
-                )
-            }
-            // Secondary to the row's own tap (which opens Popular), so it stays a quiet text action.
-            if (source.supportsLatest) {
-                TextButton(onClick = { onOpen("latest") }, contentPadding = PaddingValues(horizontal = 10.dp)) {
-                    Text("Latest", style = MaterialTheme.typography.labelLarge)
-                }
+        // Outlined when off, so a glance distinguishes favourites instead of every row showing
+        // the same amber star.
+        IconButton(onClick = onToggleFavorite) {
+            Icon(
+                if (isFavorite) Icons.Filled.Star else Icons.Filled.StarBorder,
+                contentDescription = if (isFavorite) "Unfavorite" else "Favorite",
+                tint = if (isFavorite) FavoriteAmber else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+            )
+        }
+        // Secondary to the row's own tap (which opens Popular), so it stays a quiet text action.
+        if (source.supportsLatest) {
+            TextButton(onClick = { onOpen("latest") }, contentPadding = PaddingValues(horizontal = 10.dp)) {
+                Text("Latest", style = MaterialTheme.typography.labelLarge)
             }
         }
     }
@@ -331,53 +212,11 @@ private fun SourceRow(
 
 private val FavoriteAmber = Color(0xFFF59E0B)
 
-/**
- * The source's "logo": its website favicon (via Google's favicon service, matching the web UI), with
- * a coloured initial as the fallback when the source has no website / the favicon fails to load.
- */
-@Composable
-private fun SourceAvatar(source: SourceDescriptor) {
-    val fav = remember(source.website) { faviconUrl(source.website) }
-    Box(
-        Modifier.size(40.dp).clip(RoundedCornerShape(10.dp))
-            .background(if (fav != null) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primary),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (fav != null) {
-            AsyncImage(
-                model = fav,
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.size(28.dp),
-            )
-        } else {
-            Text(
-                source.displayName.firstOrNull()?.uppercase() ?: "?",
-                color = MaterialTheme.colorScheme.onPrimary,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-    }
-}
-
 /** A source's favicon URL via Google's favicon service, or null when it has no website. */
 private fun faviconUrl(website: String?): String? {
     if (website.isNullOrBlank()) return null
     val host = runCatching { Url(website).host }.getOrNull()?.takeIf { it.isNotBlank() } ?: return null
     return "https://www.google.com/s2/favicons?sz=64&domain=$host"
-}
-
-@Composable
-private fun Chip(text: String) {
-    Surface(shape = RoundedCornerShape(6.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-        Text(
-            text,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
 }
 
 /**
@@ -390,16 +229,3 @@ private fun languageBadge(code: String?): String =
 
 /** Grouping/filter key for a source's language tag — null or blank collapses to "" (web parity). */
 private fun langKey(code: String?): String = if (code.isNullOrBlank()) "" else code
-
-/** Friendly name for a BCP-47 language tag; falls back to the uppercased code, or "Multi-language". */
-private fun languageLabel(code: String?): String {
-    if (code.isNullOrBlank()) return "Multi-language"
-    return LANGUAGE_NAMES[code.lowercase()] ?: code.uppercase()
-}
-
-private val LANGUAGE_NAMES = mapOf(
-    "en" to "English", "ja" to "Japanese", "zh" to "Chinese", "ko" to "Korean",
-    "es" to "Spanish", "fr" to "French", "de" to "German", "ru" to "Russian",
-    "pt" to "Portuguese", "it" to "Italian", "id" to "Indonesian", "vi" to "Vietnamese",
-    "th" to "Thai", "ar" to "Arabic", "tr" to "Turkish", "pl" to "Polish",
-)

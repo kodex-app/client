@@ -1,16 +1,9 @@
-package dev.icedtea.kodex.ui.manage
+package dev.icedtea.kodex.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -23,10 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 
 /**
  * The extension lists' language filter as one button, not a chip per language: Keiyoushi's index
@@ -87,7 +77,8 @@ fun LanguageFilterButton(
  * Kotlin common has no `Locale.getDisplayLanguage`, hence the table.
  */
 fun languageLabel(code: String): String = when (code) {
-    "all" -> "Multi-language"
+    // "all" is the extension indexes' multi-language marker; "" is Browse's (a source with no language tag).
+    "all", "" -> "Multi-language"
     else -> LANGUAGE_NAMES[code] ?: LANGUAGE_NAMES[code.substringBefore('-')]?.let { "$it (${code.substringAfter('-').uppercase()})" } ?: code.uppercase()
 }
 
@@ -108,28 +99,3 @@ private val LANGUAGE_NAMES = mapOf(
     "af" to "Afrikaans", "sw" to "Swahili", "am" to "Amharic", "ha" to "Hausa", "yo" to "Yoruba", "zu" to "Zulu",
     "jv" to "Javanese", "su" to "Sundanese", "ceb" to "Cebuano", "other" to "Other",
 )
-
-/**
- * A section band in the extension/plugin lists: the language (or "Installed"), how many rows it holds,
- * and a chevron — tapping it collapses or expands the section.
- */
-@Composable
-fun LanguageSectionHeader(label: String, count: Int, expanded: Boolean, onToggle: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainer).clickable(onClick = onToggle)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            if (expanded) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowRight,
-            contentDescription = if (expanded) "Collapse" else "Expand",
-            tint = MaterialTheme.colorScheme.primary,
-        )
-        Text(
-            "${label.uppercase()} · $count",
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.primary,
-        )
-    }
-}
