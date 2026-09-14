@@ -57,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import dev.icedtea.kodex.auth.SessionManager
+import dev.icedtea.kodex.data.SourcePrefsStore
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.network.LnReaderAvailableDto
 import dev.icedtea.kodex.network.LnReaderInstalledDto
@@ -83,7 +84,7 @@ import kotlinx.coroutines.launch
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LnReaderPluginsScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) {
+fun LnReaderPluginsScreen(session: SessionManager, api: KodexApi, sourcePrefs: SourcePrefsStore, onBack: () -> Unit) {
     val server by session.activeServer.collectAsStateSafe()
     val snackbar = rememberSnackbar()
     val scope = rememberCoroutineScope()
@@ -96,7 +97,8 @@ fun LnReaderPluginsScreen(session: SessionManager, api: KodexApi, onBack: () -> 
     var updateCount by remember { mutableIntStateOf(0) }
     var query by remember { mutableStateOf("") }
     var installedOnly by remember { mutableStateOf(false) }
-    var hiddenLangs by remember { mutableStateOf(setOf<String>()) }
+    // Server-side and shared with the other extension list and the web UI (see SourcePrefsStore).
+    val hiddenLangs by sourcePrefs.extensionHiddenLanguages.collectAsStateSafe()
     var busy by remember { mutableStateOf<String?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
     var configuring by remember { mutableStateOf<Pair<String, String>?>(null) }
@@ -134,7 +136,9 @@ fun LnReaderPluginsScreen(session: SessionManager, api: KodexApi, onBack: () -> 
         (repo + extra).sortedWith(compareByDescending<LnReaderAvailableDto> { it.installed }.thenBy { it.name.lowercase() })
     }
     val languages = remember(rows) {
-        rows.groupingBy { it.lang }.eachCount().entries.sortedWith(compareBy<Map.Entry<String, Int>> { it.key == "all" }.thenBy { it.key })
+        rows.groupingBy { it.lang }.eachCount().entries
+            .sortedWith(compareBy<Map.Entry<String, Int>> { it.key == "all" }.thenBy { languageLabel(it.key).lowercase() })
+            .map { it.key to it.value }
     }
     val list = remember(rows, query, installedOnly, hiddenLangs) {
         val q = query.trim().lowercase()
@@ -198,15 +202,16 @@ fun LnReaderPluginsScreen(session: SessionManager, api: KodexApi, onBack: () -> 
             )
             LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
                 item {
-                    FilterChip(selected = installedOnly, onClick = { installedOnly = !installedOnly }, label = { Text("Installed only") }, modifier = Modifier.padding(horizontal = 4.dp))
-                }
-                items(languages, key = { it.key }) { (lang, count) ->
-                    FilterChip(
-                        selected = lang !in hiddenLangs,
-                        onClick = { hiddenLangs = if (lang in hiddenLangs) hiddenLangs - lang else hiddenLangs + lang },
-                        label = { Text("${languageLabel(lang)} · $count") },
+                    LanguageFilterButton(
+                        languages = languages,
+                        hidden = hiddenLangs,
+                        onToggle = sourcePrefs::toggleExtensionHiddenLanguage,
+                        onSetHidden = sourcePrefs::setExtensionHiddenLanguages,
                         modifier = Modifier.padding(horizontal = 4.dp),
                     )
+                }
+                item {
+                    FilterChip(selected = installedOnly, onClick = { installedOnly = !installedOnly }, label = { Text("Installed only") }, modifier = Modifier.padding(horizontal = 4.dp))
                 }
             }
             when {

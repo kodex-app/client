@@ -84,13 +84,14 @@ fun MigrateScreen(
 
     LaunchedEffect(server?.id) {
         val s = server ?: return@LaunchedEffect
-        // Targets: same media kind as the origin (a comic can't move to a novel plugin), never itself,
-        // the origin's language first — that is almost always the wanted match.
+        // Targets: same media kind as the origin (a comic can't move to a novel plugin) and the same
+        // language — plus multi-language sources, which carry every language — never itself.
+        // Same-language ones first, then multi-language.
         val all = runCatching { api.contentSources(s.baseUrl, s.apiKey) }.getOrDefault(emptyList())
         val from = all.firstOrNull { it.id == currentProviderId }
         sources = all
-            .filter { it.id != currentProviderId && (from == null || it.mediaKind == from.mediaKind) }
-            .sortedWith(compareByDescending<SourceDescriptor> { from != null && it.language == from.language }.thenBy { it.displayName.lowercase() })
+            .filter { it.id != currentProviderId && (from == null || (it.mediaKind == from.mediaKind && (it.language == from.language || it.language == null))) }
+            .sortedWith(compareBy<SourceDescriptor> { it.language == null }.thenBy { it.displayName.lowercase() })
         libraryId = runCatching { api.followedSeriesRef(s.baseUrl, s.apiKey, currentProviderId, sourceSeriesId)?.libraryId }.getOrNull()
     }
 
@@ -136,7 +137,8 @@ fun MigrateScreen(
             Text("Target source", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             var open by remember { mutableStateOf(false) }
             Box {
-                OutlinedButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth()) { Text(target?.displayName ?: "Choose a source") }
+                val chosen = target?.let { t -> if (sources.count { it.displayName == t.displayName } > 1) "${t.displayName} (${languageLabel(t.language ?: "all")})" else t.displayName }
+                OutlinedButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth()) { Text(chosen ?: "Choose a source") }
                 DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                     if (sources.isEmpty()) DropdownMenuItem(text = { Text("No other sources installed") }, onClick = { open = false }, enabled = false)
                     // One extension can bundle a source per language under one name (MangaDex × 60): a

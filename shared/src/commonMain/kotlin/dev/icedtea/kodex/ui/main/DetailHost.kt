@@ -3,6 +3,7 @@ package dev.icedtea.kodex.ui.main
 import androidx.compose.runtime.Composable
 import dev.icedtea.kodex.auth.SessionManager
 import dev.icedtea.kodex.data.AppSettings
+import dev.icedtea.kodex.data.SourcePrefsStore
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.network.LibraryDto
 import dev.icedtea.kodex.network.SourceDescriptor
@@ -109,6 +110,7 @@ fun DetailHost(
     session: SessionManager,
     api: KodexApi,
     appSettings: AppSettings,
+    sourcePrefs: SourcePrefsStore,
     onOpenSeries: (String) -> Unit,
     onOpenBook: (String) -> Unit,
     /** Opens the book-detail bottom sheet (books have no screen of their own — tapping one reads it). */
@@ -188,13 +190,13 @@ fun DetailHost(
             LabelsScreen(session, api, onBack)
 
         is DetailRoute.MihonExtensions ->
-            MihonExtensionsScreen(session, api, onBack, onOpenBrowser = { sourceId, title -> onOpenMihonBrowser(DetailRoute.MihonBrowser(sourceId = sourceId, title = title)) })
+            MihonExtensionsScreen(session, api, sourcePrefs, onBack, onOpenBrowser = { sourceId, title -> onOpenMihonBrowser(DetailRoute.MihonBrowser(sourceId = sourceId, title = title)) })
 
         is DetailRoute.MihonBrowser ->
             MihonBrowserScreen(session, api, route.url, route.sourceId, route.title, onBack)
 
         is DetailRoute.LnReaderPlugins ->
-            LnReaderPluginsScreen(session, api, onBack)
+            LnReaderPluginsScreen(session, api, sourcePrefs, onBack)
 
         is DetailRoute.ExtensionRepositories ->
             ExtensionRepositoriesScreen(session, api, onBack)

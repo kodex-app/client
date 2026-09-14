@@ -57,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import dev.icedtea.kodex.auth.SessionManager
+import dev.icedtea.kodex.data.SourcePrefsStore
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.network.MihonAvailableDto
 import dev.icedtea.kodex.network.MihonInstalledDto
@@ -89,6 +90,7 @@ import kotlinx.coroutines.launch
 fun MihonExtensionsScreen(
     session: SessionManager,
     api: KodexApi,
+    sourcePrefs: SourcePrefsStore,
     onBack: () -> Unit,
     /** Opens the interactive browser at a source's site (sourceId, title). */
     onOpenBrowser: (sourceId: String, title: String) -> Unit,
@@ -106,7 +108,8 @@ fun MihonExtensionsScreen(
     var query by remember { mutableStateOf("") }
     var installedOnly by remember { mutableStateOf(false) }
     var showNsfw by remember { mutableStateOf(false) }
-    var hiddenLangs by remember { mutableStateOf(setOf<String>()) }
+    // Server-side and shared with the other extension list and the web UI (see SourcePrefsStore).
+    val hiddenLangs by sourcePrefs.extensionHiddenLanguages.collectAsStateSafe()
     var busy by remember { mutableStateOf<String?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
     var configuring by remember { mutableStateOf<Pair<String, String>?>(null) }
@@ -154,7 +157,9 @@ fun MihonExtensionsScreen(
     }
     val multiRepo = remember(available) { (available ?: emptyList()).map { it.repoUrl }.toSet().size > 1 }
     val languages = remember(rows) {
-        rows.groupingBy { it.lang }.eachCount().entries.sortedWith(compareBy<Map.Entry<String, Int>> { it.key == "all" }.thenBy { it.key })
+        rows.groupingBy { it.lang }.eachCount().entries
+            .sortedWith(compareBy<Map.Entry<String, Int>> { it.key == "all" }.thenBy { languageLabel(it.key).lowercase() })
+            .map { it.key to it.value }
     }
     val list = remember(rows, query, installedOnly, showNsfw, hiddenLangs) {
         val q = query.trim().lowercase()
@@ -229,18 +234,19 @@ fun MihonExtensionsScreen(
             )
             LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
                 item {
+                    LanguageFilterButton(
+                        languages = languages,
+                        hidden = hiddenLangs,
+                        onToggle = sourcePrefs::toggleExtensionHiddenLanguage,
+                        onSetHidden = sourcePrefs::setExtensionHiddenLanguages,
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                    )
+                }
+                item {
                     FilterChip(selected = installedOnly, onClick = { installedOnly = !installedOnly }, label = { Text("Installed only") }, modifier = Modifier.padding(horizontal = 4.dp))
                 }
                 item {
                     FilterChip(selected = showNsfw, onClick = { showNsfw = !showNsfw }, label = { Text("18+") }, modifier = Modifier.padding(horizontal = 4.dp))
-                }
-                items(languages, key = { it.key }) { (lang, count) ->
-                    FilterChip(
-                        selected = lang !in hiddenLangs,
-                        onClick = { hiddenLangs = if (lang in hiddenLangs) hiddenLangs - lang else hiddenLangs + lang },
-                        label = { Text("${languageLabel(lang)} · $count") },
-                        modifier = Modifier.padding(horizontal = 4.dp),
-                    )
                 }
             }
             when {

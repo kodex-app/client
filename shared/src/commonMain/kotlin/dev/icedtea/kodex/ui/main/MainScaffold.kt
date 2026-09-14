@@ -168,6 +168,7 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
             session = session,
             api = api,
             appSettings = appSettings,
+            sourcePrefs = sourcePrefs,
             onOpenSeries = openSeries,
             onOpenBook = openBook,
             onShowBookDetails = showBookDetails,

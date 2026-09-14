@@ -21,6 +21,11 @@ import kotlinx.serialization.json.jsonPrimitive
  * `browse.favorites` / `browse.recents` / `browse.hiddenLanguages`), so they follow the user across
  * devices and stay in step with the web UI, which reads and writes the very same keys. Loaded when
  * the active server binds; writes are optimistic (update the flow immediately, then PUT).
+ *
+ * Also carries the Extensions screens' language filter (`extensions.hiddenLanguages`), shared by the
+ * Mihon and LNReader lists exactly as the web's Extensions page shares it between its two tabs. It is
+ * deliberately a separate setting from the Browse one: hiding a language while browsing sources and
+ * hiding it while installing extensions are different choices.
  */
 class SourcePrefsStore(private val api: KodexApi, private val scope: CoroutineScope) {
 
@@ -34,6 +39,10 @@ class SourcePrefsStore(private val api: KodexApi, private val scope: CoroutineSc
     private val _hiddenLanguages = MutableStateFlow<Set<String>>(emptySet())
     val hiddenLanguages: StateFlow<Set<String>> = _hiddenLanguages.asStateFlow()
 
+    /** Languages hidden on the Mihon / LNReader extension lists — raw repository codes, `"all"` = multi-language. */
+    private val _extensionHiddenLanguages = MutableStateFlow<Set<String>>(emptySet())
+    val extensionHiddenLanguages: StateFlow<Set<String>> = _extensionHiddenLanguages.asStateFlow()
+
     private var baseUrl: String? = null
     private var apiKey: String? = null
 
@@ -45,6 +54,7 @@ class SourcePrefsStore(private val api: KodexApi, private val scope: CoroutineSc
             _favorites.value = settings[FAVORITES_KEY].asStringList()
             _recents.value = settings[RECENTS_KEY].asStringList()
             _hiddenLanguages.value = settings[HIDDEN_LANGUAGES_KEY].asStringList().toSet()
+            _extensionHiddenLanguages.value = settings[EXTENSION_HIDDEN_LANGUAGES_KEY].asStringList().toSet()
         }
     }
 
@@ -52,6 +62,7 @@ class SourcePrefsStore(private val api: KodexApi, private val scope: CoroutineSc
         baseUrl = null; apiKey = null
         _favorites.value = emptyList(); _recents.value = emptyList()
         _hiddenLanguages.value = emptySet()
+        _extensionHiddenLanguages.value = emptySet()
     }
 
     fun isFavorite(id: String): Boolean = id in _favorites.value
@@ -86,6 +97,22 @@ class SourcePrefsStore(private val api: KodexApi, private val scope: CoroutineSc
         save(b, k, HIDDEN_LANGUAGES_KEY, keys.toList())
     }
 
+    /** Show/hide one language on the extension lists; `key` is the raw code (`"all"` = multi-language). */
+    fun toggleExtensionHiddenLanguage(key: String) {
+        val b = baseUrl ?: return; val k = apiKey ?: return
+        val cur = _extensionHiddenLanguages.value
+        val next = if (key in cur) cur - key else cur + key
+        _extensionHiddenLanguages.value = next
+        save(b, k, EXTENSION_HIDDEN_LANGUAGES_KEY, next.toList())
+    }
+
+    /** Replace the extension lists' hidden set — the menu's "All" (empty) / "None" (every key) shortcuts. */
+    fun setExtensionHiddenLanguages(keys: Collection<String>) {
+        val b = baseUrl ?: return; val k = apiKey ?: return
+        _extensionHiddenLanguages.value = keys.toSet()
+        save(b, k, EXTENSION_HIDDEN_LANGUAGES_KEY, keys.toList())
+    }
+
     private fun save(baseUrl: String, apiKey: String, key: String, value: List<String>) {
         scope.launch {
             runCatching { api.saveUserSetting(baseUrl, apiKey, key, JsonArray(value.map { JsonPrimitive(it) })) }
@@ -99,6 +126,7 @@ class SourcePrefsStore(private val api: KodexApi, private val scope: CoroutineSc
         const val FAVORITES_KEY = "browse.favorites"
         const val RECENTS_KEY = "browse.recents"
         const val HIDDEN_LANGUAGES_KEY = "browse.hiddenLanguages"
+        const val EXTENSION_HIDDEN_LANGUAGES_KEY = "extensions.hiddenLanguages"
         const val RECENTS_MAX = 4
     }
 }
