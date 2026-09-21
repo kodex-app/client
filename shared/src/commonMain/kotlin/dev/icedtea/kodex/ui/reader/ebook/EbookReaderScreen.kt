@@ -1502,7 +1502,7 @@ private fun EbookPageSettings(
             ReaderSettingsSegmented(
                 "Page turn",
                 pageAnim,
-                listOf(PAGE_ANIM_SLIDE to "Slide", PAGE_ANIM_FLIP to "Flip", PAGE_ANIM_NONE to "None"),
+                listOf(PAGE_ANIM_SLIDE to "Slide", PAGE_ANIM_NONE to "None"),
                 caption = "Applies to every book on this device.",
                 onSelect = onPageAnim,
             )

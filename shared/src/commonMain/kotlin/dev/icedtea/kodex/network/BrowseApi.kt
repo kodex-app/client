@@ -104,11 +104,15 @@ suspend fun KodexApi.webLibrary(baseUrl: String, apiKey: String): LibraryDto =
         header(HEADER_API_KEY, apiKey)
     }.body()
 
-suspend fun KodexApi.followWebSeries(baseUrl: String, apiKey: String, libraryId: String, providerId: String, externalId: String) {
+/** Follows a source series; pass the listing's [title] + [coverUrl] so the add needs no source request. */
+suspend fun KodexApi.followWebSeries(
+    baseUrl: String, apiKey: String, libraryId: String, providerId: String, externalId: String,
+    title: String? = null, coverUrl: String? = null,
+) {
     client.post("$baseUrl/api/v1/libraries/$libraryId/web-series") {
         header(HEADER_API_KEY, apiKey)
         contentType(ContentType.Application.Json)
-        setBody(FollowWebSeriesRequest(providerId, externalId))
+        setBody(FollowWebSeriesRequest(providerId, externalId, title?.takeIf { it.isNotBlank() }, coverUrl))
     }
 }
 

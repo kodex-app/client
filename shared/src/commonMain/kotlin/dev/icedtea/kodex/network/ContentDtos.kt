@@ -97,11 +97,17 @@ data class FollowedSeriesRef(
     val libraryId: String,
 )
 
-/** Body of `POST /v1/libraries/{id}/web-series` (follow a source series into a WEB library). */
+/**
+ * Body of `POST /v1/libraries/{id}/web-series` (follow a source series into a WEB library). [title] +
+ * [coverUrl] are what the listing already showed: with them the server stores the series as-is and
+ * fetches the full details + chapter list only when it is first opened in the library.
+ */
 @Serializable
 data class FollowWebSeriesRequest(
     val providerId: String,
     val externalId: String,
+    val title: String? = null,
+    val coverUrl: String? = null,
     val categoryIds: List<String>? = null,
 )
 

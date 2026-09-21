@@ -44,10 +44,9 @@ const val ALIGN_JUSTIFY = "justify"
  * own (the web reader has no such choice) and is stored device-side by `AppSettings.ebookPageAnim`.
  */
 const val PAGE_ANIM_SLIDE = "slide"
-const val PAGE_ANIM_FLIP = "flip"
 const val PAGE_ANIM_NONE = "none"
 
-val EBOOK_ANIMS = listOf(PAGE_ANIM_SLIDE, PAGE_ANIM_FLIP, PAGE_ANIM_NONE)
+val EBOOK_ANIMS = listOf(PAGE_ANIM_SLIDE, PAGE_ANIM_NONE)
 
 /**
  * `publisher` keeps the book's own fonts; otherwise `bundled:<id>` (an OFL face the server ships) or

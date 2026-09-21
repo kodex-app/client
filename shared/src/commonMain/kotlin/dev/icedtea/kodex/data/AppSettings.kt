@@ -45,10 +45,10 @@ class AppSettings(private val settings: Settings = Settings()) {
     val librariesSort: StateFlow<String> = _librariesSort.asStateFlow()
 
     /**
-     * How the ebook reader turns a page: `slide` (foliate's own scroll), `flip` (the page swings
-     * over) or `none`. Device-local rather than a per-book setting, and unlike the rest of the ebook
-     * prefs it has no web counterpart to stay in step with — the web reader only ever slides, and its
-     * settings writer would drop a key it doesn't know.
+     * How the ebook reader turns a page: `slide` (foliate's own scroll) or `none`. Device-local
+     * rather than a per-book setting, and unlike the rest of the ebook prefs it has no web
+     * counterpart to stay in step with — the web reader only ever slides, and its settings writer
+     * would drop a key it doesn't know. A value no longer offered (an old `flip`) falls back to slide.
      */
     private val _ebookPageAnim = MutableStateFlow(
         settings.getStringOrNull(KEY_EBOOK_ANIM)?.takeIf { it in EBOOK_ANIMS } ?: PAGE_ANIM_SLIDE,

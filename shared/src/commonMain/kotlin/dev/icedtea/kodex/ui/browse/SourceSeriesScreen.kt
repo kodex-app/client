@@ -270,7 +270,7 @@ fun SourceSeriesScreen(
                                 // source's — the implicit /libraries/web shelf is always COMIC.
                                 val lib = api.webLibraryTargets(srv.baseUrl, srv.apiKey, source.mediaKind).firstOrNull()
                                     ?: error("No ${mediaKindLabel(source.mediaKind)} library to add to.")
-                                api.followWebSeries(srv.baseUrl, srv.apiKey, lib.id, source.id, seed.externalId)
+                                api.followWebSeries(srv.baseUrl, srv.apiKey, lib.id, source.id, seed.externalId, seed.title, seed.coverUrl)
                                 "Added to ${lib.name}"
                             }
                         },

@@ -177,7 +177,7 @@ fun SourceFeedScreen(
         scope.launch {
             var ok = 0
             chosen.forEach { it2 ->
-                runCatching { api.followWebSeries(s.baseUrl, s.apiKey, libraryId, it2.providerId ?: source.id, it2.externalId) }
+                runCatching { api.followWebSeries(s.baseUrl, s.apiKey, libraryId, it2.providerId ?: source.id, it2.externalId, it2.title, it2.coverUrl) }
                     .onSuccess { ok++ }
             }
             addingBusy = false
