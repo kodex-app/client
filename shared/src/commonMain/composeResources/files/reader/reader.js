@@ -29,9 +29,6 @@ function post(payload) {
 
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n))
 
-// Page-turn animations. The values are the ones stored device-side by `AppSettings.ebookPageAnim`.
-const ANIM_SLIDE = 'slide'
-
 // ── Theming / typography ─────────────────────────────────────────────────────────────────────────
 // Kept identical to the web reader so a book looks the same in both, and so the prefs written by one
 // are meaningful to the other.
@@ -220,8 +217,6 @@ async function openWholeFile(format) {
 
 let view = null
 let prefs = CONFIG.prefs || {}
-/** Page-turn animation: 'slide' (foliate's own) or 'none'. */
-let pageAnim = CONFIG.pageAnim || ANIM_SLIDE
 let sectionTotal = 1
 let atStart = false
 let atEnd = false
@@ -246,30 +241,10 @@ function applyPrefs(next) {
   // The host document is normally hidden behind the book; should it ever show through, it carries
   // the theme's colour rather than the boot page's white.
   document.body.style.background = (THEME_COLORS[next.theme] || THEME_COLORS.light).bg
-  applyMotion()
-}
-
-/**
- * The renderer attributes that decide how a turn moves, derived from [pageAnim].
- *
- * `slide` is foliate's own: it tracks the finger and animates the scroll. `none` takes the gesture
- * off it (`no-swipe`) and makes its scroll instant (`eink`), so a turn is no animation at all.
- * Turning is then driven by [turn] alone, from the swipe handler in [bindDocument] as well as from
- * the native chrome, so there is exactly one path a page turn can take.
- */
-function applyMotion() {
-  if (!view || !view.renderer) return
-  const r = view.renderer
-  if (prefs.flow !== 'paginated' || pageAnim === ANIM_SLIDE) {
-    if (prefs.flow === 'paginated') r.setAttribute('animated', '')
-    else r.removeAttribute('animated')
-    r.removeAttribute('eink')
-    r.removeAttribute('no-swipe')
-    return
-  }
-  r.removeAttribute('animated')
-  r.setAttribute('eink', '')
-  r.setAttribute('no-swipe', '')
+  // Page turns are foliate's own slide: it tracks the finger and animates the scroll. Scrolled
+  // flow has nothing to animate.
+  if (next.flow === 'paginated') view.renderer.setAttribute('animated', '')
+  else view.renderer.removeAttribute('animated')
 }
 
 function onRelocate(e) {
@@ -346,26 +321,6 @@ const TAP_MAX_MS = 400
 /** How far a swipe has to travel before it counts as an attempt to leave the book. */
 const EDGE_SWIPE_PX = 48
 
-/** How far a swipe has to travel to turn a page when this file, not foliate, owns the gesture. */
-const SWIPE_TURN_PX = 40
-
-/**
- * Turn on a swipe in the mode that took the gesture off foliate (`none` — see [applyMotion]).
- * Returns whether the swipe was spent: a swipe running off either end is not, so it falls through to
- * [reportEdgeSwipe] and becomes the native side's chapter change.
- */
-function handleSwipeTurn(dx, dy, wasAtStart, wasAtEnd) {
-  if (!view || prefs.flow !== 'paginated' || pageAnim === ANIM_SLIDE) return false
-  if (Math.abs(dx) < SWIPE_TURN_PX || Math.abs(dx) <= Math.abs(dy)) return false
-  // Dragging the page leftwards asks for what lies to its right. Whether that is forwards through
-  // the book depends on its direction — the boundary flags are about the book, not the screen.
-  const rtl = !!(view.book && view.book.dir === 'rtl')
-  const forward = (dx < 0) !== rtl
-  if (forward ? wasAtEnd : wasAtStart) return false
-  turn(dx < 0 ? 'next' : 'prev')
-  return true
-}
-
 /**
  * foliate swallows a swipe that would run off the first or last page: the drag is clamped to the
  * book's own bounds and snaps back, so no page turn happens and — until this — nothing was reported
@@ -431,7 +386,7 @@ function bindDocument(doc) {
       const dy = t.screenY - sy
       const moved = Math.hypot(dx, dy)
       if (moved <= TAP_SLOP_PX && ev.timeStamp - st <= TAP_MAX_MS) post({ type: 'tap' })
-      else if (!handleSwipeTurn(dx, dy, sAtStart, sAtEnd)) reportEdgeSwipe(dx, dy, sAtStart, sAtEnd)
+      else reportEdgeSwipe(dx, dy, sAtStart, sAtEnd)
       // Leave `touching` set briefly so the synthetic click below doesn't double-fire.
       setTimeout(() => {
         touching = false
@@ -677,9 +632,6 @@ async function dispatch(c) {
       return turn('prev')
     case 'next':
       return turn('next')
-    case 'anim':
-      pageAnim = c.value || ANIM_SLIDE
-      return applyMotion()
     case 'goToFraction':
       return view.goToFraction && view.goToFraction(clamp(c.fraction, 0, 1))
     case 'goTo':

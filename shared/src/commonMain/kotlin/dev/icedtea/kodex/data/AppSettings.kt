@@ -1,7 +1,5 @@
 package dev.icedtea.kodex.data
 
-import dev.icedtea.kodex.ui.reader.ebook.EBOOK_ANIMS
-import dev.icedtea.kodex.ui.reader.ebook.PAGE_ANIM_SLIDE
 import dev.icedtea.kodex.ui.theme.AppTheme
 import dev.icedtea.kodex.ui.theme.ThemeMode
 import com.russhwolf.settings.Settings
@@ -45,17 +43,6 @@ class AppSettings(private val settings: Settings = Settings()) {
     val librariesSort: StateFlow<String> = _librariesSort.asStateFlow()
 
     /**
-     * How the ebook reader turns a page: `slide` (foliate's own scroll) or `none`. Device-local
-     * rather than a per-book setting, and unlike the rest of the ebook prefs it has no web
-     * counterpart to stay in step with — the web reader only ever slides, and its settings writer
-     * would drop a key it doesn't know. A value no longer offered (an old `flip`) falls back to slide.
-     */
-    private val _ebookPageAnim = MutableStateFlow(
-        settings.getStringOrNull(KEY_EBOOK_ANIM)?.takeIf { it in EBOOK_ANIMS } ?: PAGE_ANIM_SLIDE,
-    )
-    val ebookPageAnim: StateFlow<String> = _ebookPageAnim.asStateFlow()
-
-    /**
      * Read-aloud voice settings: speed multiplier and the chosen platform voice (null = whatever the
      * device picks for the book's language). Device-local of necessity — the voice list is this
      * phone's, and an id from one device means nothing on another.
@@ -96,10 +83,6 @@ class AppSettings(private val settings: Settings = Settings()) {
 
     fun setLibraryGridView(value: Boolean) {
         settings.putBoolean(KEY_LIBRARY_GRID, value); _libraryGridView.value = value
-    }
-
-    fun setEbookPageAnim(value: String) {
-        settings.putString(KEY_EBOOK_ANIM, value); _ebookPageAnim.value = value
     }
 
     fun setTtsRate(value: Float) {
@@ -174,7 +157,6 @@ class AppSettings(private val settings: Settings = Settings()) {
         const val KEY_LIBRARY_GROUP_TAB = "library.groupTab"
         const val KEY_LIBRARIES_SORT = "libraries.sort"
         const val KEY_INCOGNITO = "reader.incognito"
-        const val KEY_EBOOK_ANIM = "reader.ebook.pageAnim"
         const val KEY_TTS_RATE = "reader.tts.rate"
         const val KEY_TTS_VOICE = "reader.tts.voice"
         const val KEY_UPDATES_SEEN = "recents.updatesSeenAt"

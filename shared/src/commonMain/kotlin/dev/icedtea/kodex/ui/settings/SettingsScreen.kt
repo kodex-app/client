@@ -287,9 +287,8 @@ private fun ReaderDefaultsRows(label: String, prefs: ReaderPrefs, onChange: (Rea
 /**
  * Ebook defaults, drawn with the same rows as the ebook reader's own settings sheet.
  *
- * Only the stored prefs appear here. The page-turn animation is a device setting rather than one of
- * these (`AppSettings.ebookPageAnim`), and screen orientation lasts only as long as a reader is open —
- * both belong where you can watch the page change, not on a defaults screen.
+ * Only the stored prefs appear here. Screen orientation lasts only as long as a reader is open — it
+ * belongs where you can watch the page change, not on a defaults screen.
  */
 @Composable
 private fun EbookDefaultsRows(

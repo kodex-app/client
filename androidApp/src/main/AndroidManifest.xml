@@ -10,6 +10,17 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Speech engines are separate apps, and from Android 11 an app sees other packages only if it
+         says which it is looking for. Without this TextToSpeech binds to whatever the system hands
+         back with no view of the engine itself: the voice list comes back thin or empty, and the
+         engine's "install voice data" screen resolves to nothing (see Tts.android.kt,
+         VoiceInstaller.android.kt). -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <application
         android:label="${appLabel}"
         android:icon="@mipmap/ic_launcher"

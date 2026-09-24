@@ -12,6 +12,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -63,6 +64,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -213,7 +215,6 @@ fun EbookReaderScreen(
     val orientation = dev.icedtea.kodex.platform.rememberOrientationController()
     val openUrl = dev.icedtea.kodex.platform.rememberUrlOpener()
 
-    val pageAnim by appSettings.ebookPageAnim.collectAsStateSafe()
 
     var prefs by remember { mutableStateOf<EbookPrefs?>(null) }
     var defaultPrefs by remember { mutableStateOf(EbookPrefs()) }
@@ -241,6 +242,8 @@ fun EbookReaderScreen(
     // it. See the read-aloud section of `reader.js` — a WebView has no speechSynthesis on either
     // platform, so unlike the web reader the voice has to live out here.
     val tts = dev.icedtea.kodex.platform.rememberTtsEngine()
+    // Null on a platform with no voice-download screen to send the reader to.
+    val voiceInstaller = dev.icedtea.kodex.platform.rememberVoiceInstaller()
     val ttsAvailable by tts.available.collectAsStateSafe()
     val ttsRate by appSettings.ttsRate.collectAsStateSafe()
     val ttsVoice by appSettings.ttsVoice.collectAsStateSafe()
@@ -390,7 +393,6 @@ fun EbookReaderScreen(
             put("initialLocator", source.initialLocator)
             put("initialFraction", source.initialFraction)
             putJsonObject("prefs") { p.forPage(appIsDark).putInto(this) }
-            put("pageAnim", pageAnim)
             put(
                 "fonts",
                 buildJsonArray {
@@ -885,8 +887,6 @@ fun EbookReaderScreen(
                 bundledFonts = bundledFonts,
                 orientation = orientation.orientation,
                 onOrientation = orientation::set,
-                pageAnim = pageAnim,
-                onPageAnim = { appSettings.setEbookPageAnim(it); call(animCommand(it)) },
                 onChange = ::update,
                 onSaveDefault = {
                     val s = server ?: return@EbookSettingsSheet
@@ -933,6 +933,7 @@ fun EbookReaderScreen(
             TtsSettingsSheet(
                 voices = voices,
                 voiceId = ttsVoice,
+                onInstallVoices = voiceInstaller,
                 rate = ttsRate,
                 // Neither engine can retune an utterance already speaking, so the change is applied
                 // by re-speaking from the last word said rather than the top of the paragraph.
@@ -1097,6 +1098,8 @@ private fun EbookTtsBar(
 private fun TtsSettingsSheet(
     voices: List<TtsVoice>,
     voiceId: String?,
+    /** Opens the system's voice download screen; null where the platform has none. */
+    onInstallVoices: (() -> Unit)?,
     rate: Float,
     onVoice: (String?) -> Unit,
     onRate: (Float) -> Unit,
@@ -1135,12 +1138,25 @@ private fun TtsSettingsSheet(
                 Button(onClick = onStart, modifier = Modifier.weight(1f)) { Text("Start reading") }
             }
         }
-        Text(
-            "Voice",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 4.dp),
-        )
+        // The list only ever holds the languages this device has downloaded — which on a stock
+        // Android is a handful — so the way to more of them belongs beside its heading, not buried
+        // under however many voices are installed.
+        Row(
+            Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Voice",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.weight(1f),
+            )
+            if (onInstallVoices != null) {
+                TextButton(onClick = onInstallVoices, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                    Text("Add voices")
+                }
+            }
+        }
         LazyColumn {
             item {
                 TtsVoiceRow(
@@ -1373,8 +1389,6 @@ private fun EbookSettingsSheet(
     bundledFonts: List<BundledFontDto>,
     orientation: dev.icedtea.kodex.platform.ScreenOrientation,
     onOrientation: (dev.icedtea.kodex.platform.ScreenOrientation) -> Unit,
-    pageAnim: String,
-    onPageAnim: (String) -> Unit,
     onChange: (EbookPrefs) -> Unit,
     onSaveDefault: () -> Unit,
     onReset: () -> Unit,
@@ -1402,7 +1416,7 @@ private fun EbookSettingsSheet(
             ReaderSettingsSectionLabel("Text")
             EbookTextSettings(prefs, fonts, bundledFonts, onChange)
             ReaderSettingsSectionLabel("Page")
-            EbookPageSettings(prefs, pageAnim, onPageAnim, orientation, onOrientation, onChange)
+            EbookPageSettings(prefs, orientation, onOrientation, onChange)
         }
         ReaderSettingsFooter(
             note = "\"Save as default\" applies these to every book without its own settings.",
@@ -1474,12 +1488,10 @@ private fun EbookTextSettings(
     }
 }
 
-/** How the text is laid out on the screen: flow, columns, turn animation, margin, orientation. */
+/** How the text is laid out on the screen: flow, columns, margin, orientation. */
 @Composable
 private fun EbookPageSettings(
     prefs: EbookPrefs,
-    pageAnim: String,
-    onPageAnim: (String) -> Unit,
     orientation: dev.icedtea.kodex.platform.ScreenOrientation,
     onOrientation: (dev.icedtea.kodex.platform.ScreenOrientation) -> Unit,
     onChange: (EbookPrefs) -> Unit,
@@ -1488,7 +1500,7 @@ private fun EbookPageSettings(
         ReaderSettingsSegmented("Layout", prefs.flow, listOf(FLOW_PAGINATED to "Paged", FLOW_SCROLLED to "Scrolled")) {
             onChange(prefs.copy(flow = it))
         }
-        // Column count and the turn animation only mean anything when the text is paginated.
+        // Column count only means anything when the text is paginated.
         if (prefs.flow == FLOW_PAGINATED) {
             ReaderSettingsSegmented(
                 "Columns",
@@ -1497,15 +1509,6 @@ private fun EbookPageSettings(
             ) {
                 onChange(prefs.copy(columns = it))
             }
-            // Unlike the rest of the sheet this one is a device setting, not a per-series override —
-            // hence its own callback rather than a copy() of the prefs.
-            ReaderSettingsSegmented(
-                "Page turn",
-                pageAnim,
-                listOf(PAGE_ANIM_SLIDE to "Slide", PAGE_ANIM_NONE to "None"),
-                caption = "Applies to every book on this device.",
-                onSelect = onPageAnim,
-            )
         }
         ReaderSettingsSlider(
             label = "Margin",
@@ -1589,12 +1592,6 @@ private fun prefsCommand(prefs: EbookPrefs): String =
     buildJsonObject {
         put("cmd", "prefs")
         putJsonObject("prefs") { prefs.putInto(this) }
-    }.toString()
-
-private fun animCommand(value: String): String =
-    buildJsonObject {
-        put("cmd", "anim")
-        put("value", value)
     }.toString()
 
 private fun fractionCommand(fraction: Double): String =

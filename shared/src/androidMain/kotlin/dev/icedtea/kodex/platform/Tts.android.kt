@@ -111,7 +111,17 @@ private class AndroidTtsEngine(context: Context) : TtsEngine {
             engine.voice = voice
         } else if (lang.isNotBlank()) {
             // No chosen voice: read the book in the language it is written in, when one is installed.
-            runCatching { engine.setLanguage(Locale.forLanguageTag(lang)) }
+            // `setLanguage` reports a missing or unsupported language in its return value rather than
+            // by throwing, and speaking anyway would read the book in whatever language the engine
+            // was last set to — or say nothing at all, which is indistinguishable from a broken
+            // feature. Say what is actually wrong instead; the picker has an installer for it.
+            val result = runCatching { engine.setLanguage(Locale.forLanguageTag(lang)) }
+                .getOrDefault(TextToSpeech.LANG_NOT_SUPPORTED)
+            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                currentId = null
+                _events.tryEmit(TtsEvent.Failed(NO_VOICE_FOR_LANGUAGE))
+                return
+            }
         }
         engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, id)
     }
@@ -128,6 +138,10 @@ private class AndroidTtsEngine(context: Context) : TtsEngine {
         tts = null
     }
 }
+
+/** Said when the book's language has no voice on this device — see `speak`. */
+private const val NO_VOICE_FOR_LANGUAGE =
+    "No voice for this book's language is installed. Choose another voice, or add one."
 
 /**
  * A readable name for a voice. The raw ones are engine identifiers (`en-us-x-sfg#male_1-local`), so
