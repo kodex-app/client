@@ -47,6 +47,16 @@ interface TtsEngine {
     fun voices(): List<TtsVoice>
 
     /**
+     * Re-reads what the device has, after the user has been off installing a voice. Not something
+     * [voices] can do by itself: a speech engine hands back the set it loaded when the app bound to
+     * it, so a language downloaded since is invisible until something reconnects.
+     *
+     * Costs nothing on a platform whose voice list is already live, and never interrupts a reading
+     * in progress — the reader may well be speaking through the trip.
+     */
+    fun refresh()
+
+    /**
      * Speaks [text], cutting off anything already speaking. [lang] is the book's language (BCP-47),
      * used to pick a voice when the user hasn't chosen one; [rate] is a multiplier of the engine's
      * normal speed.

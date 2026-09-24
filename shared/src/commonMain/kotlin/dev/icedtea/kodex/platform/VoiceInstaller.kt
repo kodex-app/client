@@ -7,8 +7,10 @@ import androidx.compose.runtime.Composable
  * languages in the picker has somewhere to go. Null where the platform has no such screen to open —
  * the caller then leaves the affordance out rather than showing a dead one.
  *
- * Newly installed voices show up the next time the picker is opened: the list is read from the
- * engine when the sheet enters composition, and this walks the reader out of the app to get them.
+ * [onReturn] fires when the user comes back. It is the whole point of routing this through the
+ * platform rather than firing an intent and forgetting: the picker is still open behind the install
+ * screen, holding the list it read on the way in, so without a signal a voice just downloaded is
+ * nowhere to be seen and the button looks broken.
  */
 @Composable
-expect fun rememberVoiceInstaller(): (() -> Unit)?
+expect fun rememberVoiceInstaller(onReturn: () -> Unit): (() -> Unit)?

@@ -31,7 +31,7 @@ actual fun rememberTtsEngine(): TtsEngine {
  * (and any engine declaring the feature) reports per word — the same granularity foliate marks the
  * text at, so the ranges line up with the marks `reader.js` is holding.
  */
-private class AndroidTtsEngine(context: Context) : TtsEngine {
+private class AndroidTtsEngine(private val appContext: Context) : TtsEngine {
     private val _available = MutableStateFlow(false)
     override val available: StateFlow<Boolean> = _available.asStateFlow()
 
@@ -47,10 +47,20 @@ private class AndroidTtsEngine(context: Context) : TtsEngine {
     private var currentId: String? = null
     private var counter = 0L
 
+    @Volatile
     private var tts: TextToSpeech? = null
 
     init {
-        tts = TextToSpeech(context) { status ->
+        tts = connect()
+    }
+
+    /**
+     * Binds to the device's speech engine. A whole connection rather than a one-off in `init`,
+     * because [refresh] throws the old one away to pick up a language installed since — the engine
+     * reports the voice set it had at bind time and nothing asks it to look again.
+     */
+    private fun connect(): TextToSpeech =
+        TextToSpeech(appContext) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 _available.value = true
             } else {
@@ -76,6 +86,20 @@ private class AndroidTtsEngine(context: Context) : TtsEngine {
                 }
             })
         }
+
+    /**
+     * Rebinds, so voices installed while the user was away appear. Skipped outright while something
+     * is speaking: rebinding cuts the utterance off, and losing the reader's place is a far worse
+     * trade than a voice list that catches up when the book is next paused.
+     */
+    override fun refresh() {
+        if (currentId != null) return
+        val previous = tts
+        // Down for as long as the rebind takes, which is what `available` is for: the picker reads
+        // an empty list rather than the stale one, and fills in when the new connection reports SUCCESS.
+        _available.value = false
+        tts = connect()
+        runCatching { previous?.shutdown() }
     }
 
     /**

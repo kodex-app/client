@@ -242,8 +242,13 @@ fun EbookReaderScreen(
     // it. See the read-aloud section of `reader.js` — a WebView has no speechSynthesis on either
     // platform, so unlike the web reader the voice has to live out here.
     val tts = dev.icedtea.kodex.platform.rememberTtsEngine()
+    /** Bumped to re-read the device's voices after a trip to the system's install screen. */
+    var voicesRead by remember { mutableStateOf(0) }
     // Null on a platform with no voice-download screen to send the reader to.
-    val voiceInstaller = dev.icedtea.kodex.platform.rememberVoiceInstaller()
+    val voiceInstaller = dev.icedtea.kodex.platform.rememberVoiceInstaller {
+        tts.refresh()
+        voicesRead++
+    }
     val ttsAvailable by tts.available.collectAsStateSafe()
     val ttsRate by appSettings.ttsRate.collectAsStateSafe()
     val ttsVoice by appSettings.ttsVoice.collectAsStateSafe()
@@ -913,7 +918,7 @@ fun EbookReaderScreen(
     if (ttsSettingsOpen) {
         // Voices matching the book's language first: a phone can carry dozens, and scrolling past
         // forty of them to find the one that can pronounce this book is the whole difficulty here.
-        val voices = remember(ttsAvailable, ttsLang) {
+        val voices = remember(ttsAvailable, ttsLang, voicesRead) {
             val all = if (ttsAvailable) tts.voices() else emptyList()
             val language = ttsLang.substringBefore('-').lowercase()
             if (language.isBlank()) all else all.sortedByDescending { it.locale.lowercase().startsWith(language) }

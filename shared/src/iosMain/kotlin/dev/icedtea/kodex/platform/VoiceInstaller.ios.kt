@@ -8,4 +8,4 @@ import androidx.compose.runtime.Composable
  * system ships a voice for every language it supports, so the row has little to offer there anyway.
  */
 @Composable
-actual fun rememberVoiceInstaller(): (() -> Unit)? = null
+actual fun rememberVoiceInstaller(onReturn: () -> Unit): (() -> Unit)? = null
