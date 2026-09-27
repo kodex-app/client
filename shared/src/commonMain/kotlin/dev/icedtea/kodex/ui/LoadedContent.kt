@@ -28,7 +28,7 @@ import androidx.compose.ui.unit.dp
 
 private sealed interface LoadState<out T> {
     data object Loading : LoadState<Nothing>
-    data class Error(val message: String) : LoadState<Nothing>
+    data class Error(val message: String, val challengeUrl: String? = null) : LoadState<Nothing>
     data class Ready<T>(val data: T) : LoadState<T>
 }
 
@@ -58,6 +58,11 @@ fun <T> LoadedContent(
      * position. The string only has to be unique within the screen. See `nav/RetainedState.kt`.
      */
     retainKey: String? = null,
+    /**
+     * Shown under the error when the failure was a content source asking for a human check
+     * (`sourceChallengeUrl`) — the screen passes the source's challenge actions; retry reloads.
+     */
+    onChallenge: (@Composable (url: String, retry: () -> Unit) -> Unit)? = null,
     content: @Composable (T) -> Unit,
 ) {
     val holder = retain(retainKey) { LoadHolder() }
@@ -72,7 +77,7 @@ fun <T> LoadedContent(
         holder.loadedKey = key
         holder.state.value = runCatching { load() }.fold(
             onSuccess = { holder.everLoaded = true; LoadState.Ready(it) },
-            onFailure = { LoadState.Error(it.friendlyMessage()) },
+            onFailure = { LoadState.Error(it.friendlyMessage(), if (onChallenge != null) it.sourceChallengeUrl() else null) },
         )
     }
 
@@ -81,7 +86,14 @@ fun <T> LoadedContent(
         is LoadState.Loading ->
             Box(modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
 
-        is LoadState.Error -> ErrorState(s.message, modifier) { reload++ }
+        is LoadState.Error -> {
+            val challenge = s.challengeUrl
+            if (challenge != null && onChallenge != null) {
+                ErrorState(s.message, modifier, extra = { onChallenge(challenge) { reload++ } }) { reload++ }
+            } else {
+                ErrorState(s.message, modifier) { reload++ }
+            }
+        }
 
         is LoadState.Ready -> content(s.data)
     }
@@ -93,7 +105,13 @@ fun <T> LoadedContent(
  * you looking for missing content instead of at a broken connection.
  */
 @Composable
-fun ErrorState(message: String, modifier: Modifier = Modifier, onRetry: (() -> Unit)? = null) {
+fun ErrorState(
+    message: String,
+    modifier: Modifier = Modifier,
+    /** Below the retry button — e.g. a source's human-check actions. */
+    extra: @Composable () -> Unit = {},
+    onRetry: (() -> Unit)? = null,
+) {
     Box(modifier.fillMaxSize().padding(32.dp), Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(
@@ -110,6 +128,7 @@ fun ErrorState(message: String, modifier: Modifier = Modifier, onRetry: (() -> U
             if (onRetry != null) {
                 Button(onClick = onRetry, modifier = Modifier.padding(top = 16.dp)) { Text("Retry") }
             }
+            extra()
         }
     }
 }

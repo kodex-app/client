@@ -100,6 +100,7 @@ import dev.icedtea.kodex.ui.catalog.CoverCard
 import dev.icedtea.kodex.ui.catalog.sourceCoverUrl
 import dev.icedtea.kodex.ui.collectAsStateSafe
 import dev.icedtea.kodex.ui.serverErrorDetail
+import dev.icedtea.kodex.ui.sourceChallengeUrl
 import dev.icedtea.kodex.ui.rememberSelection
 import dev.icedtea.kodex.ui.nav.retain
 import dev.icedtea.kodex.ui.rememberSnackbar
@@ -139,6 +140,7 @@ fun SourceFeedScreen(
     var hasNext by st.hasNext
     var loading by st.loading
     var error by st.error
+    var challenge by st.challenge
     var reloadKey by st.reloadKey
 
     var filterSheetOpen by remember(source.id) { mutableStateOf(false) }
@@ -212,13 +214,13 @@ fun SourceFeedScreen(
         server ?: return
         if (loading || !hasNext) return
         loading = true
-        error = null
+        error = null; challenge = null
         val next = page + 1
         runCatching { fetch(next) }
             // An empty page ends the feed even when the source claims more: otherwise a blocked or
             // broken source keeps the load-more chain going forever.
             .onSuccess { items.addAll(it.items); page = next; hasNext = it.hasNextPage && it.items.isNotEmpty() }
-            .onFailure { error = it.serverErrorDetail(); hasNext = false }
+            .onFailure { error = it.serverErrorDetail(); challenge = it.sourceChallengeUrl(); hasNext = false }
         loading = false
     }
 
@@ -226,7 +228,7 @@ fun SourceFeedScreen(
     // loadNext() would return immediately.
     fun retryMore() {
         hasNext = true
-        error = null
+        error = null; challenge = null
         scope.launch { loadNext() }
     }
 
@@ -241,7 +243,7 @@ fun SourceFeedScreen(
     LaunchedEffect(source.id, mode) {
         if (st.loadedMode == mode) return@LaunchedEffect
         st.loadedMode = mode
-        items.clear(); page = 0; hasNext = true; error = null
+        items.clear(); page = 0; hasNext = true; error = null; challenge = null
         loadNext()
     }
 
@@ -393,7 +395,11 @@ fun SourceFeedScreen(
                         detail = error!!,
                         endpoint = endpoint,
                         onRetry = { reloadKey++ },
-                    )
+                    ) {
+                        challenge?.let { url ->
+                            SourceChallengeActions(session, api, source.id, url, onSolved = { reloadKey++ }, modifier = Modifier.padding(top = 12.dp))
+                        }
+                    }
                     // A failed fetch lands in the branch above, never here: sources report their
                     // failures now instead of answering with an empty page. So an empty feed really is
                     // an empty answer - but "Nothing to show here" still leaves the two readings
@@ -663,7 +669,13 @@ private fun SourceFilter.reset(): SourceFilter = when (this) {
  * broken plugin from a server that is down, and paraphrasing it loses exactly that.
  */
 @Composable
-private fun ProblemBox(title: String, detail: String, endpoint: String, onRetry: () -> Unit) {
+private fun ProblemBox(
+    title: String,
+    detail: String,
+    endpoint: String,
+    onRetry: () -> Unit,
+    extra: @Composable () -> Unit = {},
+) {
     Box(Modifier.fillMaxSize().padding(24.dp), Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -695,6 +707,7 @@ private fun ProblemBox(title: String, detail: String, endpoint: String, onRetry:
                 )
             }
             TextButton(onClick = onRetry, modifier = Modifier.padding(top = 8.dp)) { Text("Retry") }
+            extra()
         }
     }
 }
@@ -781,6 +794,8 @@ private class FeedState(initialFeed: String) {
     val hasNext = mutableStateOf(true)
     val loading = mutableStateOf(false)
     val error = mutableStateOf<String?>(null)
+    /** The page to pass a human check on, when that is why the last load failed. */
+    val challenge = mutableStateOf<String?>(null)
     val reloadKey = mutableIntStateOf(0)
 
     /** Which mode the loaded [items] belong to; null until the first load starts. */

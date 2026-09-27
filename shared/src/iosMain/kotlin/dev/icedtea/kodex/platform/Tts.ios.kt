@@ -111,6 +111,13 @@ private class IosTtsEngine : TtsEngine {
     // here to invalidate — and iOS gives an app no way to install a voice from inside it anyway.
     override fun refresh() = Unit
 
+    // AVSpeechSynthesizer is the only engine there is on iOS, so the picker has nothing to offer.
+    override fun providers(): List<TtsProvider> = emptyList()
+
+    override fun activeProvider(): String? = null
+
+    override fun useProvider(id: String?) = Unit
+
     override fun speak(text: String, lang: String, rate: Float, voiceId: String?) {
         val utterance = AVSpeechUtterance.speechUtteranceWithString(text)
         // AVSpeech rates are absolute, not multipliers, so scale the engine's own normal pace.

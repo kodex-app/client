@@ -209,6 +209,9 @@ fun SourceSeriesScreen(
             LoadedContent(
                 retainKey = "chapters",
                 key = listOf(source.id, seed.externalId, reload, server?.id),
+                onChallenge = { url, retry ->
+                    SourceChallengeActions(session, api, source.id, url, onSolved = retry, modifier = Modifier.padding(top = 16.dp))
+                },
                 load = {
                     val s = server!!
                     coroutineScope {

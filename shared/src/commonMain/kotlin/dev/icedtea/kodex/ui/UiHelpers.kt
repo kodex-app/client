@@ -10,6 +10,7 @@ import io.ktor.client.plugins.ResponseException
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -86,6 +87,19 @@ suspend fun Throwable.serverErrorDetail(): String = when (this) {
     }
 
     else -> friendlyMessage()
+}
+
+/**
+ * The page a content source wants a person to open — a human check (Cloudflare Turnstile, a captcha)
+ * the server's own browser couldn't pass — when this is the server's `challenge` 502; else null.
+ * Passing it in a WebView on this device and handing the cookies to the server
+ * ([dev.icedtea.kodex.ui.browse.SourceChallengeActions]) is the LNReader app's "open in WebView".
+ */
+suspend fun Throwable.sourceChallengeUrl(): String? {
+    if (this !is ResponseException || response.status.value != 502) return null
+    val problem = runCatching { problemJson.parseToJsonElement(response.bodyAsText()).jsonObject }.getOrNull() ?: return null
+    if (problem["challenge"]?.jsonPrimitive?.booleanOrNull != true) return null
+    return problem["url"]?.jsonPrimitive?.contentOrNull?.takeIf { it.startsWith("http") }
 }
 
 private val tagRe = Regex("<[^>]*>")

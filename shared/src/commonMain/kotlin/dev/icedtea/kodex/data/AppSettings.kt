@@ -53,6 +53,14 @@ class AppSettings(private val settings: Settings = Settings()) {
     private val _ttsVoice = MutableStateFlow(settings.getStringOrNull(KEY_TTS_VOICE))
     val ttsVoice: StateFlow<String?> = _ttsVoice.asStateFlow()
 
+    /**
+     * Which speech engine reads (null = the system default). Android phones carry several, and the
+     * default is often an OEM one that speaks two or three languages — so the engine the book is
+     * read with has to be the reader's choice, not the phone's.
+     */
+    private val _ttsProvider = MutableStateFlow(settings.getStringOrNull(KEY_TTS_ENGINE))
+    val ttsProvider: StateFlow<String?> = _ttsProvider.asStateFlow()
+
     /** Global incognito reading: when on, no reader saves progress/history. */
     private val _incognito = MutableStateFlow(settings.getBoolean(KEY_INCOGNITO, false))
     val incognitoMode: StateFlow<Boolean> = _incognito.asStateFlow()
@@ -93,6 +101,11 @@ class AppSettings(private val settings: Settings = Settings()) {
     fun setTtsVoice(value: String?) {
         if (value == null) settings.remove(KEY_TTS_VOICE) else settings.putString(KEY_TTS_VOICE, value)
         _ttsVoice.value = value
+    }
+
+    fun setTtsProvider(value: String?) {
+        if (value == null) settings.remove(KEY_TTS_ENGINE) else settings.putString(KEY_TTS_ENGINE, value)
+        _ttsProvider.value = value
     }
 
     fun setIncognitoMode(value: Boolean) {
@@ -159,6 +172,7 @@ class AppSettings(private val settings: Settings = Settings()) {
         const val KEY_INCOGNITO = "reader.incognito"
         const val KEY_TTS_RATE = "reader.tts.rate"
         const val KEY_TTS_VOICE = "reader.tts.voice"
+        const val KEY_TTS_ENGINE = "reader.tts.engine"
         const val KEY_UPDATES_SEEN = "recents.updatesSeenAt"
     }
 }

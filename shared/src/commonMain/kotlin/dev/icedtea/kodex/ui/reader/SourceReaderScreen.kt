@@ -1,5 +1,13 @@
 package dev.icedtea.kodex.ui.reader
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -15,6 +23,7 @@ import dev.icedtea.kodex.data.model.ServerConnection
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.network.ReadProgressDto
 import dev.icedtea.kodex.network.contentSources
+import dev.icedtea.kodex.network.probeSourceChapterText
 import dev.icedtea.kodex.network.saveSourceProgress
 import dev.icedtea.kodex.network.seriesChapters
 import dev.icedtea.kodex.network.seriesDetail
@@ -23,11 +32,18 @@ import dev.icedtea.kodex.network.sourceChapters
 import dev.icedtea.kodex.network.sourceProgress
 import dev.icedtea.kodex.ui.catalog.sourcePageUrl
 import dev.icedtea.kodex.ui.collectAsStateSafe
+import dev.icedtea.kodex.ui.browse.SourceChallengeActions
 import dev.icedtea.kodex.ui.friendlyMessage
+import dev.icedtea.kodex.ui.sourceChallengeUrl
 import dev.icedtea.kodex.ui.main.SourceSeriesContext
 import dev.icedtea.kodex.ui.reader.ebook.EbookOrigin
 import dev.icedtea.kodex.ui.reader.ebook.EbookReaderScreen
 import dev.icedtea.kodex.ui.reader.ebook.EbookSource
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import io.ktor.http.encodeURLParameter
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
@@ -40,7 +56,8 @@ private const val KIND_BOOK = "BOOK"
 
 private sealed interface SourceReaderState {
     data object Loading : SourceReaderState
-    data class Error(val message: String) : SourceReaderState
+    /** [challengeUrl]: the page to pass a human check on, when that is why the source failed. */
+    data class Error(val message: String, val challengeUrl: String? = null) : SourceReaderState
     data class Ready(val chapterId: String, val pageCount: Int, val progress: ReadProgressDto?) : SourceReaderState
 }
 
@@ -228,14 +245,17 @@ fun SourceReaderScreen(
             true -> {
                 state = SourceReaderState.Loading
                 state = runCatching {
+                    // Build the chapter here first so a failure — above all a human check the source
+                    // wants passed — shows on this screen instead of inside the reader's WebView.
+                    api.probeSourceChapterText(s.baseUrl, s.apiKey, providerId, target.id)
                     SourceReaderState.Ready(target.id, 0, api.sourceProgress(s.baseUrl, s.apiKey, providerId, target.id))
-                }.getOrElse { SourceReaderState.Error(it.friendlyMessage()) }
+                }.getOrElse { SourceReaderState.Error(it.friendlyMessage(), it.sourceChallengeUrl()) }
             }
 
             false -> {
                 state = SourceReaderState.Loading
                 val ready = loaded[target.id]?.let { Result.success(it) } ?: chapterAsync(s, target.id).await()
-                state = ready.getOrElse { SourceReaderState.Error(it.friendlyMessage()) }
+                state = ready.getOrElse { SourceReaderState.Error(it.friendlyMessage(), it.sourceChallengeUrl()) }
             }
         }
     }
@@ -258,7 +278,24 @@ fun SourceReaderScreen(
         // Retryable: a chapter the source failed to serve is otherwise a dead end you can only back
         // out of, and the failure is usually the remote source having a bad minute rather than a
         // chapter that will never load.
-        is SourceReaderState.Error -> ReaderShell(onBack) { ReaderMessage(st.message, onRetry = { attempt++ }) }
+        is SourceReaderState.Error -> ReaderShell(onBack) {
+            val challenge = st.challengeUrl
+            if (challenge == null) {
+                ReaderMessage(st.message, onRetry = { attempt++ })
+            } else {
+                Column(
+                    Modifier.fillMaxSize().padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+                ) {
+                    Text("This source wants a human check before it serves the chapter.", color = Color.White, textAlign = TextAlign.Center)
+                    Surface(shape = MaterialTheme.shapes.medium) {
+                        SourceChallengeActions(session, api, providerId, challenge, onSolved = { attempt++ }, modifier = Modifier.padding(16.dp))
+                    }
+                    TextButton(onClick = { attempt++ }) { Text("Try again", color = Color.White) }
+                }
+            }
+        }
         is SourceReaderState.Loading -> ReaderShell(onBack) { Spinner() }
 
         is SourceReaderState.Ready -> {

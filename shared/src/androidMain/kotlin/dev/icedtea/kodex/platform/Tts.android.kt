@@ -1,6 +1,7 @@
 package dev.icedtea.kodex.platform
 
 import android.content.Context
+import android.content.Intent
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
@@ -50,23 +51,32 @@ private class AndroidTtsEngine(private val appContext: Context) : TtsEngine {
     @Volatile
     private var tts: TextToSpeech? = null
 
+    /** The engine the reader chose; null leaves the choice to [preferredEngine]. */
+    private var providerId: String? = null
+
+    /** The engine actually bound, which is what the picker marks as current. */
+    @Volatile
+    private var boundId: String? = null
+
     init {
         tts = connect()
     }
 
     /**
-     * Binds to the device's speech engine. A whole connection rather than a one-off in `init`,
-     * because [refresh] throws the old one away to pick up a language installed since — the engine
-     * reports the voice set it had at bind time and nothing asks it to look again.
+     * Binds to a speech engine — [providerId], or [preferredEngine]. A whole connection rather than
+     * a one-off in `init`, because both [refresh] and [useProvider] throw the old one away: an
+     * engine reports the voice set it had at bind time and nothing asks it to look again.
      */
-    private fun connect(): TextToSpeech =
-        TextToSpeech(appContext) { status ->
+    private fun connect(): TextToSpeech {
+        val engine = providerId ?: preferredEngine()
+        boundId = engine
+        return TextToSpeech(appContext, { status ->
             if (status == TextToSpeech.SUCCESS) {
                 _available.value = true
             } else {
                 _events.tryEmit(TtsEvent.Failed("No speech engine is installed on this device."))
             }
-        }.apply {
+        }, engine).apply {
             setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) = Unit
 
@@ -86,6 +96,26 @@ private class AndroidTtsEngine(private val appContext: Context) : TtsEngine {
                 }
             })
         }
+    }
+
+    /**
+     * Google's engine when the phone has it, whatever the phone calls its default otherwise.
+     *
+     * Not a preference so much as the difference between the feature working and not: the engine an
+     * Android phone ships with is the vendor's, and a vendor ships the languages its market buys —
+     * an Honor speaks Chinese and English and offers no way to add a third. Google's speaks upwards
+     * of fifty and downloads more on request, so a book in any other language has to be read by it.
+     * The reader can still name another engine, and does so through [useProvider].
+     *
+     * Asked of the package manager rather than `TextToSpeech.getEngines`, which needs the very
+     * connection this is deciding. Both need the `TTS_SERVICE` entry in the manifest's `queries`.
+     */
+    private fun preferredEngine(): String? = runCatching {
+        val installed = appContext.packageManager
+            .queryIntentServices(Intent(TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE), 0)
+            .mapNotNull { it.serviceInfo?.packageName }
+        GOOGLE_TTS.takeIf { it in installed }
+    }.getOrNull()
 
     /**
      * Rebinds, so voices installed while the user was away appear. Skipped outright while something
@@ -94,9 +124,42 @@ private class AndroidTtsEngine(private val appContext: Context) : TtsEngine {
      */
     override fun refresh() {
         if (currentId != null) return
+        rebind()
+    }
+
+    /**
+     * The engines this device has. Reading them needs the `TTS_SERVICE` entry in the manifest's
+     * `queries`: engines are separate apps, and without it Android hands back only the one already
+     * bound — see AndroidManifest.xml.
+     */
+    override fun providers(): List<TtsProvider> = runCatching {
+        (tts?.engines ?: emptyList())
+            .mapNotNull { info ->
+                val id = info?.name ?: return@mapNotNull null
+                TtsProvider(id = id, name = info.label?.takeIf { it.isNotBlank() } ?: id)
+            }
+            .distinctBy { it.id }
+            .sortedBy { it.name }
+    }.getOrDefault(emptyList())
+
+    // `boundId` is null only when the bind asked for "whatever the system uses", which the engine
+    // will name; there is no public way to ask a live connection which engine it reached.
+    override fun activeProvider(): String? = boundId ?: runCatching { tts?.defaultEngine }.getOrNull()
+
+    override fun useProvider(id: String?) {
+        if (id == providerId) return
+        providerId = id
+        stop()
+        rebind()
+    }
+
+    /**
+     * Drops the current connection for a fresh one. [available] goes down for as long as that takes,
+     * which is what it is for: the picker shows an empty list rather than the previous engine's, and
+     * fills in when the new connection reports SUCCESS.
+     */
+    private fun rebind() {
         val previous = tts
-        // Down for as long as the rebind takes, which is what `available` is for: the picker reads
-        // an empty list rather than the stale one, and fills in when the new connection reports SUCCESS.
         _available.value = false
         tts = connect()
         runCatching { previous?.shutdown() }
@@ -162,6 +225,9 @@ private class AndroidTtsEngine(private val appContext: Context) : TtsEngine {
         tts = null
     }
 }
+
+/** Google's speech engine — see `preferredEngine` for why it is singled out. */
+private const val GOOGLE_TTS = "com.google.android.tts"
 
 /** Said when the book's language has no voice on this device — see `speak`. */
 private const val NO_VOICE_FOR_LANGUAGE =

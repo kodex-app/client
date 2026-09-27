@@ -2,6 +2,7 @@ package dev.icedtea.kodex.network
 
 import io.ktor.client.call.body
 import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -150,6 +151,22 @@ suspend fun KodexApi.sourceChapterPageCount(baseUrl: String, apiKey: String, pro
         header(HEADER_API_KEY, apiKey)
         parameter("chapterId", chapterId)
     }.body<PageCountDto>().pageCount
+
+/**
+ * Asks the server to build a novel (BOOK) chapter's EPUB and throws the way the source failed if it
+ * can't. The server caches the built EPUB, so the ebook reader's own manifest fetch right after is
+ * free — this exists so the source reader can see a failure (and a human-check `challenge`) itself
+ * instead of it disappearing into the reader's WebView.
+ */
+suspend fun KodexApi.probeSourceChapterText(baseUrl: String, apiKey: String, providerId: String, chapterId: String) {
+    client.get("$baseUrl/api/v1/content-sources/$providerId/chapter-manifest") {
+        header(HEADER_API_KEY, apiKey)
+        parameter("chapterId", chapterId)
+        // A source asking for a human check first gets the server's own browser thrown at it (up to
+        // ~45 s) before the call answers `challenge` — past the client-wide 30 s cap.
+        timeout { requestTimeoutMillis = 150_000; socketTimeoutMillis = 150_000 }
+    }.bodyAsText()
+}
 
 /** Saved progress for a streamed chapter, or null (the endpoint returns an empty body when none). */
 suspend fun KodexApi.sourceProgress(baseUrl: String, apiKey: String, providerId: String, chapterId: String): ReadProgressDto? {

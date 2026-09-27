@@ -88,3 +88,17 @@ Scaffold: multi-server login + main scaffold with 5-tab bottom nav (Home · Libr
 Browse · More). Tab bodies past login are placeholders pending feature work.
 
 > TODO: move stored API keys from plaintext prefs into the platform keystore/keychain.
+
+## Source human checks ("open in WebView")
+
+Some sources (Cloudflare Turnstile on LNReader plugins like truyendich) want a human check the
+server's automated browser can't pass. The server answers such calls with a 502 carrying
+`challenge: true` + `url`; the source reader, source feed and source series screens then offer
+**Open in WebView** (admins — the endpoint is admin-only). It opens the page in the platform WebView
+(`ui/browse/SourceChallenge.kt`; Android accepts third-party cookies for the Turnstile frame,
+`platform/ChallengeWebView.*`), and **Done** sends that WebView's cookies and User-Agent to
+`POST /api/v1/mihon/browser/sessions/import-cookies`, then retries. Extensions › LNReader has the same
+action per plugin. For a novel chapter the reader first calls `chapter-manifest` itself
+(`probeSourceChapterText`, 150 s timeout — the server tries its own browser first) so the failure
+shows on the reader screen rather than inside the ebook WebView.
+

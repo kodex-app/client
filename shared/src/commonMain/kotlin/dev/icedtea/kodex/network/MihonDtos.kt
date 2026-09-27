@@ -121,6 +121,12 @@ data class MihonBrowserSessionDto(
 )
 
 @Serializable
+data class CookieImportRequest(val sourceId: String, val url: String? = null, val cookies: String, val userAgent: String? = null)
+
+@Serializable
+data class CookieImportResultDto(val imported: Int = 0, val userAgentSet: Boolean = false)
+
+@Serializable
 data class MihonBrowserOpenRequest(val url: String? = null, val sourceId: String? = null)
 
 @Serializable

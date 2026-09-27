@@ -42,6 +42,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.icedtea.kodex.auth.SessionManager
+import dev.icedtea.kodex.ui.browse.SourceWebViewDialog
 import dev.icedtea.kodex.data.SourcePrefsStore
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.network.LnReaderAvailableDto
@@ -96,6 +97,8 @@ fun LnReaderPluginsScreen(session: SessionManager, api: KodexApi, sourcePrefs: S
     var busy by remember { mutableStateOf<String?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
     var configuring by remember { mutableStateOf<Pair<String, String>?>(null) }
+    // LNReader's "open in WebView": the plugin's site in a WebView on this device, cookies to the server.
+    var webView by remember { mutableStateOf<LnReaderAvailableDto?>(null) }
 
     LaunchedEffect(server?.id, reload) {
         val s = server ?: return@LaunchedEffect
@@ -222,6 +225,7 @@ fun LnReaderPluginsScreen(session: SessionManager, api: KodexApi, sourcePrefs: S
                                 onInstall = { act(p.id, if (p.installed) "Updating ${p.name}…" else "Installing ${p.name}…") { val s = server!!; api.lnreaderInstall(s.baseUrl, s.apiKey, p.id) } },
                                 onUninstall = { act(p.id, "Uninstalled ${p.name}") { val s = server!!; api.lnreaderUninstall(s.baseUrl, s.apiKey, p.id) } },
                                 onConfigure = { p.sourceId?.let { configuring = it to p.name } },
+                                onWebView = { webView = p },
                             )
                             Spacer(Modifier.height(10.dp))
                         }
@@ -232,6 +236,16 @@ fun LnReaderPluginsScreen(session: SessionManager, api: KodexApi, sourcePrefs: S
     }
 
     val s = server
+    webView?.let { p ->
+        val id = p.sourceId
+        if (id != null) {
+            SourceWebViewDialog(
+                session, api, id, p.site, title = p.name,
+                onDismiss = { webView = null },
+                onImported = { webView = null },
+            )
+        }
+    }
     val cfg = configuring
     if (cfg != null && s != null) {
         SourceConfigSheet(
@@ -246,7 +260,14 @@ fun LnReaderPluginsScreen(session: SessionManager, api: KodexApi, sourcePrefs: S
 }
 
 @Composable
-private fun PluginRow(p: LnReaderAvailableDto, busy: Boolean, onInstall: () -> Unit, onUninstall: () -> Unit, onConfigure: () -> Unit) {
+private fun PluginRow(
+    p: LnReaderAvailableDto,
+    busy: Boolean,
+    onInstall: () -> Unit,
+    onUninstall: () -> Unit,
+    onConfigure: () -> Unit,
+    onWebView: () -> Unit,
+) {
     var menu by remember { mutableStateOf(false) }
     // The plugin's site, opened in the device's own browser.
     val uriHandler = LocalUriHandler.current
@@ -272,6 +293,9 @@ private fun PluginRow(p: LnReaderAvailableDto, busy: Boolean, onInstall: () -> U
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     if (p.updateAvailable) DropdownMenuItem(text = { Text("Update to v${p.version}") }, onClick = { menu = false; onInstall() })
                     if (p.sourceId != null) DropdownMenuItem(text = { Text("Settings") }, onClick = { menu = false; onConfigure() })
+                    if (p.sourceId != null && p.site.isNotBlank()) {
+                        DropdownMenuItem(text = { Text("Open in WebView") }, onClick = { menu = false; onWebView() })
+                    }
                     if (p.site.isNotBlank()) DropdownMenuItem(text = { Text("Open site") }, onClick = { menu = false; uriHandler.openUri(p.site) })
                     DropdownMenuItem(text = { Text("Uninstall") }, onClick = { menu = false; onUninstall() })
                 }

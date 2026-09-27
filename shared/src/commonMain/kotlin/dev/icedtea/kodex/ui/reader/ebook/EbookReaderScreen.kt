@@ -97,6 +97,7 @@ import dev.icedtea.kodex.network.customFonts
 import dev.icedtea.kodex.platform.StatusBarIcons
 import dev.icedtea.kodex.platform.SystemBarsHidden
 import dev.icedtea.kodex.platform.TTS_RATES
+import dev.icedtea.kodex.platform.TtsProvider
 import dev.icedtea.kodex.platform.TtsVoice
 import dev.icedtea.kodex.ui.KodexBottomSheet
 import dev.icedtea.kodex.ui.collectAsStateSafe
@@ -244,14 +245,21 @@ fun EbookReaderScreen(
     val tts = dev.icedtea.kodex.platform.rememberTtsEngine()
     /** Bumped to re-read the device's voices after a trip to the system's install screen. */
     var voicesRead by remember { mutableStateOf(0) }
-    // Null on a platform with no voice-download screen to send the reader to.
-    val voiceInstaller = dev.icedtea.kodex.platform.rememberVoiceInstaller {
-        tts.refresh()
-        voicesRead++
-    }
     val ttsAvailable by tts.available.collectAsStateSafe()
     val ttsRate by appSettings.ttsRate.collectAsStateSafe()
     val ttsVoice by appSettings.ttsVoice.collectAsStateSafe()
+    val ttsProvider by appSettings.ttsProvider.collectAsStateSafe()
+    // The engine the reader named, applied to the engine object; null leaves it on the platform's
+    // own pick (Google's, where the phone has it). `useProvider` no-ops when nothing changed.
+    LaunchedEffect(tts, ttsProvider) { tts.useProvider(ttsProvider) }
+    // Not the stored id: null there means "whichever the platform picked", and both the chips and
+    // the voice installer have to name the engine that turned out to be.
+    val activeProvider = remember(ttsAvailable, ttsProvider, voicesRead) { tts.activeProvider() }
+    // Null on a platform with no voice-download screen to send the reader to.
+    val voiceInstaller = dev.icedtea.kodex.platform.rememberVoiceInstaller(activeProvider) {
+        tts.refresh()
+        voicesRead++
+    }
     var ttsOpen by remember { mutableStateOf(false) }
     var ttsPlaying by remember { mutableStateOf(false) }
     var ttsSettingsOpen by remember { mutableStateOf(false) }
@@ -918,6 +926,7 @@ fun EbookReaderScreen(
     if (ttsSettingsOpen) {
         // Voices matching the book's language first: a phone can carry dozens, and scrolling past
         // forty of them to find the one that can pronounce this book is the whole difficulty here.
+        val providers = remember(ttsAvailable, voicesRead) { if (ttsAvailable) tts.providers() else emptyList() }
         val voices = remember(ttsAvailable, ttsLang, voicesRead) {
             val all = if (ttsAvailable) tts.voices() else emptyList()
             val language = ttsLang.substringBefore('-').lowercase()
@@ -938,6 +947,17 @@ fun EbookReaderScreen(
             TtsSettingsSheet(
                 voices = voices,
                 voiceId = ttsVoice,
+                providers = providers,
+                providerId = activeProvider,
+                // The chosen voice is an id out of the old engine's list and means nothing to the
+                // new one, so switching hands the book back to "Automatic".
+                onProvider = {
+                    appSettings.setTtsProvider(it)
+                    appSettings.setTtsVoice(null)
+                    tts.useProvider(it)
+                    ttsPlaying = false
+                    voicesRead++
+                },
                 onInstallVoices = voiceInstaller,
                 rate = ttsRate,
                 // Neither engine can retune an utterance already speaking, so the change is applied
@@ -1103,6 +1123,11 @@ private fun EbookTtsBar(
 private fun TtsSettingsSheet(
     voices: List<TtsVoice>,
     voiceId: String?,
+    /** Speech engines to choose between; fewer than two and the choice is not worth a row. */
+    providers: List<TtsProvider>,
+    /** The engine actually speaking, which is what the chips mark. */
+    providerId: String?,
+    onProvider: (String) -> Unit,
     /** Opens the system's voice download screen; null where the platform has none. */
     onInstallVoices: (() -> Unit)?,
     rate: Float,
@@ -1141,6 +1166,26 @@ private fun TtsSettingsSheet(
             OutlinedButton(onClick = onPreview, modifier = Modifier.weight(1f)) { Text("Preview") }
             if (onStart != null) {
                 Button(onClick = onStart, modifier = Modifier.weight(1f)) { Text("Start reading") }
+            }
+        }
+        // Above the voices, because it decides what that list holds at all: each engine answers
+        // with its own languages, and a phone whose default engine speaks three of them will show
+        // three however many the reader has downloaded into another.
+        if (providers.size > 1) {
+            Column(
+                Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text("Engine", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    providers.forEach { provider ->
+                        FilterChip(
+                            selected = provider.id == providerId,
+                            onClick = { onProvider(provider.id) },
+                            label = { Text(provider.name) },
+                        )
+                    }
+                }
             }
         }
         // The list only ever holds the languages this device has downloaded — which on a stock

@@ -155,6 +155,25 @@ suspend fun KodexApi.browserKey(baseUrl: String, apiKey: String, id: String, key
     }
 }
 
+/**
+ * Hands cookies from a browser on this device (the source WebView) to a source's cookie jar on the
+ * server; for an LNReader source [userAgent] becomes its User-Agent override. [cookies] is a
+ * Cookie-Editor-style JSON array, a cookies.txt or a `Cookie:` header. Admin only.
+ */
+suspend fun KodexApi.importSourceCookies(
+    baseUrl: String,
+    apiKey: String,
+    sourceId: String,
+    url: String?,
+    cookies: String,
+    userAgent: String?,
+): CookieImportResultDto =
+    client.post("$baseUrl/api/v1/mihon/browser/sessions/import-cookies") {
+        header(HEADER_API_KEY, apiKey)
+        contentType(ContentType.Application.Json)
+        setBody(CookieImportRequest(sourceId, url, cookies, userAgent))
+    }.body()
+
 suspend fun KodexApi.browserClose(baseUrl: String, apiKey: String, id: String) {
     client.delete("$baseUrl/api/v1/mihon/browser/sessions/$id") { header(HEADER_API_KEY, apiKey) }
 }
