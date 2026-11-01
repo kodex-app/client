@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
@@ -200,13 +201,13 @@ fun SourceCard(
 }
 
 /**
- * A source's logo at 40dp with rounded corners: [imageUrl] on a neutral tile, or the coloured
+ * A source's logo ([size], 40dp by default) with rounded corners: [imageUrl] on a neutral tile, or the coloured
  * [initial] tile when there is no image / it fails to load.
  */
 @Composable
-fun SourceAvatar(imageUrl: String?, initial: String) {
+fun SourceAvatar(imageUrl: String?, initial: String, size: Dp = 40.dp) {
     Box(
-        Modifier.size(40.dp).clip(RoundedCornerShape(10.dp))
+        Modifier.size(size).clip(RoundedCornerShape(size / 4))
             .background(if (imageUrl != null) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primary),
         contentAlignment = Alignment.Center,
     ) {
@@ -215,7 +216,7 @@ fun SourceAvatar(imageUrl: String?, initial: String) {
                 model = imageUrl,
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
-                modifier = Modifier.size(28.dp),
+                modifier = Modifier.size(size * 0.7f),
             )
         } else {
             Text(
