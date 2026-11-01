@@ -6,6 +6,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.material.icons.automirrored.outlined.Toc
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Headphones
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.TextFields
 import dev.icedtea.kodex.ui.Tip
 import dev.icedtea.kodex.ui.TooltipIconButton
@@ -823,6 +824,7 @@ fun EbookReaderScreen(
                     onOpenContents = { tocOpen = true },
                     onToggleReadAloud = { toggleTts() },
                     onOpenSettings = { settingsOpen = true },
+                    onOpenSeries = onOpenSeries,
                 )
             }
         }
@@ -1030,10 +1032,11 @@ private fun EbookTopBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         TooltipIconButton("Back", onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = content) }
-        // Read aloud and bookmarks moved down: the first into the bottom toolbar (thumb reach), the
-        // second into the Contents sheet's tabs. What's left here is where you are and the rare stuff.
+        // Read aloud, bookmarks and series details moved down: read aloud and series into the bottom
+        // toolbar (thumb reach), bookmarks into the Contents sheet's tabs. What's left here is where you
+        // are and the web link.
         ReaderTitle(title, subtitle, onOpenSeries, Modifier.weight(1f))
-        ReaderOverflowMenu(onOpenSeries, onOpenWeb)
+        ReaderOverflowMenu(onOpenSeries = null, onOpenWeb = onOpenWeb)
     }
 }
 
@@ -1263,6 +1266,7 @@ private fun EbookBottomBar(
     onOpenContents: () -> Unit,
     onToggleReadAloud: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenSeries: (() -> Unit)?,
 ) {
     val content = MaterialTheme.colorScheme.readerBarContentColor
     val raised = MaterialTheme.colorScheme.readerBarRaisedColor
@@ -1330,6 +1334,7 @@ private fun EbookBottomBar(
                     onClick = onToggleReadAloud,
                 )
             }
+            onOpenSeries?.let { open -> LabeledToolbarButton(Icons.Outlined.Info, "Series", "Series details", onClick = open) }
             LabeledToolbarButton(Icons.Outlined.TextFields, "Display", "Text & display settings", onClick = onOpenSettings)
         }
     }
