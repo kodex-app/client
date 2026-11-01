@@ -1,5 +1,17 @@
 package dev.icedtea.kodex.ui.search
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.text.style.TextOverflow
+import dev.icedtea.kodex.ui.SourceAvatar
+import dev.icedtea.kodex.ui.languageLabel
+import dev.icedtea.kodex.ui.main.faviconUrl
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -752,8 +764,15 @@ private fun RowHint(text: String) {
     )
 }
 
-/** Online-mode filter: pick which installed sources to search (none selected = all). */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+/**
+ * Online-mode filter: pick which installed sources to search (none selected = all).
+ *
+ * A list, not a wall of chips: with a few dozen sources installed (one multi-language source alone
+ * registers once per language) the chips were dozens of identical "MangaDex" pills with nothing to
+ * tell them apart. Here there's a name filter, favourites first, then one collapsible group per
+ * language with a select-all box; rows carry the logo and kind, and the language is the group.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SourcePickerSheet(
     sources: List<SourceDescriptor>,
@@ -765,36 +784,227 @@ private fun SourcePickerSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var working by remember(selected) { mutableStateOf(selected) }
-    KodexBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    var filter by remember { mutableStateOf("") }
+    val f = filter.trim()
+    val visible = remember(sources, f) {
+        if (f.isEmpty()) sources
+        else sources.filter { it.displayName.contains(f, ignoreCase = true) || languageLabel(pickerLangKey(it.language)).contains(f, ignoreCase = true) }
+    }
+    val favoriteList = visible.filter { it.id in favorites }
+    // Languages with several sources get a group each; single-source ones (mostly a multi-language
+    // source registered once per language) fold into one "Other languages" group whose rows name their
+    // language — forty one-row groups hid every source name behind a chevron. Keyed off the full list,
+    // not the filtered one, so groups don't reshuffle while typing.
+    val multiLangs = remember(sources) {
+        sources.groupingBy { pickerLangKey(it.language) }.eachCount().filterValues { it > 1 }.keys
+    }
+    val groups = remember(visible, multiLangs) {
+        val (multi, single) = visible.partition { pickerLangKey(it.language) in multiLangs }
+        multi.groupBy { pickerLangKey(it.language) }.toList()
+            .sortedWith(compareBy({ it.first.isEmpty() }, { languageLabel(it.first).lowercase() }))
+            .map { (lang, list) -> Triple(lang, languageLabel(lang), list) } +
+            listOfNotNull(single.takeIf { it.isNotEmpty() }?.let { Triple(OTHER_LANGS, if (multiLangs.isEmpty()) "All sources" else "Other languages", it) })
+    }
+    // Real groups start open; the folded tail starts closed unless it holds part of the selection.
+    var open by remember {
+        mutableStateOf(
+            multiLangs + listOfNotNull(OTHER_LANGS.takeIf { sources.any { it.id in selected && pickerLangKey(it.language) !in multiLangs } || multiLangs.isEmpty() }),
+        )
+    }
+
+    KodexBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, fraction = 0.9f) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-            Text("Sources", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 4.dp))
-            Text("None selected searches every source; favourites are searched first.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
-            Column(Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
-                if (sources.isEmpty()) {
-                    Text("No sources installed.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 12.dp))
-                } else FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    sources.forEach { src ->
-                        FilterChip(
-                            selected = src.id in working,
-                            onClick = { working = working.toggle(src.id) },
-                            label = { Text(src.displayName.ifBlank { src.id }) },
-                            leadingIcon = if (src.id !in favorites) null else {
-                                { Icon(Icons.Filled.Star, contentDescription = null, tint = FavoriteAmber, modifier = Modifier.size(14.dp)) }
-                            },
-                        )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Sources", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        if (working.isEmpty()) "Searching every source · favourites first" else "${working.size} of ${sources.size} selected",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (working.isNotEmpty()) TextButton(onClick = { working = emptySet() }) { Text("Clear") }
+            }
+            Spacer(Modifier.height(8.dp))
+            SourceSearchFieldCompact(filter) { filter = it }
+        }
+        LazyColumn(
+            Modifier.weight(1f, fill = false).fillMaxWidth(),
+            contentPadding = PaddingValues(bottom = 8.dp),
+        ) {
+            if (visible.isEmpty()) {
+                item {
+                    Text(
+                        if (sources.isEmpty()) "No sources installed." else "No sources match.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(16.dp),
+                    )
+                }
+            }
+            if (favoriteList.isNotEmpty()) {
+                item(key = "fav-hdr") {
+                    PickerGroupHeader(
+                        label = "Favorites", count = favoriteList.size,
+                        selectedCount = favoriteList.count { it.id in working },
+                        expanded = null, onToggleOpen = {},
+                        onToggleAll = { all -> working = if (all) working + favoriteList.map { it.id } else working - favoriteList.map { it.id }.toSet() },
+                    )
+                }
+                items(favoriteList, key = { "fav-${it.id}" }) { src ->
+                    PickerRow(src, favorite = true, showLanguage = true, checked = src.id in working) { working = working.toggle(src.id) }
+                }
+            }
+            groups.forEach { (lang, label, list) ->
+                // A name filter opens every group: the matches are the point, not the folding.
+                val expanded = f.isNotEmpty() || lang in open
+                item(key = "hdr-$lang") {
+                    PickerGroupHeader(
+                        label = label, count = list.size,
+                        selectedCount = list.count { it.id in working },
+                        expanded = expanded,
+                        onToggleOpen = { open = if (lang in open) open - lang else open + lang },
+                        onToggleAll = { all -> working = if (all) working + list.map { it.id } else working - list.map { it.id }.toSet() },
+                    )
+                }
+                if (expanded) {
+                    items(list, key = { "src-${it.id}" }) { src ->
+                        PickerRow(src, favorite = src.id in favorites, showLanguage = lang == OTHER_LANGS, checked = src.id in working) { working = working.toggle(src.id) }
                     }
                 }
             }
-            androidx.compose.foundation.layout.Row(
-                Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedButton(onClick = { working = emptySet(); onClear() }, modifier = Modifier.weight(1f)) { Text("All") }
-                Button(onClick = { onApply(working) }, modifier = Modifier.weight(1f)) { Text("Apply") }
+        }
+        HorizontalDivider()
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedButton(onClick = { working = emptySet(); onClear() }, modifier = Modifier.weight(1f)) { Text("All sources") }
+            Button(onClick = { onApply(working) }, modifier = Modifier.weight(1f)) {
+                Text(if (working.isEmpty()) "Search all" else "Search ${working.size}")
             }
         }
     }
 }
+
+/** A group band in the picker: tri-state select-all box, label + count, and a fold chevron. */
+@Composable
+private fun PickerGroupHeader(
+    label: String,
+    count: Int,
+    selectedCount: Int,
+    /** null = not foldable (Favorites). */
+    expanded: Boolean?,
+    onToggleOpen: () -> Unit,
+    onToggleAll: (Boolean) -> Unit,
+) {
+    val state = when (selectedCount) {
+        0 -> androidx.compose.ui.state.ToggleableState.Off
+        count -> androidx.compose.ui.state.ToggleableState.On
+        else -> androidx.compose.ui.state.ToggleableState.Indeterminate
+    }
+    Row(
+        Modifier.fillMaxWidth()
+            .clickable(enabled = expanded != null, onClick = onToggleOpen)
+            .padding(start = 4.dp, end = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        androidx.compose.material3.TriStateCheckbox(state = state, onClick = { onToggleAll(selectedCount < count) })
+        Text(
+            label,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = if (selectedCount > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            if (selectedCount > 0) "$selectedCount / $count" else "$count",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (expanded != null) {
+            Icon(
+                if (expanded) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowRight,
+                contentDescription = if (expanded) "Collapse" else "Expand",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp).size(20.dp),
+            )
+        }
+    }
+}
+
+/** One source in the picker: logo, name, "kind (· language)", favourite star, checkbox. */
+@Composable
+private fun PickerRow(src: SourceDescriptor, favorite: Boolean, showLanguage: Boolean, checked: Boolean, onToggle: () -> Unit) {
+    val fav = remember(src.website) { faviconUrl(src.website) }
+    Row(
+        Modifier.fillMaxWidth()
+            .background(if (checked) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else Color.Transparent)
+            .clickable(onClick = onToggle)
+            .padding(start = 24.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SourceAvatar(fav, src.displayName.ifBlank { src.id }, size = 32.dp)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    src.displayName.ifBlank { src.id },
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (favorite) {
+                    Spacer(Modifier.width(4.dp))
+                    Icon(Icons.Filled.Star, contentDescription = "Favorite", tint = FavoriteAmber, modifier = Modifier.size(14.dp))
+                }
+            }
+            Text(
+                listOfNotNull(
+                    src.kind.ifBlank { "COMIC" }.titleCase(),
+                    languageLabel(pickerLangKey(src.language)).takeIf { showLanguage },
+                    "18+".takeIf { src.adultContent },
+                ).joinToString(" · "),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+        }
+        androidx.compose.material3.Checkbox(checked = checked, onCheckedChange = { onToggle() })
+    }
+}
+
+/** Compact pill search box for the picker (the sheet has no room for the full-height field). */
+@Composable
+private fun SourceSearchFieldCompact(value: String, onValueChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+        placeholder = { Text("Filter by name or language") },
+        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+        trailingIcon = {
+            if (value.isNotEmpty()) IconButton(onClick = { onValueChange("") }) { Icon(Icons.Filled.Clear, contentDescription = "Clear") }
+        },
+        singleLine = true,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+        colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            unfocusedBorderColor = Color.Transparent,
+        ),
+    )
+}
+
+/** Group key of the picker's folded single-source-languages group; can't collide with a language tag. */
+private const val OTHER_LANGS = " other"
+
+/** Grouping key for a source's language — null or blank is the multi-language bucket (Browse's rule). */
+private fun pickerLangKey(code: String?): String = if (code.isNullOrBlank()) "" else code
 
 private fun androidx.compose.foundation.lazy.grid.LazyGridScope.header(title: String, count: Int) {
     item(span = { GridItemSpan(maxLineSpan) }) {
