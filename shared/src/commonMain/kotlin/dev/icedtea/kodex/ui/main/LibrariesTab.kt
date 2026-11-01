@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
@@ -21,26 +23,29 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material3.Badge
+import androidx.compose.material.icons.outlined.AutoStories
+import androidx.compose.material.icons.outlined.CollectionsBookmark
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -50,7 +55,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -67,7 +74,6 @@ import dev.icedtea.kodex.ui.LoadedContent
 import dev.icedtea.kodex.ui.collectAsStateSafe
 import dev.icedtea.kodex.ui.isoEpochMillis
 import dev.icedtea.kodex.ui.nav.retain
-import dev.icedtea.kodex.ui.catalog.ColorBadge
 import dev.icedtea.kodex.ui.catalog.CoverThumb
 import dev.icedtea.kodex.ui.catalog.seriesCoverUrl
 import kotlinx.coroutines.launch
@@ -135,6 +141,7 @@ fun LibrariesTab(
             val kinds = remember(libraries) {
                 libraries.mapNotNull { it.mediaKind?.takeIf(String::isNotBlank) }.distinct().sorted()
             }
+            val types = remember(libraries) { libraries.map(::libraryType).distinct().sorted() }
             val shown = remember(libraries, query, filter, sort, previews) {
                 libraries
                     .filter { it.name.contains(query.trim(), ignoreCase = true) && filter.accepts(it, previews[it.id]) }
@@ -148,6 +155,7 @@ fun LibrariesTab(
                     filter = filter,
                     onFilter = { filter = it },
                     kinds = kinds,
+                    types = types,
                     sort = sort,
                     onSort = { appSettings.setLibrariesSort(it.store()) },
                     onArrange = onArrange,
@@ -256,9 +264,6 @@ private data class LibrariesFilter(
     val kind: String? = null,
     val hideEmpty: Boolean = false,
 ) {
-    /** What the badge on the filter button counts — [kind] is left out, it has its own visible chip. */
-    val activeCount: Int get() = types.size + if (hideEmpty) 1 else 0
-
     fun accepts(library: LibraryDto, preview: LibraryPreview?): Boolean {
         if (types.isNotEmpty() && libraryType(library) !in types) return false
         if (kind != null && library.mediaKind != kind) return false
@@ -272,12 +277,11 @@ private data class LibrariesFilter(
 private fun libraryType(library: LibraryDto): String = if (library.isWeb) "WEB" else "LOCAL"
 
 /**
- * Search, filter and sort over the tiles, following the source list in Browse: a pill-shaped name
- * filter, a dropdown for the dimension with few values worth multi-selecting, and a chip row for the
- * one that reads better spelled out.
- *
- * The sort button carries only its direction arrow — the key it applies to is named in its menu. At
- * this width, a button wide enough to spell out "Series count" would squeeze the search field.
+ * Search, sort and filter over the tiles: a pill-shaped name filter with the way into Arrange beside
+ * it, then a single chip row. Sort leads the row (it opens a menu of keys; the chip names the active
+ * one and its direction), followed by every filter as a one-tap toggle — type, media kind, hide
+ * empty. These used to sit behind a filter icon and a bare arrow icon, which said neither what was
+ * active nor what was on offer.
  */
 @Composable
 private fun LibrariesToolbar(
@@ -286,11 +290,11 @@ private fun LibrariesToolbar(
     filter: LibrariesFilter,
     onFilter: (LibrariesFilter) -> Unit,
     kinds: List<String>,
+    types: List<String>,
     sort: LibrariesSort,
     onSort: (LibrariesSort) -> Unit,
     onArrange: () -> Unit,
 ) {
-    var filterMenu by remember { mutableStateOf(false) }
     var sortMenu by remember { mutableStateOf(false) }
 
     Row(
@@ -319,90 +323,6 @@ private fun LibrariesToolbar(
                 unfocusedBorderColor = Color.Transparent,
             ),
         )
-        Box {
-            IconButton(onClick = { filterMenu = true }) {
-                Icon(
-                    Icons.Filled.FilterList,
-                    contentDescription = "Filter libraries",
-                    tint = if (filter.activeCount > 0) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
-            // Kept inside the button's bounds: BadgedBox offsets the badge outward, which clipped it
-            // against the screen edge for this trailing toolbar button.
-            if (filter.activeCount > 0) {
-                Badge(Modifier.align(Alignment.TopEnd)) { Text("${filter.activeCount}") }
-            }
-            DropdownMenu(expanded = filterMenu, onDismissRequest = { filterMenu = false }) {
-                DropdownMenuItem(
-                    text = { Text("All libraries") },
-                    onClick = { onFilter(filter.copy(types = emptySet())) },
-                    leadingIcon = { if (filter.types.isEmpty()) CheckMark() },
-                )
-                listOf("LOCAL" to "Local", "WEB" to "Web").forEach { (value, label) ->
-                    DropdownMenuItem(
-                        text = { Text(label) },
-                        onClick = {
-                            val next = if (value in filter.types) filter.types - value else filter.types + value
-                            onFilter(filter.copy(types = next))
-                        },
-                        leadingIcon = { if (value in filter.types) CheckMark() },
-                    )
-                }
-                HorizontalDivider()
-                DropdownMenuItem(
-                    text = { Text("Hide empty") },
-                    onClick = { onFilter(filter.copy(hideEmpty = !filter.hideEmpty)) },
-                    leadingIcon = { if (filter.hideEmpty) CheckMark() },
-                )
-            }
-        }
-        Box {
-            IconButton(onClick = { sortMenu = true }) {
-                Icon(
-                    if (sort.asc) Icons.Filled.ArrowUpward else Icons.Filled.ArrowDownward,
-                    contentDescription = "Sort: ${sort.key.label}",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
-                // Follows the library screen's sort sheet: the active key carries the direction arrow and
-                // tapping it flips, tapping another switches to it in whichever direction suits it.
-                LibrariesSortKey.entries.forEach { key ->
-                    val selected = key == sort.key
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                key.label,
-                                color = if (selected) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface
-                                },
-                            )
-                        },
-                        leadingIcon = {
-                            Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
-                                if (selected) {
-                                    Icon(
-                                        if (sort.asc) Icons.Filled.ArrowUpward else Icons.Filled.ArrowDownward,
-                                        contentDescription = if (sort.asc) "Ascending" else "Descending",
-                                        tint = MaterialTheme.colorScheme.primary,
-                                    )
-                                }
-                            }
-                        },
-                        onClick = {
-                            sortMenu = false
-                            onSort(if (selected) sort.copy(asc = !sort.asc) else LibrariesSort(key, key.defaultAsc))
-                        },
-                    )
-                }
-            }
-        }
         // Reordering and hiding are lasting decisions about the list, not a view you flip in and out of,
         // so they keep their own screen — but the way in belongs here, next to the list they rearrange,
         // rather than only under More.
@@ -415,40 +335,122 @@ private fun LibrariesToolbar(
         }
     }
 
-    // Media kinds come from the libraries themselves rather than a fixed list — a server that only holds
-    // comics shouldn't offer a "Book" filter — and one kind needs no chips at all.
-    if (kinds.size > 1) {
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            item {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        item(key = "sort") {
+            Box {
                 FilterChip(
-                    selected = filter.kind == null,
-                    onClick = { onFilter(filter.copy(kind = null)) },
-                    label = { Text("All types") },
+                    // Highlighted only once moved off the default, so a glance says the order is custom.
+                    selected = sort != LibrariesSort.Default,
+                    onClick = { sortMenu = true },
+                    label = { Text(sort.key.label) },
+                    leadingIcon = {
+                        Icon(
+                            if (sort.asc) Icons.Filled.ArrowUpward else Icons.Filled.ArrowDownward,
+                            contentDescription = if (sort.asc) "Ascending" else "Descending",
+                            modifier = Modifier.size(FilterChipDefaults.IconSize),
+                        )
+                    },
+                    trailingIcon = {
+                        Icon(Icons.Filled.ArrowDropDown, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize))
+                    },
+                )
+                DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+                    // The active key carries the direction arrow and tapping it flips; tapping another
+                    // switches to it in whichever direction suits it.
+                    LibrariesSortKey.entries.forEach { key ->
+                        val selected = key == sort.key
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    key.label,
+                                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                )
+                            },
+                            leadingIcon = {
+                                Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+                                    if (selected) {
+                                        Icon(
+                                            if (sort.asc) Icons.Filled.ArrowUpward else Icons.Filled.ArrowDownward,
+                                            contentDescription = if (sort.asc) "Ascending" else "Descending",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                }
+                            },
+                            onClick = {
+                                sortMenu = false
+                                onSort(if (selected) sort.copy(asc = !sort.asc) else LibrariesSort(key, key.defaultAsc))
+                            },
+                        )
+                    }
+                }
+            }
+        }
+        item(key = "divider") {
+            Box(Modifier.size(width = 1.dp, height = 24.dp).background(MaterialTheme.colorScheme.outlineVariant))
+        }
+        // Types and media kinds come from the libraries themselves rather than a fixed list — a server
+        // that only holds comics shouldn't offer a "Book" filter — and a single value needs no chip.
+        if (types.size > 1) {
+            items(types, key = { "type:$it" }) { t ->
+                val on = t in filter.types
+                FilterChip(
+                    selected = on,
+                    onClick = { onFilter(filter.copy(types = if (on) filter.types - t else filter.types + t)) },
+                    label = { Text(if (t == "WEB") "Web" else "Local") },
+                    leadingIcon = {
+                        Icon(typeIcon(t == "WEB"), contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize))
+                    },
                 )
             }
-            items(kinds, key = { it }) { k ->
+        }
+        if (kinds.size > 1) {
+            items(kinds, key = { "kind:$it" }) { k ->
                 FilterChip(
                     selected = filter.kind == k,
                     onClick = { onFilter(filter.copy(kind = if (filter.kind == k) null else k)) },
-                    label = { Text(k.lowercase().replaceFirstChar { it.uppercase() }) },
+                    label = { Text(prettyKind(k)) },
+                    leadingIcon = {
+                        Icon(kindIcon(k), contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize))
+                    },
                 )
             }
+        }
+        item(key = "hideEmpty") {
+            FilterChip(
+                selected = filter.hideEmpty,
+                onClick = { onFilter(filter.copy(hideEmpty = !filter.hideEmpty)) },
+                label = { Text("Hide empty") },
+                leadingIcon = if (filter.hideEmpty) {
+                    { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize)) }
+                } else {
+                    null
+                },
+            )
         }
     }
 }
 
-/** The tick a selected menu row carries. */
-@Composable
-private fun CheckMark() {
-    Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+private fun prettyKind(kind: String): String = kind.lowercase().replaceFirstChar { it.uppercase() }
+
+private fun typeIcon(web: Boolean): ImageVector = if (web) Icons.Outlined.Public else Icons.Outlined.Folder
+
+private fun kindIcon(kind: String?): ImageVector = when (kind?.uppercase()) {
+    "COMIC", "MANGA" -> Icons.AutoMirrored.Outlined.MenuBook
+    "BOOK", "NOVEL" -> Icons.Outlined.AutoStories
+    else -> Icons.Outlined.CollectionsBookmark
 }
 
 /**
- * One library: a mosaic of its most recently touched covers with the series count over it, then the
- * name and what kind of library it is.
+ * One library: a mosaic of its most recently touched covers filling the card, with the name and a
+ * one-line caption (type icon · kind · series count) on a scrim along the bottom.
+ *
+ * The caption used to be a separate block under the art with two saturated badges, which made each
+ * tile as tall again as its artwork and gave the loudest colour on screen to the least useful fact.
  */
 @Composable
 private fun LibraryTile(
@@ -461,49 +463,50 @@ private fun LibraryTile(
     Card(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
-        Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
-            CoverMosaic(preview?.covers, apiKey, library.name)
-            seriesCountLabel(preview?.total)?.let { label ->
-                // Over artwork, not beside it: the count is the one number worth reading at a glance,
-                // and the mosaic is the only surface with room to spare.
-                Surface(
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp),
-                    shape = RoundedCornerShape(50),
-                    color = Color.Black.copy(alpha = 0.55f),
-                ) {
+        Box(Modifier.fillMaxWidth().aspectRatio(0.8f)) {
+            CoverMosaic(preview?.covers, apiKey, library.mediaKind)
+            Box(
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(0.55f).background(
+                    Brush.verticalGradient(0f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.82f)),
+                ),
+            )
+            Column(
+                Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+            ) {
+                Text(
+                    library.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        typeIcon(library.isWeb),
+                        contentDescription = if (library.isWeb) "Web library" else "Local library",
+                        tint = Color.White.copy(alpha = 0.85f),
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Spacer(Modifier.width(5.dp))
+                    // The count joins once its request lands; the kind alone holds the line until then.
+                    val caption = listOfNotNull(
+                        library.mediaKind?.takeIf { it.isNotBlank() }?.let(::prettyKind),
+                        seriesCountLabel(preview?.total),
+                    ).joinToString(" · ")
                     Text(
-                        label,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White,
+                        caption.ifBlank { if (library.isWeb) "Web" else "Local" },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White.copy(alpha = 0.85f),
                         maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
-            }
-        }
-        Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 12.dp)) {
-            // The name leads at title weight: it is what you are actually picking between, and the badges
-            // read as its caption rather than as competition.
-            Text(
-                library.name,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                // Two lines either way, so tiles in a row keep the same height whatever their names do.
-                minLines = 2,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.size(6.dp))
-            // Every library is one of LOCAL/WEB, so this line is never empty and the tiles keep matching
-            // heights without having to reserve space for it.
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ColorBadge(if (library.isWeb) "WEB" else "LOCAL")
-                library.mediaKind?.takeIf { it.isNotBlank() }?.let { ColorBadge(it) }
             }
         }
     }
@@ -518,14 +521,14 @@ private fun LibraryTile(
  * otherwise every tile flashes its letter for as long as the request takes and then swaps.
  */
 @Composable
-private fun CoverMosaic(covers: List<String>?, apiKey: String, name: String) {
+private fun CoverMosaic(covers: List<String>?, apiKey: String, kind: String?) {
     if (covers == null) {
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
         return
     }
     Box(Modifier.fillMaxSize()) {
         when (covers.size) {
-            0 -> InitialPlate(name)
+            0 -> EmptyPlate(kind)
             1 -> MosaicCell(covers[0], apiKey, Modifier.fillMaxSize())
             2 -> Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(MosaicGap)) {
                 MosaicCell(covers[0], apiKey, Modifier.weight(1f).fillMaxHeight())
@@ -558,18 +561,25 @@ private fun MosaicCell(url: String, apiKey: String, modifier: Modifier) {
     }
 }
 
-/** The library's initial, for a library with no covers to show. */
+/**
+ * For a library with no covers to show: a tonal gradient with its media kind's icon. The name is on
+ * the scrim already, so repeating its initial here said nothing.
+ */
 @Composable
-private fun InitialPlate(name: String) {
+private fun EmptyPlate(kind: String?) {
     Box(
-        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primaryContainer),
+        Modifier.fillMaxSize().background(
+            Brush.linearGradient(
+                listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.tertiaryContainer),
+            ),
+        ),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            name.firstOrNull()?.uppercase() ?: "?",
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-            fontWeight = FontWeight.Bold,
-            style = MaterialTheme.typography.headlineMedium,
+        Icon(
+            kindIcon(kind),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.55f),
+            modifier = Modifier.size(56.dp).padding(bottom = 8.dp),
         )
     }
 }
