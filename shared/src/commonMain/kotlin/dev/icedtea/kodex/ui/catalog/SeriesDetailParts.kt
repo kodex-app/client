@@ -1,6 +1,7 @@
 package dev.icedtea.kodex.ui.catalog
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
@@ -10,6 +11,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -72,11 +75,24 @@ fun ExpandableSummary(text: String) {
 
 /** A compact pill that opens a menu: label + dropdown caret, tinted in the primary color. */
 @Composable
-fun ControlChip(label: String, onClick: () -> Unit) {
+fun ControlChip(label: String, descending: Boolean? = null, onClick: () -> Unit) {
     Row(
-        Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 4.dp),
+        Modifier.clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
+            .clickable(onClick = onClick)
+            .padding(start = 10.dp, end = 6.dp, top = 5.dp, bottom = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // A sort chip shows its direction up front, so flipping it is visible without opening the menu.
+        if (descending != null) {
+            Icon(
+                if (descending) Icons.Filled.ArrowDownward else Icons.Filled.ArrowUpward,
+                contentDescription = if (descending) "Descending" else "Ascending",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(14.dp),
+            )
+            Spacer(Modifier.width(4.dp))
+        }
         Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
     }
@@ -124,19 +140,19 @@ fun SeriesListControls(
 ) {
     var sortMenu by remember { mutableStateOf(false) }
     var transMenu by remember { mutableStateOf(false) }
+    // One row: what the list is, then how it's ordered and a refresh. The translator filter only shows
+    // up when the source actually has several, and then gets a row of its own so a long group name
+    // can't crowd the sort control.
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         SectionLabel(countLabel)
         Spacer(Modifier.weight(1f))
-        IconButton(onClick = onRefresh) { Icon(Icons.Filled.Refresh, contentDescription = "Refresh") }
-    }
-    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Box {
             val activeLabel = when (sortKey) {
                 SeriesSort.NUMBER -> numberLabel
                 SeriesSort.DATE -> "Release date"
                 SeriesSort.SOURCE -> "Source order"
             }
-            ControlChip(activeLabel) { sortMenu = true }
+            ControlChip(activeLabel, descending = sortDesc) { sortMenu = true }
             DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
                 // Tapping the active key flips direction; tapping another switches to it.
                 listOf(
@@ -150,8 +166,10 @@ fun SeriesListControls(
                 }
             }
         }
-        if (scanlators.size > 1) {
-            Spacer(Modifier.width(8.dp))
+        IconButton(onClick = onRefresh) { Icon(Icons.Filled.Refresh, contentDescription = "Refresh") }
+    }
+    if (scanlators.size > 1) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Box {
                 ControlChip(translator ?: "All translators") { transMenu = true }
                 DropdownMenu(expanded = transMenu, onDismissRequest = { transMenu = false }) {

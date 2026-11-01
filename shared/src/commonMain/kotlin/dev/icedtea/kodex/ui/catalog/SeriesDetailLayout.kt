@@ -2,11 +2,12 @@ package dev.icedtea.kodex.ui.catalog
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -30,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -67,12 +69,16 @@ fun SeriesBackdrop(coverUrl: String, apiKey: String, height: Dp) {
 /**
  * Cover, title and metadata at the top of a series.
  *
- * [facts] is the block under the title — credits, counts, provenance — which is the part the two
- * screens genuinely disagree on: a library series knows its shelf and read counts, a source series
- * knows its publication status.
+ * [facts] is the block under the title — credits, provenance pills — which is the part the two
+ * screens genuinely disagree on: a library series knows its shelf, a source series knows its
+ * publication status.
  *
- * [actions] sits between the chips and the summary: the handful of maintenance actions worth a tap
- * rather than a trip through the overflow menu (see [SeriesActionRow]).
+ * [primary] sits right under the cover row, full width: the read/continue call to action and its
+ * progress. It's the thing most visits to this screen are for, so it gets the most prominent spot
+ * rather than a floating button covering the list.
+ *
+ * [actions] follows it (see [SeriesActionRow]); then the summary, then the genres/tags as one
+ * horizontally scrolling strip — a wrapped flow of fifteen chips used to push the list off-screen.
  */
 @Composable
 fun SeriesHeader(
@@ -82,61 +88,108 @@ fun SeriesHeader(
     chips: List<String>,
     summary: String?,
     actions: (@Composable () -> Unit)? = null,
+    primary: (@Composable () -> Unit)? = null,
     facts: @Composable ColumnScope.() -> Unit,
 ) {
     Column {
         Row {
-            Box(Modifier.width(120.dp).height(180.dp).clip(RoundedCornerShape(12.dp))) {
+            Box(
+                Modifier.width(124.dp).height(186.dp)
+                    .shadow(10.dp, RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+            ) {
                 CoverImage(coverUrl, apiKey, Modifier.fillMaxSize())
             }
             Spacer(Modifier.width(16.dp))
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Column(Modifier.weight(1f).padding(top = 4.dp)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 facts()
             }
         }
-        if (chips.isNotEmpty()) {
-            Spacer(Modifier.height(14.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                chips.take(15).forEach { MetaChip(it) }
-            }
+        if (primary != null) {
+            Spacer(Modifier.height(16.dp))
+            primary()
         }
         if (actions != null) {
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(12.dp))
             actions()
         }
         if (!summary.isNullOrBlank()) {
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(12.dp))
             ExpandableSummary(summary)
         }
+        if (chips.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                chips.forEach { MetaChip(it) }
+            }
+        }
+    }
+}
+
+/**
+ * A small fact about the series in the header — its source, language, shelf, status. Pills rather
+ * than a stack of grey text lines, so each fact reads as its own thing at a glance.
+ */
+@Composable
+fun InfoPill(
+    text: String,
+    icon: ImageVector? = null,
+    accent: Boolean = false,
+) {
+    val container = if (accent) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+    val onContainer = if (accent) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+    Row(
+        Modifier.clip(RoundedCornerShape(8.dp)).background(container).padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        if (icon != null) Icon(icon, contentDescription = null, tint = onContainer, modifier = Modifier.size(14.dp))
+        Text(
+            text,
+            style = MaterialTheme.typography.labelMedium,
+            color = onContainer,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
 /**
  * The header's quick-action strip: evenly divided icon+label buttons across the full width.
  *
- * These are the series-wide maintenance actions (refresh, re-analyze, open on the source site,
- * remove) that were buried in the toolbar's overflow menu — one tap from the header instead of two,
+ * These are the series-wide maintenance actions (refresh, re-analyze, bookmarks, open on the source
+ * site) that were buried in the toolbar's overflow menu — one tap from the header instead of two,
  * and visible enough that it's clear they exist at all. Everything rarer stays in the menu.
  */
 @Composable
 fun SeriesActionRow(content: @Composable RowScope.() -> Unit) {
     Row(
         Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
         content = content,
     )
 }
 
 /**
- * One [SeriesActionRow] entry. Labels wrap to two lines rather than shrinking, so "Refresh metadata"
- * stays readable at four-across on a phone.
+ * One [SeriesActionRow] entry: a tonal icon tile over its label. Labels wrap to two lines rather
+ * than shrinking, so "Refresh metadata" stays readable at four-across on a phone.
  */
 @Composable
 fun RowScope.SeriesAction(
     icon: ImageVector,
     label: String,
-    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    tint: Color = MaterialTheme.colorScheme.onSecondaryContainer,
     onClick: () -> Unit,
 ) {
     Column(
@@ -144,15 +197,22 @@ fun RowScope.SeriesAction(
             .weight(1f)
             .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .padding(vertical = 8.dp, horizontal = 4.dp),
+            .padding(vertical = 6.dp, horizontal = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(22.dp))
+        Box(
+            Modifier.size(width = 52.dp, height = 36.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(20.dp))
+        }
         Text(
             label,
             style = MaterialTheme.typography.labelSmall,
-            color = tint,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,

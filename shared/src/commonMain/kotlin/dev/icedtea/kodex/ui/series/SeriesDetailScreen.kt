@@ -11,6 +11,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -33,12 +35,19 @@ import androidx.compose.material.icons.automirrored.outlined.ManageSearch
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.MarkAsUnread
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.outlined.Bookmarks
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.LocalLibrary
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material.icons.outlined.DoneAll
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.RemoveDone
@@ -108,6 +117,7 @@ import dev.icedtea.kodex.ui.SelectionTopBar
 import dev.icedtea.kodex.ui.TooltipIconButton
 import dev.icedtea.kodex.ui.catalog.CoverCard
 import dev.icedtea.kodex.ui.catalog.CoverImage
+import dev.icedtea.kodex.ui.catalog.InfoPill
 import dev.icedtea.kodex.ui.catalog.SeriesAction
 import dev.icedtea.kodex.ui.catalog.SeriesActionRow
 import dev.icedtea.kodex.ui.catalog.SeriesBackdrop
@@ -278,7 +288,9 @@ fun SeriesDetailScreen(
                 ?.let { base -> base + if (sid.startsWith("/")) sid else "/$sid" }
         }
     }
-    // Promoted out of the overflow menu: the maintenance actions worth one tap from the header.
+    // Promoted out of the overflow menu: the maintenance actions worth one tap from the header. The
+    // destructive "Remove" deliberately isn't one of them — a red button one tap away sat right next
+    // to "Open in origin"; it lives at the bottom of the overflow menu instead.
     val headerActions: @Composable () -> Unit = {
         SeriesActionRow {
             SeriesAction(Icons.Outlined.Sync, "Refresh metadata") {
@@ -287,13 +299,9 @@ fun SeriesDetailScreen(
             SeriesAction(Icons.AutoMirrored.Outlined.ManageSearch, "Re-analyze") {
                 runAction("Analyzing…") { api.analyzeSeries(s!!.baseUrl, s.apiKey, seriesId) }
             }
+            SeriesAction(Icons.Outlined.Bookmarks, "Bookmarks") { bookmarksOpen = true }
             if (originalUrl != null) {
                 SeriesAction(Icons.AutoMirrored.Outlined.OpenInNew, "Open in origin") { openUrl(originalUrl) }
-            }
-            // Removing only unlinks a followed WEB series from its library; LOCAL series live on disk
-            // and are removed by deleting their files.
-            if (detail?.libraryId != null && isWeb) {
-                SeriesAction(Icons.Outlined.Delete, "Remove", tint = MaterialTheme.colorScheme.error) { removeOpen = true }
             }
         }
     }
@@ -309,12 +317,27 @@ fun SeriesDetailScreen(
         else -> localResume(content.books, onOpenReader, onOpenReaderIncognito)
     }
 
+    // The resume call to action, in the header under the cover, with how far through the series you are.
+    val headerPrimary: @Composable () -> Unit = {
+        if (content != null) {
+            val (done, total) = if (isWeb) visibleChapters.count { it.read } to visibleChapters.size
+            else content.books.count { it.readProgress?.completed == true } to content.books.size
+            val downloaded = if (isWeb) visibleChapters.count { it.downloaded } else null
+            ResumePanel(resume, done, total, downloaded)
+        }
+    }
+
     // Scroll state drives the collapsing toolbar: the title fades in (and the bar turns opaque, masking
     // content behind the status bar) once the header has scrolled up past the toolbar. Both layouts
     // (chapter list and book list) are LazyColumns, so they share one list state.
     val listState = st.list
     val titleVisible by remember {
         derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 280 }
+    }
+    // The floating resume button only takes over once the header's own resume button has scrolled away;
+    // while the header is on screen it would just duplicate it, and cover the first rows of the list.
+    val fabVisible by remember {
+        derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 420 }
     }
     val barColor by animateColorAsState(
         if (titleVisible) MaterialTheme.colorScheme.surface else androidx.compose.ui.graphics.Color.Transparent,
@@ -380,9 +403,18 @@ fun SeriesDetailScreen(
                                         DropdownMenuItem(text = { Text("Move to another library") }, onClick = { menuOpen = false; moveOpen = true })
                                     }
                                     DropdownMenuItem(text = { Text("Edit metadata") }, onClick = { menuOpen = false; editOpen = true })
-                                    DropdownMenuItem(text = { Text("Bookmarks") }, onClick = { menuOpen = false; bookmarksOpen = true })
-                                    // Refresh metadata / re-analyze / open in origin / remove from library
-                                    // moved to the header's action row — see [SeriesActionRow].
+                                    // Refresh metadata / re-analyze / bookmarks / open in origin live in the
+                                    // header's action row — see [SeriesActionRow].
+                                    // Removing only unlinks a followed WEB series from its library; LOCAL series
+                                    // live on disk and are removed by deleting their files.
+                                    if (detail?.libraryId != null && isWeb) {
+                                        HorizontalDivider()
+                                        DropdownMenuItem(
+                                            text = { Text("Remove from library", color = MaterialTheme.colorScheme.error) },
+                                            leadingIcon = { Icon(Icons.Outlined.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                                            onClick = { menuOpen = false; removeOpen = true },
+                                        )
+                                    }
                                 }
                             }
                         },
@@ -409,11 +441,12 @@ fun SeriesDetailScreen(
                 }
             },
             floatingActionButton = {
-                if (resume != null && !selection.active) {
-                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        androidx.compose.material3.SmallFloatingActionButton(onClick = resume.openIncognito) {
-                            Icon(Icons.Filled.VisibilityOff, contentDescription = "Read incognito")
-                        }
+                AnimatedVisibility(
+                    resume != null && !selection.active && fabVisible,
+                    enter = fadeIn() + androidx.compose.animation.scaleIn(),
+                    exit = fadeOut() + androidx.compose.animation.scaleOut(),
+                ) {
+                    if (resume != null) {
                         androidx.compose.material3.ExtendedFloatingActionButton(
                             onClick = resume.open,
                             icon = { Icon(Icons.Filled.PlayArrow, contentDescription = null) },
@@ -459,7 +492,7 @@ fun SeriesDetailScreen(
                         onToggleDir = { sortDesc = !sortDesc }, onSetSortKey = { sortKey = it },
                         translator = translator, onSetTranslator = { translator = it },
                         onRefresh = { runAction("Chapters refreshed") { api.refreshSeriesChapters(s.baseUrl, s.apiKey, seriesId) } },
-                        headerActions = headerActions,
+                        headerActions = headerActions, headerPrimary = headerPrimary,
                         selection = selection,
                         onOpenReader = onOpenReader, onOpenSourceReader = onOpenSourceReader,
                         onOpenReaderIncognito = onOpenReaderIncognito, onOpenSourceReaderIncognito = onOpenSourceReaderIncognito,
@@ -470,7 +503,7 @@ fun SeriesDetailScreen(
                         sortDesc = sortDesc, sortKey = sortKey,
                         onToggleDir = { sortDesc = !sortDesc }, onSetSortKey = { sortKey = it },
                         onRefresh = { runAction("Refreshing metadata…") { api.refreshSeriesMetadata(s.baseUrl, s.apiKey, seriesId) } },
-                        headerActions = headerActions,
+                        headerActions = headerActions, headerPrimary = headerPrimary,
                         selection = selection, onOpenBook = onOpenBook, onShowBookDetails = onShowBookDetails,
                         onOpenSeries = onOpenSeries,
                         listState = listState, topInset = topInset, bottomInset = bottomInset,
@@ -779,6 +812,7 @@ private fun BooksLayout(
     onSetSortKey: (SeriesSort) -> Unit,
     onRefresh: () -> Unit,
     headerActions: @Composable () -> Unit,
+    headerPrimary: @Composable () -> Unit,
     selection: SelectionState<String>,
     onOpenBook: (String) -> Unit,
     onShowBookDetails: (String) -> Unit,
@@ -797,11 +831,10 @@ private fun BooksLayout(
     SeriesDetailList(listState, topInset, bottomInset, header = {
         SeriesHeader(
             baseUrl, apiKey, content.detail,
-            countLabel = "${content.books.size} ${if (content.books.size == 1) "book" else "books"}",
-            unread = content.books.count { it.readProgress?.completed != true },
             libraryName = content.libraryName,
             sourceName = content.sourceName,
             actions = headerActions,
+            primary = headerPrimary,
         )
         if (content.subseries.isNotEmpty()) {
             Spacer(Modifier.height(16.dp))
@@ -862,6 +895,17 @@ private fun BookRow(
             if (selection.active) SelectionTick(selected)
             Box(Modifier.width(44.dp).height(62.dp).clip(RoundedCornerShape(6.dp))) {
                 CoverImage(bookCoverUrl(baseUrl, book.id), apiKey, Modifier.fillMaxSize())
+                // Part-read books carry their progress along the thumbnail's bottom edge.
+                val progress = book.readProgress
+                if (progress != null && !progress.completed && book.pageCount > 0) {
+                    androidx.compose.material3.LinearProgressIndicator(
+                        progress = { (progress.page.toFloat() / book.pageCount).coerceIn(0f, 1f) },
+                        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(3.dp),
+                        trackColor = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.4f),
+                        drawStopIndicator = {},
+                        gapSize = 0.dp,
+                    )
+                }
             }
             Spacer(Modifier.width(12.dp))
         },
@@ -902,6 +946,7 @@ private fun ChaptersLayout(
     onSetTranslator: (String?) -> Unit,
     onRefresh: () -> Unit,
     headerActions: @Composable () -> Unit,
+    headerPrimary: @Composable () -> Unit,
     selection: SelectionState<String>,
     onOpenReader: (String) -> Unit,
     onOpenSourceReader: OpenSourceReader,
@@ -922,16 +967,14 @@ private fun ChaptersLayout(
         SeriesSort.SOURCE -> visibleChapters
     }
     val display = if (sortDesc) ascending.asReversed() else ascending
-    val downloaded = visibleChapters.count { it.downloaded }
     // Rows are full-bleed (their selection highlight spans the width), so the list itself has no side padding.
     SeriesDetailList(listState, topInset, bottomInset, header = {
         SeriesHeader(
             baseUrl, apiKey, content.detail,
-            countLabel = "${visibleChapters.size} books · $downloaded downloaded",
-            unread = visibleChapters.count { !it.read },
             libraryName = content.libraryName,
             sourceName = content.sourceName,
             actions = headerActions,
+            primary = headerPrimary,
         )
         Spacer(Modifier.height(20.dp))
         SeriesListControls(
@@ -964,9 +1007,9 @@ private fun ChapterRow(
     val selected = selection.isSelected(chapter.chapterId)
     SeriesEntryRow(
         title = chapter.name?.takeIf { it.isNotBlank() } ?: chapterNumberLabel(chapter),
+        // Downloaded-or-streamed is an icon at the end now; spelling "Stream" on every row was noise.
         meta = listOfNotNull(
             chapter.number?.let { n -> "#" + (if (n % 1.0 == 0.0) n.toInt().toString() else n.toString()) },
-            if (chapter.downloaded) "Downloaded" else "Stream",
             chapter.scanlator?.takeIf { it.isNotBlank() },
             chapter.releaseDate?.takeIf { it.isNotBlank() },
         ).joinToString(" · "),
@@ -982,9 +1025,31 @@ private fun ChapterRow(
         onLongClick = { selection.toggle(chapter.chapterId) },
         dimmed = chapter.read,
         selected = selected,
-        leading = if (selection.active) ({ SelectionTick(selected) }) else null,
+        leading = if (selection.active) ({ SelectionTick(selected) }) else ({ UnreadDot(!chapter.read) }),
         titleTrailing = if (chapter.isNew) ({ MetaChip("New") }) else null,
+        trailing = {
+            chapter.page?.takeIf { it > 0 && !chapter.read }?.let { p ->
+                Text("Page $p", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            }
+            if (chapter.downloaded) {
+                Spacer(Modifier.width(8.dp))
+                Icon(
+                    Icons.Filled.DownloadDone, contentDescription = "Downloaded",
+                    tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp),
+                )
+            }
+        },
     )
+}
+
+/** Unread marker before a row's title; a read row keeps the space so titles stay aligned. */
+@Composable
+private fun UnreadDot(unread: Boolean) {
+    Box(
+        Modifier.size(7.dp).clip(androidx.compose.foundation.shape.CircleShape)
+            .background(if (unread) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent),
+    )
+    Spacer(Modifier.width(10.dp))
 }
 
 /** Mihon-style backdrop: the cover, blurred, fading into the page background under the header. */
@@ -999,11 +1064,10 @@ private fun SeriesHeader(
     baseUrl: String,
     apiKey: String,
     detail: SeriesDetailDto,
-    countLabel: String,
-    unread: Int,
     libraryName: String? = null,
     sourceName: String? = null,
     actions: (@Composable () -> Unit)? = null,
+    primary: (@Composable () -> Unit)? = null,
 ) {
     SeriesHeader(
         coverUrl = seriesCoverUrl(baseUrl, detail.id, detail.coverUrl, detail.sourceProviderId),
@@ -1012,35 +1076,111 @@ private fun SeriesHeader(
         chips = (detail.genres + detail.tags).distinct(),
         summary = detail.summary,
         actions = actions,
+        primary = primary,
     ) {
-        Spacer(Modifier.height(6.dp))
         // Author / artist (artist shown only when it differs from the author).
         val people = listOfNotNull(
             detail.author.takeIf { it.isNotBlank() },
             detail.artist.takeIf { it.isNotBlank() && !it.equals(detail.author, ignoreCase = true) },
         ).joinToString(" · ")
         if (people.isNotBlank()) {
-            Text(people, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-        }
-        Text(countLabel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (unread > 0) {
-            Text("$unread unread", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Outlined.Person, contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp),
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    people, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         if (detail.publisher.isNotBlank()) {
-            Text(detail.publisher, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                detail.publisher, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
         }
-        val provenance = listOfNotNull(
-            sourceName?.takeIf { it.isNotBlank() },
-            detail.language.takeIf { it.isNotBlank() }?.uppercase(),
-        ).joinToString(" · ")
-        if (provenance.isNotBlank()) {
-            Spacer(Modifier.height(4.dp))
-            Text(provenance, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // Provenance as pills: status, where it comes from, its language, and which shelf it's on.
+        Spacer(Modifier.height(10.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            detail.status?.takeIf { it.isNotBlank() && !it.equals("unknown", ignoreCase = true) }?.let { InfoPill(prettyStatus(it), Icons.Outlined.Schedule, accent = true) }
+            sourceName?.takeIf { it.isNotBlank() }?.let { InfoPill(it, Icons.Outlined.Public) }
+            detail.language.takeIf { it.isNotBlank() }?.let { InfoPill(it.uppercase(), Icons.Outlined.Translate) }
+            libraryName?.takeIf { it.isNotBlank() }?.let { InfoPill(it, Icons.Outlined.LocalLibrary) }
         }
-        // The library this series belongs to — shown so it's clear which shelf it came from.
-        if (!libraryName.isNullOrBlank()) {
-            Spacer(Modifier.height(4.dp))
-            Text("Library · $libraryName", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary)
+    }
+}
+
+/** "ONGOING" / "hiatus" / "Completed" → "Ongoing" / "Hiatus" / "Completed". */
+private fun prettyStatus(status: String): String =
+    status.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() }
+
+/**
+ * The header's call to action: one big button naming exactly what it'll open, an incognito twin
+ * beside it, and a progress bar for how far through the series you are.
+ */
+@Composable
+private fun ResumePanel(resume: Resume?, done: Int, total: Int, downloaded: Int?) {
+    Column {
+        if (resume != null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Button(
+                    onClick = resume.open,
+                    modifier = Modifier.weight(1f).height(56.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                ) {
+                    Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(resume.label, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            resume.target,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = LocalContentColor.current.copy(alpha = 0.8f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                androidx.compose.material3.FilledTonalIconButton(
+                    onClick = resume.openIncognito,
+                    modifier = Modifier.size(56.dp),
+                    shape = RoundedCornerShape(16.dp),
+                ) {
+                    Icon(Icons.Filled.VisibilityOff, contentDescription = "Read incognito")
+                }
+            }
+        }
+        if (total > 0) {
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "$done of $total read",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(Modifier.weight(1f))
+                val extra = listOfNotNull(
+                    (total - done).takeIf { it > 0 }?.let { "$it unread" },
+                    downloaded?.takeIf { it > 0 }?.let { "$it downloaded" },
+                ).joinToString(" · ")
+                if (extra.isNotBlank()) {
+                    Text(extra, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            androidx.compose.material3.LinearProgressIndicator(
+                progress = { done.toFloat() / total },
+                modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                drawStopIndicator = {},
+                gapSize = 0.dp,
+            )
         }
     }
 }
