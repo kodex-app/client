@@ -1,5 +1,16 @@
 package dev.icedtea.kodex.ui.reader
 
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.material.icons.automirrored.outlined.FormatListBulleted
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.OpenInBrowser
+import androidx.compose.material.icons.outlined.SwipeVertical
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
@@ -55,17 +66,13 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.outlined.ViewList
-import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.AutoStories
-import androidx.compose.material.icons.outlined.Book
 import androidx.compose.material.icons.outlined.Bookmark
 import androidx.compose.material.icons.outlined.BrokenImage
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.BookmarkBorder
-import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
@@ -576,6 +583,8 @@ fun ImageReaderScreen(
                     scrollSpeed = p.scrollSpeed,
                     onToggleAutoScroll = { autoScroll = !autoScroll },
                     onScrollSpeed = { update(p.copy(scrollSpeed = it)) },
+                    onOpenSeries = onOpenSeries,
+                    onOpenWeb = source.webUrl?.let { url -> { openUrl(url) } },
                 )
             }
             AnimatedVisibility(chrome, modifier = Modifier.align(Alignment.BottomCenter), enter = bottomBarEnter, exit = bottomBarExit) {
@@ -584,19 +593,16 @@ fun ImageReaderScreen(
                     pageCount = source.pageCount,
                     pageLabel = pageLabel,
                     rtl = p.isRtl,
-                    hasChapters = (source.nav?.chapters?.size ?: 0) > 1,
+                    hasContents = (source.nav?.chapters?.size ?: 0) > 1 || source.bookmarks != null,
                     canPrevChapter = source.nav?.prev != null,
                     canNextChapter = source.nav?.next != null,
-                    webEnabled = source.webUrl != null,
                     mode = p.mode,
                     direction = p.direction,
                     onPrevChapter = { source.nav?.prev?.open(ReaderEdge.FIRST) },
                     onNextChapter = { source.nav?.next?.open(ReaderEdge.FIRST) },
-                    onOpenChapters = { chaptersOpen = true },
-                    onOpenWeb = { source.webUrl?.let { openUrl(it) } },
+                    onOpenContents = { chaptersOpen = true },
                     onSetReadMode = { m, d -> update(p.copy(mode = m, direction = d)) },
                     onOpenSettings = { settingsOpen = true },
-                    onOpenSeries = onOpenSeries,
                     onSeek = { target -> page = target.coerceIn(1, source.pageCount) },
                     onOpenPicker = { pickerOpen = true },
                 )
@@ -609,9 +615,25 @@ fun ImageReaderScreen(
         }
     }
 
-    if (chaptersOpen && p != null && source.nav != null) {
-        KodexBottomSheet(onDismissRequest = { chaptersOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-            ChapterListSheet(source.nav.chapters) { chaptersOpen = false }
+    if (chaptersOpen && p != null) {
+        val tabs = buildList {
+            source.nav?.chapters?.takeIf { it.size > 1 }?.let { chapters ->
+                add(ReaderTab("Books") { ChapterList(chapters) { chaptersOpen = false } })
+            }
+            source.bookmarks?.let { marks ->
+                add(
+                    ReaderTab("Bookmarks") {
+                        PageBookmarkList(marks.pages, page, onOpen = { page = it; chaptersOpen = false }, onRemove = marks.toggle)
+                    },
+                )
+            }
+        }
+        if (tabs.isEmpty()) {
+            chaptersOpen = false
+        } else {
+            KodexBottomSheet(onDismissRequest = { chaptersOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+                ReaderTabbedSheet(tabs)
+            }
         }
     }
 
@@ -1212,6 +1234,8 @@ private fun TopBar(
     scrollSpeed: Int,
     onToggleAutoScroll: () -> Unit,
     onScrollSpeed: (Int) -> Unit,
+    onOpenSeries: (() -> Unit)?,
+    onOpenWeb: (() -> Unit)?,
 ) {
     val content = MaterialTheme.colorScheme.readerBarContentColor
     // Collapses itself when the reader leaves continuous mode, so switching back doesn't reopen a
@@ -1224,40 +1248,32 @@ private fun TopBar(
             Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = content) }
+            dev.icedtea.kodex.ui.TooltipIconButton("Back", onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = content) }
             // Series on top, this chapter beneath it — the chapter is the line that changes as you read,
             // so it gets the quieter treatment and the title keeps the top-bar weight.
-            Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
-                Text(title, color = content, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
-                if (!subtitle.isNullOrBlank()) {
-                    Text(
-                        subtitle,
-                        color = content.copy(alpha = 0.7f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-            }
+            ReaderTitle(title, subtitle, onOpenSeries, Modifier.weight(1f))
             if (hasAutoScroll) {
-                IconButton(onClick = { expanded = !expanded }) {
+                val label = if (expanded) "Hide auto-scroll" else "Auto-scroll"
+                dev.icedtea.kodex.ui.TooltipIconButton(label, { expanded = !expanded }) {
                     Icon(
                         if (expanded) Icons.Outlined.KeyboardArrowUp else Icons.Outlined.KeyboardArrowDown,
-                        contentDescription = if (expanded) "Hide auto-scroll" else "Auto-scroll",
+                        contentDescription = label,
                         // Tinted while running, so a collapsed panel still says whether it is on.
                         tint = if (autoScroll) MaterialTheme.colorScheme.primary else content,
                     )
                 }
             }
             if (bookmarked != null) {
-                IconButton(onClick = onToggleBookmark) {
+                val label = if (bookmarked) "Remove bookmark" else "Bookmark this page"
+                dev.icedtea.kodex.ui.TooltipIconButton(label, onToggleBookmark) {
                     Icon(
                         if (bookmarked) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,
-                        contentDescription = if (bookmarked) "Remove bookmark" else "Bookmark this page",
+                        contentDescription = label,
                         tint = if (bookmarked) MaterialTheme.colorScheme.primary else content,
                     )
                 }
             }
+            ReaderOverflowMenu(onOpenSeries, onOpenWeb)
         }
         if (hasAutoScroll) {
             // ColumnScope defaults: fade + expand/shrink vertically, so the bar grows into the panel
@@ -1316,23 +1332,20 @@ private fun BottomBar(
     pageCount: Int,
     pageLabel: String,
     rtl: Boolean,
-    hasChapters: Boolean,
+    hasContents: Boolean,
     canPrevChapter: Boolean,
     canNextChapter: Boolean,
-    webEnabled: Boolean,
     mode: String,
     direction: String,
     onPrevChapter: () -> Unit,
     onNextChapter: () -> Unit,
-    onOpenChapters: () -> Unit,
-    onOpenWeb: () -> Unit,
+    onOpenContents: () -> Unit,
     onSetReadMode: (mode: String, direction: String) -> Unit,
     onOpenSettings: () -> Unit,
-    onOpenSeries: (() -> Unit)?,
     onSeek: (Int) -> Unit,
     onOpenPicker: () -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.readerBarColor).navigationBarsPadding()) {
+    Column(Modifier.fillMaxWidth().readerBottomPanel(MaterialTheme.colorScheme.readerBarColor)) {
         ChapterNavigator(
             page = page,
             pageCount = pageCount,
@@ -1345,18 +1358,16 @@ private fun BottomBar(
             onSeek = onSeek,
             onOpenPicker = onOpenPicker,
         )
-        // Toolbar row: series · chapter list · open in web · read mode · settings.
-        // Auto-scroll is not here — it lives in the top bar's panel, next to the speed it needs.
+        // Three labelled entries: where to go (books + bookmarks), how pages are laid out, how they
+        // look. Series details and the web link are rare mid-chapter, so they moved to the top bar's
+        // menu; auto-scroll lives in the top bar's panel, next to the speed it needs.
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            onOpenSeries?.let { open -> ToolbarButton(Icons.Outlined.Book, "Series details", onClick = open) }
-            ToolbarButton(Icons.AutoMirrored.Outlined.ViewList, "Books", enabled = hasChapters, onClick = onOpenChapters)
-            ToolbarButton(Icons.Outlined.Public, "Open in web", enabled = webEnabled, onClick = onOpenWeb)
+            LabeledToolbarButton(Icons.AutoMirrored.Outlined.FormatListBulleted, "Contents", "Books & bookmarks", enabled = hasContents, onClick = onOpenContents)
             ReadModeButton(mode, direction, onSetReadMode)
-            ToolbarButton(Icons.Outlined.Settings, "Settings", onClick = onOpenSettings)
+            LabeledToolbarButton(Icons.Outlined.Tune, "Display", "Display settings", onClick = onOpenSettings)
         }
     }
 }
@@ -1449,14 +1460,30 @@ private const val SLIDER_TICK_LIMIT = 40
 private fun sliderSteps(pageCount: Int): Int = if (pageCount in 2..SLIDER_TICK_LIMIT) pageCount - 2 else 0
 
 @Composable
-private fun ReadModeButton(mode: String, direction: String, onSelect: (mode: String, direction: String) -> Unit) {
+private fun RowScope.ReadModeButton(mode: String, direction: String, onSelect: (mode: String, direction: String) -> Unit) {
     val current = READ_MODES.firstOrNull { it.mode == mode && (mode != MODE_PAGED || it.direction == direction) }
         ?: READ_MODES.first()
-    ReadModeButton(READ_MODES.map { ReaderModeOption(it.key, it.label, it.icon) }, current.key) { id ->
-        val picked = READ_MODES.first { it.key == id }
-        // Auto and continuous don't read a direction, so leave the paged one as it was rather than
-        // resetting it every time the reader passes through them.
-        onSelect(picked.mode, if (picked.mode == MODE_PAGED) picked.direction else direction)
+    var open by remember { mutableStateOf(false) }
+    // The label names the current mode, so which one is on is readable without opening the menu.
+    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+        ToolbarLabelButton(current.icon, current.short, "Reading mode: ${current.label}", onClick = { open = true })
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            READ_MODES.forEach { o ->
+                DropdownMenuItem(
+                    text = { Text(o.label) },
+                    leadingIcon = { Icon(o.icon, contentDescription = null) },
+                    trailingIcon = {
+                        if (o.key == current.key) Icon(Icons.Outlined.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    },
+                    onClick = {
+                        open = false
+                        // Auto and continuous don't read a direction, so leave the paged one as it was
+                        // rather than resetting it every time the reader passes through them.
+                        onSelect(o.mode, if (o.mode == MODE_PAGED) o.direction else direction)
+                    },
+                )
+            }
+        }
     }
 }
 
@@ -1465,6 +1492,8 @@ private data class ReadMode(
     val mode: String,
     val direction: String,
     val label: String,
+    /** What the toolbar button's caption says — the menu has room for the long form, the button doesn't. */
+    val short: String,
     val icon: androidx.compose.ui.graphics.vector.ImageVector,
 ) {
     /** Identifies the entry in the menu — the direction only tells two entries apart when paged. */
@@ -1477,40 +1506,210 @@ private data class ReadMode(
  * spread, background) stays in the settings sheet.
  */
 private val READ_MODES = listOf(
-    ReadMode(MODE_AUTO, DIR_LTR, "Auto", Icons.Outlined.AutoStories),
-    ReadMode(MODE_PAGED, DIR_LTR, "Paged · L → R", Icons.AutoMirrored.Outlined.ArrowForward),
-    ReadMode(MODE_PAGED, DIR_RTL, "Paged · R → L", Icons.AutoMirrored.Outlined.ArrowBack),
-    ReadMode(MODE_CONTINUOUS, DIR_LTR, "Continuous", Icons.Outlined.ArrowDownward),
+    ReadMode(MODE_AUTO, DIR_LTR, "Auto", "Auto", Icons.Outlined.AutoStories),
+    ReadMode(MODE_PAGED, DIR_LTR, "Paged · L → R", "L → R", Icons.AutoMirrored.Outlined.ArrowForward),
+    ReadMode(MODE_PAGED, DIR_RTL, "Paged · R → L", "R → L", Icons.AutoMirrored.Outlined.ArrowBack),
+    ReadMode(MODE_CONTINUOUS, DIR_LTR, "Continuous", "Scroll", Icons.Outlined.SwipeVertical),
 )
 
-/** One choice in a reader's reading-mode menu — see [ReadModeButton]. */
-internal data class ReaderModeOption(
-    val id: String,
-    val label: String,
-    val icon: androidx.compose.ui.graphics.vector.ImageVector,
-)
+// ── Chrome shared by both readers ─────────────────────────────────────────────────────────────────
 
 /**
- * The toolbar's reading-mode picker, shared by both readers: the current mode as the button's icon,
- * opening a menu of the modes that reader offers. What counts as a mode differs (page layout and
- * direction for images, paginated vs scrolled for text), so the options come from the caller.
+ * The bottom panel's surface: rounded top corners and a shadow, so it reads as a sheet over the page
+ * rather than a band cut across it. [color] differs — the image reader keeps its 95% bar over art,
+ * the ebook reader goes opaque over text.
+ */
+internal fun Modifier.readerBottomPanel(color: Color): Modifier {
+    val shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+    return shadow(8.dp, shape).clip(shape).background(color).navigationBarsPadding().padding(top = 6.dp)
+}
+
+/** Title + subtitle in a top bar; tapping it opens the series when [onOpenSeries] is set. */
+@Composable
+internal fun ReaderTitle(title: String, subtitle: String?, onOpenSeries: (() -> Unit)?, modifier: Modifier = Modifier) {
+    val content = MaterialTheme.colorScheme.readerBarContentColor
+    Column(
+        modifier
+            .clip(RoundedCornerShape(8.dp))
+            .then(if (onOpenSeries != null) Modifier.clickable(onClickLabel = "Series details", onClick = onOpenSeries) else Modifier)
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    ) {
+        Text(title, color = content, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
+        if (!subtitle.isNullOrBlank()) {
+            Text(
+                subtitle,
+                color = content.copy(alpha = 0.7f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+/**
+ * The top bar's ⋮: the actions you rarely want mid-chapter (series details, the source's web page),
+ * which used to take two of the bottom toolbar's slots. Absent when neither applies.
+ *
+ * A small sheet rather than a DropdownMenu: over the ebook reader's WebView, a focusable popup stopped
+ * the window rendering altogether (sheets and tooltips were fine), and the sheet is the reader's
+ * pattern for everything else anyway.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun ReaderOverflowMenu(onOpenSeries: (() -> Unit)?, onOpenWeb: (() -> Unit)?) {
+    if (onOpenSeries == null && onOpenWeb == null) return
+    var open by remember { mutableStateOf(false) }
+    dev.icedtea.kodex.ui.TooltipIconButton("More", { open = true }) {
+        Icon(Icons.Outlined.MoreVert, contentDescription = "More", tint = MaterialTheme.colorScheme.readerBarContentColor)
+    }
+    if (open) {
+        KodexBottomSheet(onDismissRequest = { open = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+            Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+                onOpenSeries?.let { go -> ReaderSheetAction(Icons.Outlined.Info, "Series details") { open = false; go() } }
+                onOpenWeb?.let { go -> ReaderSheetAction(Icons.Outlined.OpenInBrowser, "Open in browser") { open = false; go() } }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReaderSheetAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 24.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.width(16.dp))
+        Text(label, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+/** A bottom-toolbar entry taking an equal share of the row — see [ToolbarLabelButton]. */
+@Composable
+internal fun RowScope.LabeledToolbarButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tooltip: String,
+    enabled: Boolean = true,
+    tint: Color = MaterialTheme.colorScheme.readerBarContentColor,
+    onClick: () -> Unit,
+) {
+    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+        ToolbarLabelButton(icon, label, tooltip, enabled, tint, onClick)
+    }
+}
+
+/**
+ * Icon over a short caption, the full name in a tooltip. Bare glyphs in a row of five or six were
+ * guesswork — two of them were lists — so every bottom-toolbar entry says what it is.
  */
 @Composable
-internal fun ReadModeButton(options: List<ReaderModeOption>, selected: String, onSelect: (String) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    val current = options.firstOrNull { it.id == selected } ?: options.first()
-    Box {
-        ToolbarButton(current.icon, "Reading mode", onClick = { open = true })
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            options.forEach { o ->
-                DropdownMenuItem(
-                    text = { Text(o.label) },
-                    leadingIcon = { Icon(o.icon, contentDescription = null) },
-                    trailingIcon = {
-                        if (o.id == current.id) Icon(Icons.Outlined.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    },
-                    onClick = { open = false; onSelect(o.id) },
+internal fun ToolbarLabelButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tooltip: String,
+    enabled: Boolean = true,
+    tint: Color = MaterialTheme.colorScheme.readerBarContentColor,
+    onClick: () -> Unit,
+) {
+    val color = if (enabled) tint else MaterialTheme.colorScheme.readerBarContentColor.disabled()
+    dev.icedtea.kodex.ui.Tip(tooltip) {
+        Column(
+            Modifier.clip(RoundedCornerShape(12.dp))
+                .clickable(enabled = enabled, onClick = onClick)
+                .padding(horizontal = 10.dp, vertical = 6.dp)
+                .semantics(mergeDescendants = true) {},
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(icon, contentDescription = tooltip, tint = color, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.height(3.dp))
+            Text(label, color = color, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+        }
+    }
+}
+
+/** One tab of [ReaderTabbedSheet]. */
+internal class ReaderTab(val title: String, val content: @Composable () -> Unit)
+
+/**
+ * The reader's one "where to go" sheet: a tab per list (this book's contents, the series' books,
+ * bookmarks). They were separate toolbar buttons opening separate sheets, which cost three slots for
+ * what is one question. A single tab drops the tab row and shows its title instead.
+ */
+@Composable
+internal fun ReaderTabbedSheet(tabs: List<ReaderTab>) {
+    var selected by remember { mutableIntStateOf(0) }
+    val index = selected.coerceIn(0, tabs.lastIndex)
+    Column(Modifier.fillMaxWidth().heightIn(max = 520.dp).padding(bottom = 16.dp)) {
+        if (tabs.size > 1) {
+            // A pill row rather than PrimaryTabRow: that one froze the reader's rendering when hosted in
+            // this sheet on Android, and three short labels don't need its scrolling machinery anyway.
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+                    .clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                    .padding(4.dp),
+            ) {
+                tabs.forEachIndexed { i, tab ->
+                    val on = i == index
+                    Text(
+                        tab.title,
+                        color = if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelLarge,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        modifier = Modifier.weight(1f)
+                            .clip(RoundedCornerShape(50))
+                            .background(if (on) MaterialTheme.colorScheme.primary else Color.Transparent)
+                            .clickable { selected = i }
+                            .padding(vertical = 8.dp),
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        } else {
+            Text(
+                tabs[index].title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 8.dp),
+            )
+        }
+        Box(Modifier.weight(1f, fill = false)) { tabs[index].content() }
+    }
+}
+
+/** The image reader's page bookmarks as a list to jump between; the top bar's icon adds and removes. */
+@Composable
+private fun PageBookmarkList(pages: Set<Int>, current: Int, onOpen: (Int) -> Unit, onRemove: (Int) -> Unit) {
+    if (pages.isEmpty()) {
+        Text(
+            "No bookmarks in this book yet. Tap the bookmark icon at the top to mark a page.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+        )
+        return
+    }
+    LazyColumn {
+        items(pages.sorted(), key = { it }) { p ->
+            Row(
+                Modifier.fillMaxWidth()
+                    .background(if (p == current) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else Color.Transparent)
+                    .clickable { onOpen(p) }
+                    .padding(start = 20.dp, end = 8.dp, top = 2.dp, bottom = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Outlined.Bookmark, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    if (p == current) "Page $p · here" else "Page $p",
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.weight(1f),
                 )
+                dev.icedtea.kodex.ui.TooltipIconButton("Remove bookmark", { onRemove(p) }) {
+                    Icon(Icons.Outlined.Delete, contentDescription = "Remove bookmark", tint = MaterialTheme.colorScheme.error)
+                }
             }
         }
     }
@@ -1579,15 +1778,12 @@ internal fun IncognitoBadge(modifier: Modifier = Modifier) {
  * finished ones are ticked and dimmed, and a started one says which page it stopped on.
  */
 @Composable
-internal fun ChapterListSheet(chapters: List<ReaderChapterItem>, onClose: () -> Unit) {
+internal fun ChapterList(chapters: List<ReaderChapterItem>, onClose: () -> Unit) {
     val activeIndex = chapters.indexOfFirst { it.active }
     // Two rows above the active one, so it lands with context rather than pinned to the top edge.
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = (activeIndex - 2).coerceAtLeast(0))
-    Column(Modifier.fillMaxWidth().heightIn(max = 480.dp).padding(bottom = 24.dp)) {
-        Text("Books", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 8.dp))
-        LazyColumn(state = listState) {
-            items(chapters) { ch -> ChapterListRow(ch, onClose) }
-        }
+    LazyColumn(state = listState) {
+        items(chapters) { ch -> ChapterListRow(ch, onClose) }
     }
 }
 
