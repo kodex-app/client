@@ -1524,8 +1524,11 @@ internal fun ToolbarButton(
     tint: Color = MaterialTheme.colorScheme.readerBarContentColor,
     onClick: () -> Unit,
 ) {
-    IconButton(onClick = onClick, enabled = enabled) {
-        Icon(icon, contentDescription = desc, tint = if (enabled) tint else MaterialTheme.colorScheme.readerBarContentColor.disabled())
+    // Icon-only, so its name rides along as a tooltip (long-press on touch, hover on desktop).
+    dev.icedtea.kodex.ui.Tip(desc) {
+        IconButton(onClick = onClick, enabled = enabled) {
+            Icon(icon, contentDescription = desc, tint = if (enabled) tint else MaterialTheme.colorScheme.readerBarContentColor.disabled())
+        }
     }
 }
 

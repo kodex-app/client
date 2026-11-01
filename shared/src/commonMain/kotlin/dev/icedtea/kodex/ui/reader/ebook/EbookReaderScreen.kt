@@ -1,5 +1,21 @@
 package dev.icedtea.kodex.ui.reader.ebook
 
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.material.icons.automirrored.outlined.Toc
+import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.CollectionsBookmark
+import androidx.compose.material.icons.outlined.Headphones
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.OpenInBrowser
+import androidx.compose.material.icons.outlined.SwipeVertical
+import androidx.compose.material.icons.outlined.TextFields
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.semantics
+import dev.icedtea.kodex.ui.Tip
+import dev.icedtea.kodex.ui.TooltipIconButton
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -30,12 +46,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.ChromeReaderMode
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.outlined.ViewList
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.Book
 import androidx.compose.material.icons.outlined.Bookmark
@@ -46,9 +59,7 @@ import androidx.compose.material.icons.outlined.FastForward
 import androidx.compose.material.icons.outlined.FastRewind
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.RecordVoiceOver
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.Speed
@@ -107,9 +118,7 @@ import dev.icedtea.kodex.ui.reader.ChapterListSheet
 import dev.icedtea.kodex.ui.reader.ChapterTransitionPage
 import dev.icedtea.kodex.ui.reader.IncognitoBadge
 import dev.icedtea.kodex.ui.reader.ReaderChapterNav
-import dev.icedtea.kodex.ui.reader.ReadModeButton
 import dev.icedtea.kodex.ui.reader.ReaderEdge
-import dev.icedtea.kodex.ui.reader.ReaderModeOption
 import dev.icedtea.kodex.ui.reader.ReaderSettingsCard
 import dev.icedtea.kodex.ui.reader.ReaderSettingsFooter
 import dev.icedtea.kodex.ui.reader.ReaderSettingsHeader
@@ -122,7 +131,6 @@ import dev.icedtea.kodex.ui.reader.ReaderSettingsSwatches
 import dev.icedtea.kodex.ui.reader.ReaderSwatch
 import dev.icedtea.kodex.ui.reader.SETTINGS_SHEET_FRACTION
 import dev.icedtea.kodex.ui.reader.SheetGutter
-import dev.icedtea.kodex.ui.reader.ToolbarButton
 import dev.icedtea.kodex.ui.reader.disabled
 import dev.icedtea.kodex.ui.reader.readerBarColor
 import dev.icedtea.kodex.ui.reader.readerBarContentColor
@@ -1031,11 +1039,12 @@ private fun EbookTopBar(
 ) {
     val content = MaterialTheme.colorScheme.readerBarContentColor
     Row(
-        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.readerBarColor).statusBarsPadding()
+        // Opaque, unlike the image reader's 95% bar: over body text even 5% let the words ghost through.
+        Modifier.fillMaxWidth().shadow(4.dp).background(MaterialTheme.colorScheme.readerBarColor.copy(alpha = 1f)).statusBarsPadding()
             .padding(horizontal = 4.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = content) }
+        TooltipIconButton("Back", onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = content) }
         Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
             Text(title, color = content, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
             if (!subtitle.isNullOrBlank()) {
@@ -1049,17 +1058,25 @@ private fun EbookTopBar(
             }
         }
         if (canReadAloud) {
-            IconButton(onClick = onToggleReadAloud) {
-                Icon(
-                    Icons.Outlined.RecordVoiceOver,
-                    contentDescription = if (readingAloud) "Stop reading aloud" else "Read aloud",
-                    tint = if (readingAloud) MaterialTheme.colorScheme.primary else content,
-                )
+            // Filled while a voice is going, so the way to stop it is the obvious thing on the bar.
+            val label = if (readingAloud) "Stop reading aloud" else "Read aloud"
+            Tip(label) {
+                if (readingAloud) {
+                    FilledIconButton(
+                        onClick = onToggleReadAloud,
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                        ),
+                    ) { Icon(Icons.Outlined.Headphones, contentDescription = label) }
+                } else {
+                    IconButton(onClick = onToggleReadAloud) { Icon(Icons.Outlined.Headphones, contentDescription = label, tint = content) }
+                }
             }
         }
         if (hasBookmarks) {
-            IconButton(onClick = onOpenBookmarks) {
-                Icon(Icons.Outlined.Bookmark, contentDescription = "Bookmarks", tint = content)
+            TooltipIconButton("Bookmarks", onOpenBookmarks) {
+                Icon(Icons.Outlined.BookmarkBorder, contentDescription = "Bookmarks", tint = content)
             }
         }
     }
@@ -1085,17 +1102,25 @@ private fun EbookTtsBar(
         modifier.fillMaxWidth().background(MaterialTheme.colorScheme.readerBarColor).padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = { onSkip(-1) }) {
+        TooltipIconButton("Previous paragraph", { onSkip(-1) }) {
             Icon(Icons.Outlined.FastRewind, contentDescription = "Previous paragraph", tint = content)
         }
-        IconButton(onClick = onPlayPause) {
-            Icon(
-                if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                contentDescription = if (playing) "Pause" else "Play",
-                tint = content,
-            )
+        // The one control that matters mid-sentence, so it's the filled one.
+        Tip(if (playing) "Pause" else "Play") {
+            FilledIconButton(
+                onClick = onPlayPause,
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                ),
+            ) {
+                Icon(
+                    if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                    contentDescription = if (playing) "Pause" else "Play",
+                )
+            }
         }
-        IconButton(onClick = { onSkip(1) }) {
+        TooltipIconButton("Next paragraph", { onSkip(1) }) {
             Icon(Icons.Outlined.FastForward, contentDescription = "Next paragraph", tint = content)
         }
         Text(
@@ -1106,10 +1131,10 @@ private fun EbookTtsBar(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        IconButton(onClick = onSettings) {
-            Icon(Icons.Outlined.Speed, contentDescription = "Voice settings", tint = content)
+        TooltipIconButton("Voice & speed", onSettings) {
+            Icon(Icons.Outlined.RecordVoiceOver, contentDescription = "Voice & speed", tint = content)
         }
-        IconButton(onClick = onClose) {
+        TooltipIconButton("Stop reading aloud", onClose) {
             Icon(Icons.Outlined.Close, contentDescription = "Stop reading aloud", tint = content)
         }
     }
@@ -1298,66 +1323,118 @@ private fun EbookBottomBar(
         disabledContainerColor = raised,
         disabledContentColor = content.disabled(),
     )
-    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.readerBarColor).navigationBarsPadding()) {
-        // Readout: which chapter you're in and how far through the book you are. A reflowable book has
-        // no page numbers, so this replaces the image reader's "12 / 180".
-        Text(
-            listOfNotNull(chapterLabel.takeIf { it.isNotBlank() }, "$percent%").joinToString(" · "),
-            color = content.copy(alpha = 0.75f),
-            style = MaterialTheme.typography.labelMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp),
-        )
-        // Seek row: skip-chapter buttons at the ends, page turns just inside them, scrubber between.
+    Column(
+        Modifier.fillMaxWidth()
+            .shadow(8.dp, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+            .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+            .background(MaterialTheme.colorScheme.readerBarColor.copy(alpha = 1f))
+            .navigationBarsPadding()
+            .padding(top = 6.dp),
+    ) {
+        // Readout: which chapter you're in on the left, how far through the book on the right. A
+        // reflowable book has no page numbers, so this replaces the image reader's "12 / 180".
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+            Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            FilledIconButton(onClick = onPrevChapter, enabled = canPrevChapter, colors = buttonColors) {
-                Icon(Icons.Outlined.SkipPrevious, "Previous book")
+            Text(
+                chapterLabel,
+                color = content.copy(alpha = 0.8f),
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                "$percent%",
+                color = content,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        // Seek row: skip-book buttons at the ends, page turns just inside them, scrubber between.
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Tip("Previous book") {
+                FilledIconButton(onClick = onPrevChapter, enabled = canPrevChapter, colors = buttonColors) {
+                    Icon(Icons.Outlined.SkipPrevious, "Previous book")
+                }
             }
-            IconButton(onClick = onPrevPage) { Icon(Icons.AutoMirrored.Outlined.KeyboardArrowLeft, "Previous page", tint = content) }
+            TooltipIconButton("Previous page", onPrevPage) {
+                Icon(Icons.AutoMirrored.Outlined.KeyboardArrowLeft, "Previous page", tint = content)
+            }
             Slider(
                 value = sliderValue,
                 onValueChange = onScrub,
                 onValueChangeFinished = { onScrubEnd(sliderValue) },
                 valueRange = 0f..100f,
-                modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
+                modifier = Modifier.weight(1f).padding(horizontal = 2.dp),
             )
-            IconButton(onClick = onNextPage) { Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, "Next page", tint = content) }
-            FilledIconButton(onClick = onNextChapter, enabled = canNextChapter, colors = buttonColors) {
-                Icon(Icons.Outlined.SkipNext, "Next book")
+            TooltipIconButton("Next page", onNextPage) {
+                Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, "Next page", tint = content)
+            }
+            Tip("Next book") {
+                FilledIconButton(onClick = onNextChapter, enabled = canNextChapter, colors = buttonColors) {
+                    Icon(Icons.Outlined.SkipNext, "Next book")
+                }
             }
         }
-        // Toolbar row: contents · chapter list · open in web · read mode · settings.
+        // Toolbar: every button labelled. Six bare glyphs — two of them lists — were guesswork; the
+        // label settles it at a glance and the tooltip repeats the full name on long-press.
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // "Book contents" = this file's own TOC; "Books" = the other books of the
-            // series. The list icon means the latter in the image reader too, so it stays put here.
-            onOpenSeries?.let { open -> ToolbarButton(Icons.Outlined.Book, "Series details", onClick = open) }
-            ToolbarButton(Icons.AutoMirrored.Outlined.ChromeReaderMode, "Book contents", enabled = hasToc, onClick = onOpenToc)
-            ToolbarButton(Icons.AutoMirrored.Outlined.ViewList, "Books", enabled = hasChapters, onClick = onOpenChapters)
-            ToolbarButton(Icons.Outlined.Public, "Open in web", enabled = webEnabled, onClick = onOpenWeb)
-            ReadModeButton(EBOOK_READ_MODES, flow, onSetFlow)
-            ToolbarButton(Icons.Outlined.Settings, "Settings", onClick = onOpenSettings)
+            // "Contents" = this file's own TOC; "Books" = the other books of the series.
+            LabeledToolbarButton(Icons.AutoMirrored.Outlined.Toc, "Contents", "Book contents", enabled = hasToc, onClick = onOpenToc)
+            LabeledToolbarButton(Icons.Outlined.CollectionsBookmark, "Books", "Books in this series", enabled = hasChapters, onClick = onOpenChapters)
+            onOpenSeries?.let { open -> LabeledToolbarButton(Icons.Outlined.Info, "Series", "Series details", onClick = open) }
+            if (webEnabled) {
+                LabeledToolbarButton(Icons.Outlined.OpenInBrowser, "Web", "Open in browser", onClick = onOpenWeb)
+            }
+            // Two modes only, so a tap flips between them rather than opening a menu of two.
+            val scrolled = flow == FLOW_SCROLLED
+            LabeledToolbarButton(
+                if (scrolled) Icons.Outlined.SwipeVertical else Icons.Outlined.AutoStories,
+                if (scrolled) "Scrolled" else "Paged",
+                if (scrolled) "Scrolled — tap for paged" else "Paged — tap for scrolled",
+                onClick = { onSetFlow(if (scrolled) FLOW_PAGINATED else FLOW_SCROLLED) },
+            )
+            LabeledToolbarButton(Icons.Outlined.TextFields, "Display", "Text & display settings", onClick = onOpenSettings)
         }
     }
 }
 
-/**
- * A reflowable book's reading modes: foliate lays the text out either in pages or as one scroll.
- * Column count is a paginated sub-choice, so it stays in the settings sheet rather than doubling the
- * length of this menu.
- */
-private val EBOOK_READ_MODES = listOf(
-    ReaderModeOption(FLOW_PAGINATED, "Paged", Icons.Outlined.AutoStories),
-    ReaderModeOption(FLOW_SCROLLED, "Scrolled", Icons.Outlined.ArrowDownward),
-)
+/** A toolbar entry: icon over a short label, the full name in a tooltip. Equal widths across the row. */
+@Composable
+private fun RowScope.LabeledToolbarButton(
+    icon: ImageVector,
+    label: String,
+    tooltip: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val content = MaterialTheme.colorScheme.readerBarContentColor
+    val tint = if (enabled) content else content.disabled()
+    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+        Tip(tooltip) {
+            Column(
+                Modifier.clip(RoundedCornerShape(12.dp))
+                    .clickable(enabled = enabled, onClick = onClick)
+                    .padding(horizontal = 6.dp, vertical = 6.dp)
+                    .semantics(mergeDescendants = true) {},
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Icon(icon, contentDescription = tooltip, tint = tint, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.height(3.dp))
+                Text(label, color = tint, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+            }
+        }
+    }
+}
 
 /** The book's own table of contents (foliate's), flattened; indent carries the nesting. */
 @Composable
