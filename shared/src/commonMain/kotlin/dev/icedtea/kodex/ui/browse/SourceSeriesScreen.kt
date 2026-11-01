@@ -85,6 +85,10 @@ import dev.icedtea.kodex.ui.catalog.SeriesEntryRow
 import dev.icedtea.kodex.ui.catalog.SeriesHeader
 import dev.icedtea.kodex.ui.catalog.SeriesListControls
 import dev.icedtea.kodex.ui.catalog.SeriesSort
+import dev.icedtea.kodex.ui.catalog.SeriesSortPref
+import dev.icedtea.kodex.ui.catalog.loadSeriesSort
+import dev.icedtea.kodex.ui.catalog.saveSeriesSort
+import dev.icedtea.kodex.ui.catalog.sourceSeriesSortKey
 import dev.icedtea.kodex.ui.catalog.sourceCoverUrl
 import dev.icedtea.kodex.ui.collectAsStateSafe
 import dev.icedtea.kodex.ui.friendlyMessage
@@ -130,6 +134,25 @@ fun SourceSeriesScreen(
     var sortDesc by st.sortDesc
     var sortKey by st.sortKey
     var translator by st.translator
+    // Shared with the web and with this series once it is in the library — see SeriesSortPrefs.kt.
+    val sortSettingKey = sourceSeriesSortKey(source.id, seed.externalId)
+    LaunchedEffect(server?.id, sortSettingKey) {
+        val s = server ?: return@LaunchedEffect
+        if (st.sortLoaded) return@LaunchedEffect // within a visit the retained state is newer
+        runCatching { api.loadSeriesSort(s.baseUrl, s.apiKey, sortSettingKey) }.getOrNull()?.let {
+            sortKey = it.key
+            sortDesc = it.desc
+        }
+        st.sortLoaded = true
+    }
+
+    fun setSort(key: SeriesSort, desc: Boolean) {
+        sortKey = key
+        sortDesc = desc
+        st.sortLoaded = true
+        val s = server ?: return
+        scope.launch { runCatching { api.saveSeriesSort(s.baseUrl, s.apiKey, sortSettingKey, SeriesSortPref(key, desc)) } }
+    }
     // The read actions live in the Scaffold's FAB slot, but only the loaded chapter list knows which
     // chapter to resume — so the content publishes it up here (and clears it while reloading).
     var readFab by remember { mutableStateOf<ReadFab?>(null) }
@@ -295,7 +318,7 @@ fun SourceSeriesScreen(
                         countLabel = "Books · ${visible.size}",
                         numberLabel = "Book number",
                         sortKey = sortKey, sortDesc = sortDesc,
-                        onToggleDir = { sortDesc = !sortDesc }, onSetSortKey = { sortKey = it },
+                        onToggleDir = { setSort(sortKey, !sortDesc) }, onSetSortKey = { setSort(it, sortDesc) },
                         scanlators = scanlators, translator = translator, onSetTranslator = { translator = it },
                         onRefresh = { reload++ },
                     )
@@ -511,4 +534,6 @@ private class SourceSeriesState {
     val sortKey = mutableStateOf(SeriesSort.NUMBER)
     val translator = mutableStateOf<String?>(null)
     val list = LazyListState()
+    /** The stored sort has been applied (or overridden by the user) for this visit. */
+    var sortLoaded = false
 }

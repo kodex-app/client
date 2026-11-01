@@ -127,6 +127,10 @@ import dev.icedtea.kodex.ui.catalog.SeriesEntryRow
 import dev.icedtea.kodex.ui.catalog.SeriesHeader
 import dev.icedtea.kodex.ui.catalog.SeriesListControls
 import dev.icedtea.kodex.ui.catalog.SeriesSort
+import dev.icedtea.kodex.ui.catalog.SeriesSortPref
+import dev.icedtea.kodex.ui.catalog.librarySeriesSortKey
+import dev.icedtea.kodex.ui.catalog.loadSeriesSort
+import dev.icedtea.kodex.ui.catalog.saveSeriesSort
 import dev.icedtea.kodex.ui.catalog.bookCoverUrl
 import dev.icedtea.kodex.ui.catalog.seriesCoverUrl
 import dev.icedtea.kodex.ui.collectAsStateSafe
@@ -216,6 +220,17 @@ fun SeriesDetailScreen(
     }
 
     var phase by st.phase
+
+    /** Applies a sort change and stores it for this series, so it outlives the screen and the app. */
+    fun setSort(key: SeriesSort, desc: Boolean) {
+        sortKey = key
+        sortDesc = desc
+        val s0 = server ?: return
+        val d = (phase as? SeriesPhase.Ready)?.content?.detail ?: return
+        val settingKey = librarySeriesSortKey(d.id, d.sourceProviderId, d.sourceSeriesId)
+        scope.launch { runCatching { api.saveSeriesSort(s0.baseUrl, s0.apiKey, settingKey, SeriesSortPref(key, desc)) } }
+    }
+
     LaunchedEffect(seriesId, server?.id, reloadTick) {
         val s0 = server ?: return@LaunchedEffect
         // Only fall back to the spinner when there is nothing on screen yet. Returning from the reader
@@ -226,6 +241,14 @@ fun SeriesDetailScreen(
             val detail = api.seriesDetail(s0.baseUrl, s0.apiKey, seriesId)
             // Only on a first load of this series or an explicit reload — see SeriesDetailState.
             if (st.ancillaryFor != seriesId || st.forceFull) {
+                // The stored sort is read on entry only: within a visit the retained state is newer.
+                if (st.ancillaryFor != seriesId) {
+                    val settingKey = librarySeriesSortKey(seriesId, detail.sourceProviderId, detail.sourceSeriesId)
+                    runCatching { api.loadSeriesSort(s0.baseUrl, s0.apiKey, settingKey) }.getOrNull()?.let {
+                        sortKey = it.key
+                        sortDesc = it.desc
+                    }
+                }
                 st.subSeries = runCatching { api.subSeries(s0.baseUrl, s0.apiKey, seriesId) }.getOrDefault(emptyList())
                 st.libraries = runCatching { api.libraries(s0.baseUrl, s0.apiKey) }.getOrDefault(emptyList())
                 val source = detail.sourceProviderId?.let { pid ->
@@ -489,7 +512,7 @@ fun SeriesDetailScreen(
                     s != null && isWeb -> ChaptersLayout(
                         s.baseUrl, s.apiKey, content, visibleChapters,
                         sortDesc = sortDesc, sortKey = sortKey,
-                        onToggleDir = { sortDesc = !sortDesc }, onSetSortKey = { sortKey = it },
+                        onToggleDir = { setSort(sortKey, !sortDesc) }, onSetSortKey = { setSort(it, sortDesc) },
                         translator = translator, onSetTranslator = { translator = it },
                         onRefresh = { runAction("Chapters refreshed") { api.refreshSeriesChapters(s.baseUrl, s.apiKey, seriesId) } },
                         headerActions = headerActions, headerPrimary = headerPrimary,
@@ -501,7 +524,7 @@ fun SeriesDetailScreen(
                     s != null -> BooksLayout(
                         s.baseUrl, s.apiKey, content,
                         sortDesc = sortDesc, sortKey = sortKey,
-                        onToggleDir = { sortDesc = !sortDesc }, onSetSortKey = { sortKey = it },
+                        onToggleDir = { setSort(sortKey, !sortDesc) }, onSetSortKey = { setSort(it, sortDesc) },
                         onRefresh = { runAction("Refreshing metadata…") { api.refreshSeriesMetadata(s.baseUrl, s.apiKey, seriesId) } },
                         headerActions = headerActions, headerPrimary = headerPrimary,
                         selection = selection, onOpenBook = onOpenBook, onShowBookDetails = onShowBookDetails,
