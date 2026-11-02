@@ -2,6 +2,15 @@ package dev.icedtea.kodex.ui.browse
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import dev.icedtea.kodex.network.MEDIA_KIND_BOOK
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -36,7 +45,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -304,7 +312,7 @@ fun SourceFeedScreen(
                             ),
                         )
                     } else {
-                        Text(source.displayName, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        SourceTitle(source)
                     }
                 },
                 navigationIcon = {
@@ -369,27 +377,19 @@ fun SourceFeedScreen(
         },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                if (!searching) {
-                    FilterChip(selected = feed == "popular", onClick = { feed = "popular" }, label = { Text("Popular") })
-                    if (source.supportsLatest) {
-                        FilterChip(selected = feed == "latest", onClick = { feed = "latest" }, label = { Text("Latest") })
-                    }
-                } else {
-                    FilterChip(
-                        selected = true,
-                        onClick = { clearSearch() },
-                        label = { Text(if (query.isNotBlank()) "\"$query\"  ✕" else "Filtered  ✕") },
-                    )
-                }
-            }
+            FeedTabs(
+                feed = feed,
+                supportsLatest = source.supportsLatest,
+                // A search or filter is a transient third tab, selected while it's showing; its ✕ drops
+                // back to the feed you came from.
+                searchLabel = if (!searching) null else query.takeIf { it.isNotBlank() }?.let { "“$it”" } ?: "Filtered",
+                onFeed = { if (searching) clearSearch(); feed = it },
+                onClearSearch = { clearSearch() },
+            )
 
             Box(Modifier.fillMaxSize()) {
                 when {
-                    items.isEmpty() && loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
+                    items.isEmpty() && loading -> FeedSkeleton()
                     items.isEmpty() && error != null -> ProblemBox(
                         title = "Couldn't load ${source.displayName}",
                         detail = error!!,
@@ -809,5 +809,111 @@ private class FeedState(initialFeed: String) {
         val state = grids.getOrPut(mode) { LazyGridState() }
         while (grids.size > 4) grids.remove(grids.keys.first { it != mode })
         return state
+    }
+}
+
+// ── Header pieces ────────────────────────────────────────────────────────────────────────────────
+
+/** The source's logo beside its name, with kind · language · 18+ under it — who you're browsing. */
+@Composable
+private fun SourceTitle(source: SourceDescriptor) {
+    val fav = remember(source.website) { dev.icedtea.kodex.ui.main.faviconUrl(source.website) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        dev.icedtea.kodex.ui.SourceAvatar(fav, source.displayName, size = 34.dp)
+        androidx.compose.foundation.layout.Spacer(Modifier.size(12.dp))
+        Column {
+            Text(source.displayName, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    "${if (source.mediaKind == MEDIA_KIND_BOOK) "Novel" else "Comic"} · ${dev.icedtea.kodex.ui.languageLabel(source.language.orEmpty())}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (source.adultContent) {
+                    Text(
+                        "18+",
+                        modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(MaterialTheme.colorScheme.errorContainer)
+                            .padding(horizontal = 4.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Popular / Latest as underlined tabs, plus a transient tab for a search or filter while one is
+ * showing — selected, with a ✕ that returns to the feed. Matches the web UI's feed tabs.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FeedTabs(
+    feed: String,
+    supportsLatest: Boolean,
+    searchLabel: String?,
+    onFeed: (String) -> Unit,
+    onClearSearch: () -> Unit,
+) {
+    val feeds = buildList { add("popular" to "Popular"); if (supportsLatest) add("latest" to "Latest") }
+    val selected = if (searchLabel != null) feeds.size else feeds.indexOfFirst { it.first == feed }.coerceAtLeast(0)
+    androidx.compose.material3.PrimaryScrollableTabRow(
+        selectedTabIndex = selected,
+        edgePadding = 8.dp,
+        containerColor = Color.Transparent,
+        divider = { androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)) },
+    ) {
+        feeds.forEachIndexed { i, (key, label) ->
+            androidx.compose.material3.Tab(
+                selected = selected == i,
+                onClick = { onFeed(key) },
+                text = { Text(label, fontWeight = if (selected == i) FontWeight.SemiBold else FontWeight.Medium) },
+                unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (searchLabel != null) {
+            androidx.compose.material3.Tab(
+                selected = true,
+                onClick = onClearSearch,
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Outlined.Search, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Text(
+                            searchLabel,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 6.dp).widthIn(max = 180.dp),
+                        )
+                        Icon(Icons.Outlined.Close, contentDescription = "Clear search", modifier = Modifier.size(16.dp))
+                    }
+                },
+            )
+        }
+    }
+}
+
+/** First-page placeholder: a grid of cover-shaped blocks instead of a lone spinner. */
+@Composable
+private fun FeedSkeleton() {
+    val tone = MaterialTheme.colorScheme.surfaceContainerHighest
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(112.dp),
+        contentPadding = PaddingValues(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        userScrollEnabled = false,
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        items(12) {
+            Column {
+                Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(12.dp)).background(tone))
+                Box(Modifier.padding(top = 8.dp).fillMaxWidth(0.8f).height(12.dp).clip(RoundedCornerShape(4.dp)).background(tone))
+            }
+        }
     }
 }

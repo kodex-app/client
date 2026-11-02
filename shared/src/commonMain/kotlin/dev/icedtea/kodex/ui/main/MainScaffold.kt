@@ -274,6 +274,8 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
                         backStack.add(DetailRoute.SourceReader(source.providerId, chapterId, null, chapterName, source, incognito = incognito))
                     },
                     onSeeAll = { kind -> backStack.add(DetailRoute.SeeAll(kind)) },
+                    onBrowse = { tab = BottomTab.Browse },
+                    onLibraries = { tab = BottomTab.Libraries },
                 )
                 BottomTab.Libraries -> LibrariesTab(
                     session, api, appSettings,

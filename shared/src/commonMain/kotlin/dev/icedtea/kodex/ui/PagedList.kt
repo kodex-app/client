@@ -1,6 +1,15 @@
 package dev.icedtea.kodex.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Icon
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -261,6 +270,8 @@ fun <T> PagedList(
     emptyText: String,
     modifier: Modifier = Modifier,
     listState: LazyListState = rememberLazyListState(),
+    /** Drawn in a tinted circle above [emptyText]; null keeps the empty state text-only. */
+    emptyIcon: ImageVector? = null,
     contentPadding: PaddingValues = PaddingValues(vertical = 8.dp),
     itemsContent: LazyListScope.(List<T>) -> Unit,
 ) {
@@ -287,7 +298,7 @@ fun <T> PagedList(
             PullToRefreshBox(isRefreshing = state.refreshing, onRefresh = { state.refresh() }, modifier = modifier.fillMaxSize()) {
                 // Keep it scrollable so pull-to-refresh works even when empty.
                 LazyColumn(Modifier.fillMaxSize()) {
-                    item { Box(Modifier.fillMaxWidth().padding(top = 120.dp), Alignment.Center) { EmptyMessageInline(emptyText) } }
+                    item { Box(Modifier.fillMaxWidth().padding(top = 120.dp), Alignment.Center) { EmptyMessageInline(emptyText, emptyIcon) } }
                 }
             }
 
@@ -334,11 +345,22 @@ private fun AppendErrorRow(message: String, onRetry: () -> Unit) {
 }
 
 @Composable
-private fun EmptyMessageInline(text: String) {
-    Text(
-        text,
-        textAlign = TextAlign.Center,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        style = MaterialTheme.typography.titleMedium,
-    )
+private fun EmptyMessageInline(text: String, icon: ImageVector?) {
+    Column(Modifier.padding(horizontal = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        if (icon != null) {
+            Box(
+                Modifier.size(64.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(30.dp))
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+        Text(
+            text,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = if (icon != null) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.titleMedium,
+        )
+    }
 }

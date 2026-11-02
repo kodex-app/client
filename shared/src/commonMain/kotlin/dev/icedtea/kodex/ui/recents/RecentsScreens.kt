@@ -1,6 +1,23 @@
 package dev.icedtea.kodex.ui.recents
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import dev.icedtea.kodex.ui.catalog.CoverImage
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -14,10 +31,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.DateRangePicker
@@ -52,8 +67,6 @@ import dev.icedtea.kodex.network.history
 import dev.icedtea.kodex.network.libraries
 import dev.icedtea.kodex.network.updates
 import dev.icedtea.kodex.ui.PagedList
-import dev.icedtea.kodex.ui.catalog.DayHeader
-import dev.icedtea.kodex.ui.catalog.MediaRow
 import dev.icedtea.kodex.ui.catalog.bookCoverUrl
 import dev.icedtea.kodex.ui.catalog.seriesCoverUrl
 import dev.icedtea.kodex.ui.catalog.sourceCoverUrl
@@ -119,18 +132,30 @@ fun UpdatesList(
     val collapsed = rememberCollapsedGroups("updates")
     Column(Modifier.fillMaxSize()) {
         if (anyWebLibrary) {
-            Text(
-                lastRefreshed?.let { "Last updated · ${relativeTime(it)}" } ?: "Not checked for updates yet",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-            )
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(
+                    Icons.Outlined.Refresh,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(14.dp),
+                )
+                Text(
+                    lastRefreshed?.let { "Last updated · ${relativeTime(it)}" } ?: "Not checked for updates yet",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         PagedList(
             paged,
             emptyText = "No updates yet.\nFollow a series in Browse to see new chapters here.",
             modifier = Modifier.weight(1f),
             listState = listState,
+            emptyIcon = Icons.Outlined.AutoAwesome,
         ) { items ->
             val groups = groupByDayThenSeries(
                 items,
@@ -146,26 +171,31 @@ fun UpdatesList(
                 // whole day's series fit on screen and only a series you actually want the backlog of costs
                 // a tap.
                 seriesCollapsedByDefault = true,
-                header = { group ->
+                header = { group, open, onToggle ->
                     // Feed order is newest-first, so the first item is the latest chapter found.
                     val latest = group.items.first()
-                    MediaRow(
+                    SeriesHeaderRow(
                         coverUrl = sourceCoverUrl(baseUrl, latest.providerId ?: "", latest.coverUrl),
                         apiKey = apiKey,
                         title = group.label,
                         subtitle = latest.chapterName ?: "New chapter",
-                        caption = updateCaption(latest) +
-                            (if (group.items.size > 1) " · +${group.items.size - 1} more" else ""),
+                        caption = relativeTime(latest.foundDate),
+                        pill = updatePill(latest),
+                        more = group.items.size - 1,
+                        open = open,
                         // The title line is the chapter you'd read next, so it opens the reader; the
                         // series detail hangs off the cover instead.
                         onClick = { openUpdate(latest, onOpenReader, onOpenSourceReader) },
                         onCoverClick = latest.seriesId?.let { sid -> { onOpenSeries(sid) } },
+                        onToggle = onToggle,
                     )
                 },
-            ) { u ->
+            ) { u, last ->
                 ChapterSubRow(
                     title = u.chapterName ?: "New chapter",
-                    caption = updateCaption(u),
+                    caption = relativeTime(u.foundDate),
+                    pill = updatePill(u),
+                    last = last,
                     onClick = { openUpdate(u, onOpenReader, onOpenSourceReader) },
                 )
             }
@@ -187,17 +217,18 @@ private fun openUpdate(
     }
 }
 
-/** When a chapter turned up, plus whether it is already on the server — same wording either way. */
-private fun updateCaption(u: UpdateDto): String =
-    relativeTime(u.foundDate) + (if (u.bookId != null) " · downloaded" else "")
+/** An update that is already on the server is tagged as such. */
+private fun updatePill(u: UpdateDto): StatusPill? = if (u.bookId != null) StatusPill.DOWNLOADED else null
 
 /** What was read: the chapter's own title, falling back to the series when it hasn't got one. */
 private fun historyEntryTitle(h: HistoryEntryDto): String =
     h.title?.takeIf { it.isNotBlank() } ?: h.seriesName
 
-/** When it was read and how far it got — the History counterpart of [updateCaption]. */
+/** When it was read and, unless it was finished (that's the pill), how far it got. */
 private fun historyCaption(h: HistoryEntryDto): String =
-    "${relativeTime(h.readDate)} · ${if (h.completed) "Finished" else "Page ${h.page}"}"
+    relativeTime(h.readDate) + if (h.completed) "" else " · Page ${h.page}"
+
+private fun historyPill(h: HistoryEntryDto): StatusPill? = if (h.completed) StatusPill.READ else null
 
 /**
  * History — everything read across all libraries, newest first, grouped by day. A `BOOK` entry
@@ -238,10 +269,20 @@ fun HistoryList(
         }
     }
 
-    Box(Modifier.fillMaxWidth()) {
-        Box(Modifier.align(Alignment.TopEnd)) {
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Everything you've read, newest first",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+          Box {
             IconButton(onClick = { menuOpen = true }) {
-                Icon(Icons.Filled.MoreVert, contentDescription = "History options")
+                Icon(Icons.Outlined.DeleteSweep, contentDescription = "Clear history", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             // Every scope is confirm-gated: clearing history deletes the progress rows behind it, so
             // it also drops saved positions and read flags. Mirrors the web's confirm dialog.
@@ -265,9 +306,16 @@ fun HistoryList(
                     },
                 )
             }
+          }
         }
 
-        PagedList(paged, emptyText = "No reading history yet.", listState = listState) { items ->
+        PagedList(
+            paged,
+            emptyText = "No reading history yet.\nWhat you read shows up here, grouped by day.",
+            modifier = Modifier.weight(1f),
+            listState = listState,
+            emptyIcon = Icons.Outlined.History,
+        ) { items ->
             val groups = groupByDayThenSeries(
                 items,
                 dayKeyOf = { isoDayKey(it.readDate) },
@@ -281,26 +329,31 @@ fun HistoryList(
                 // Folded shut like Updates: the latest chapter you read is already on the header line,
                 // so a day's series fit on screen and only a backlog you want open costs a tap.
                 seriesCollapsedByDefault = true,
-                header = { group ->
+                header = { group, open, onToggle ->
                     // Newest-first, so the first entry is the last thing read in this series.
                     val latest = group.items.first()
-                    MediaRow(
+                    SeriesHeaderRow(
                         coverUrl = historyCover(baseUrl, latest),
                         apiKey = apiKey,
                         title = group.label,
                         subtitle = historyEntryTitle(latest),
-                        caption = historyCaption(latest) +
-                            (if (group.items.size > 1) " · +${group.items.size - 1} more" else ""),
+                        caption = historyCaption(latest),
+                        pill = historyPill(latest),
+                        more = group.items.size - 1,
+                        open = open,
                         // Same split as Updates: the title line resumes what was last read here, the
                         // cover goes to the series.
                         onClick = { openHistoryEntry(latest, onOpenReader, onOpenSourceReader, onOpenBrowseReader) },
                         onCoverClick = latest.seriesId?.let { sid -> { onOpenSeries(sid) } },
+                        onToggle = onToggle,
                     )
                 },
-            ) { h ->
+            ) { h, last ->
                 ChapterSubRow(
                     title = historyEntryTitle(h),
                     caption = historyCaption(h),
+                    pill = historyPill(h),
+                    last = last,
                     onClick = { openHistoryEntry(h, onOpenReader, onOpenSourceReader, onOpenBrowseReader) },
                     onDelete = { pendingDelete = h },
                 )
@@ -486,17 +539,19 @@ private fun MutableState<Set<String>>.toggle(key: String) {
 }
 
 /**
- * Emits day → series sections, each heading collapsible: a sticky [DayHeader] when the day changes,
- * then a [header] row per series carrying the cover, then a compact [row] per item beneath it.
- * [seriesCollapsedByDefault] picks which way an untouched series starts.
+ * Emits day → series sections, each heading collapsible: a sticky day heading when the day changes,
+ * then a [header] row per series carrying the cover, then a compact [row] per item beneath it — on a
+ * thin timeline, all on one tinted surface while the series is open. [header] is told whether the
+ * series is open and gets the toggle to put on its "+N" chip; [row] is told whether it's the last one,
+ * which rounds the surface off. [seriesCollapsedByDefault] picks which way an untouched series starts.
  */
 @OptIn(ExperimentalFoundationApi::class)
 private inline fun <T> LazyListScope.groupedByDayAndSeries(
     groups: List<DayGroup<T>>,
     collapsed: MutableState<Set<String>>,
     seriesCollapsedByDefault: Boolean = false,
-    crossinline header: @Composable (SeriesGroup<T>) -> Unit,
-    crossinline row: @Composable (T) -> Unit,
+    crossinline header: @Composable (group: SeriesGroup<T>, open: Boolean, onToggle: () -> Unit) -> Unit,
+    crossinline row: @Composable (item: T, last: Boolean) -> Unit,
 ) {
     groups.forEachIndexed { di, day ->
         val dayKey = dayCollapseKey(day.day)
@@ -513,95 +568,207 @@ private inline fun <T> LazyListScope.groupedByDayAndSeries(
         day.series.forEachIndexed { si, group ->
             val key = seriesCollapseKey(day.day, group.key)
             val seriesCollapsed = (key in collapsed.value) != seriesCollapsedByDefault
+            // A single-entry series has nothing to unfold: its one entry is the header line already.
+            val open = !seriesCollapsed && group.items.size > 1
             item(key = "series-$di-$si") {
-                CollapsibleSeriesHeader(collapsed = seriesCollapsed, onToggle = { collapsed.toggle(key) }) {
-                    header(group)
+                SeriesSurface(open = open, top = true, bottom = !open) {
+                    header(group, open) { collapsed.toggle(key) }
                 }
             }
-            if (seriesCollapsed) return@forEachIndexed
-            group.items.forEachIndexed { i, item -> item(key = "row-$di-$si-$i") { row(item) } }
+            if (!open) return@forEachIndexed
+            group.items.forEachIndexed { i, item ->
+                val last = i == group.items.lastIndex
+                item(key = "row-$di-$si-$i") {
+                    SeriesSurface(open = true, top = false, bottom = last) { row(item, last) }
+                }
+            }
         }
     }
 }
 
-/** Day heading that folds its whole day away; shows the entry count once collapsed. */
+/**
+ * The surface a series sits on: transparent while folded, a soft tint once open so the header and its
+ * entries read as one block. Split across lazy items, so each piece rounds only its own outer corners.
+ */
+@Composable
+private fun SeriesSurface(open: Boolean, top: Boolean, bottom: Boolean, content: @Composable () -> Unit) {
+    val r = 14.dp
+    val shape = RoundedCornerShape(
+        topStart = if (top) r else 0.dp, topEnd = if (top) r else 0.dp,
+        bottomStart = if (bottom) r else 0.dp, bottomEnd = if (bottom) r else 0.dp,
+    )
+    Box(
+        Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+            .padding(bottom = if (bottom) 4.dp else 0.dp)
+            .clip(shape)
+            .background(if (open) MaterialTheme.colorScheme.surfaceContainer else Color.Transparent),
+    ) { content() }
+}
+
+/**
+ * Day heading — the label, a hairline running to the edge, the day's count and a fold chevron; the
+ * whole strip folds the day away.
+ */
 @Composable
 private fun CollapsibleDayHeader(label: String, collapsed: Boolean, count: Int, onToggle: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).clickable(onClick = onToggle),
+        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).clickable(onClick = onToggle)
+            .padding(start = 16.dp, end = 12.dp, top = 14.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        DayHeader(label)
-        if (collapsed) {
-            Text(
-                "$count",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Spacer(Modifier.weight(1f))
+        Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+        Box(
+            Modifier.weight(1f).height(1.dp)
+                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
+        )
+        Text(
+            "$count",
+            modifier = Modifier.clip(RoundedCornerShape(50))
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                .padding(horizontal = 8.dp, vertical = 1.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Icon(
             if (collapsed) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowUp,
             contentDescription = if (collapsed) "Expand $label" else "Collapse $label",
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(end = 12.dp),
+            modifier = Modifier.size(20.dp),
         )
     }
 }
 
 /**
- * Wraps a series header row with its own fold control. The chevron is a separate target so tapping
- * the row itself still opens the series.
+ * One series line: cover (→ the series), title + the newest entry + caption (→ the reader), and at the
+ * end a "+N" chip that unfolds the rest of the day's entries — three targets, kept apart.
  */
 @Composable
-private fun CollapsibleSeriesHeader(collapsed: Boolean, onToggle: () -> Unit, content: @Composable () -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.weight(1f)) { content() }
-        IconButton(onClick = onToggle) {
-            Icon(
-                if (collapsed) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowUp,
-                contentDescription = if (collapsed) "Expand" else "Collapse",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-/**
- * A chapter under a series header. Text-only and indented to line up with the header's title column,
- * so the series cover isn't repeated once per chapter.
- */
-@Composable
-private fun ChapterSubRow(title: String, caption: String?, onClick: () -> Unit, onDelete: (() -> Unit)? = null) {
-  Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-    Column(
-        Modifier.weight(1f).clickable(onClick = onClick)
-            .padding(start = 72.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+private fun SeriesHeaderRow(
+    coverUrl: String,
+    apiKey: String,
+    title: String,
+    subtitle: String,
+    caption: String,
+    pill: StatusPill?,
+    more: Int,
+    open: Boolean,
+    onClick: () -> Unit,
+    onCoverClick: (() -> Unit)?,
+    onToggle: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            title,
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        if (!caption.isNullOrBlank()) {
+        Box(
+            Modifier.size(width = 48.dp, height = 72.dp)
+                .shadow(3.dp, RoundedCornerShape(7.dp))
+                .clip(RoundedCornerShape(7.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .then(if (onCoverClick != null) Modifier.clickable(onClick = onCoverClick) else Modifier),
+        ) {
+            if (coverUrl.isNotBlank()) CoverImage(coverUrl, apiKey, Modifier.fillMaxSize())
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                caption,
-                style = MaterialTheme.typography.bodySmall,
+                subtitle,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            Row(Modifier.padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(caption, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f), maxLines = 1)
+                pill?.let { StatusPillChip(it) }
+            }
+        }
+        if (more > 0) {
+            Row(
+                Modifier.padding(start = 4.dp).clip(RoundedCornerShape(50)).clickable(onClick = onToggle)
+                    .padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("+$more", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                Icon(
+                    if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                    contentDescription = if (open) "Collapse" else "Expand",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
     }
-    onDelete?.let {
-        IconButton(onClick = it) {
-            Icon(
-                Icons.Filled.Delete,
-                contentDescription = "Remove from history",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+}
+
+/** A small state tag on a row — "Downloaded" on an update, "Read" on a finished history entry. */
+private enum class StatusPill(val label: String) { DOWNLOADED("Downloaded"), READ("Read") }
+
+@Composable
+private fun StatusPillChip(pill: StatusPill) {
+    val (bg, fg) = when (pill) {
+        StatusPill.DOWNLOADED -> MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.onSecondaryContainer
+        StatusPill.READ -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+    }
+    Text(
+        pill.label,
+        modifier = Modifier.clip(RoundedCornerShape(50)).background(bg).padding(horizontal = 6.dp, vertical = 1.dp),
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = fg,
+    )
+}
+
+/**
+ * A chapter under an open series: text only, on a timeline whose line and dot sit under the centre of
+ * the series cover, so the cover isn't repeated once per chapter.
+ */
+@Composable
+private fun ChapterSubRow(
+    title: String,
+    caption: String?,
+    last: Boolean,
+    onClick: () -> Unit,
+    pill: StatusPill? = null,
+    onDelete: (() -> Unit)? = null,
+) {
+    val line = MaterialTheme.colorScheme.outlineVariant
+    val dot = MaterialTheme.colorScheme.primary
+    Row(
+        Modifier.fillMaxWidth()
+            .drawBehind {
+                val x = 32.dp.toPx()
+                // The line runs the full row, stopping at the dot on the last entry.
+                drawLine(line, Offset(x, 0f), Offset(x, if (last) size.height / 2 else size.height), strokeWidth = 2.dp.toPx())
+                drawCircle(dot, radius = 4.dp.toPx(), center = Offset(x, size.height / 2))
+            }
+            .clickable(onClick = onClick)
+            .padding(start = 56.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (!caption.isNullOrBlank() || pill != null) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (!caption.isNullOrBlank()) {
+                        Text(caption, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                    }
+                    pill?.let { StatusPillChip(it) }
+                }
+            }
+        }
+        onDelete?.let {
+            IconButton(onClick = it) {
+                Icon(
+                    Icons.Outlined.Delete,
+                    contentDescription = "Remove from history",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
     }
-  }
 }
