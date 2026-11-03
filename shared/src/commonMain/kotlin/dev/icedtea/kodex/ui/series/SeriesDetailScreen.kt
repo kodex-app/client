@@ -36,6 +36,7 @@ import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MarkAsUnread
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
@@ -78,6 +79,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
@@ -990,6 +992,7 @@ private fun ChaptersLayout(
         SeriesSort.SOURCE -> visibleChapters
     }
     val display = if (sortDesc) ascending.asReversed() else ascending
+    var collapsedVolumes by remember(seriesId) { mutableStateOf(emptySet<String>()) }
     // Rows are full-bleed (their selection highlight spans the width), so the list itself has no side padding.
     SeriesDetailList(listState, topInset, bottomInset, header = {
         SeriesHeader(
@@ -1008,10 +1011,54 @@ private fun ChaptersLayout(
             onRefresh = onRefresh,
         )
     }) {
-        items(display, key = { it.chapterId }) { chapter ->
-            ChapterRow(chapter, providerId, seriesId, selection, onOpenReader, onOpenSourceReader)
-            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+        // Sources that report volumes (e.g. Hako's "Vol 1: ...") get a collapsible header per volume, in the
+        // sorted order; the rest fall out as one header-less group = the flat list.
+        display.groupBy { it.volume?.takeIf { v -> v.isNotBlank() } }.forEach { (volume, chapters) ->
+            if (volume != null) {
+                item(key = "volume:$volume") {
+                    VolumeHeader(volume, chapters.size, collapsed = volume in collapsedVolumes) {
+                        collapsedVolumes = if (volume in collapsedVolumes) collapsedVolumes - volume else collapsedVolumes + volume
+                    }
+                }
+            }
+            if (volume == null || volume !in collapsedVolumes) {
+                items(chapters, key = { it.chapterId }) { chapter ->
+                    ChapterRow(chapter, providerId, seriesId, selection, onOpenReader, onOpenSourceReader)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                }
+            }
         }
+    }
+}
+
+/** A volume/section label separating grouped chapters; tap collapses it (view-only, kept for the screen's life). */
+@Composable
+private fun VolumeHeader(volume: String, count: Int, collapsed: Boolean, onToggle: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth()
+            .clickable(onClick = onToggle)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .padding(start = 8.dp, end = 16.dp, top = 10.dp, bottom = 10.dp),
+    ) {
+        Icon(
+            Icons.Filled.KeyboardArrowDown, contentDescription = if (collapsed) "Expand" else "Collapse",
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.rotate(if (collapsed) -90f else 0f),
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(
+            volume,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            count.toString(),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
