@@ -191,7 +191,7 @@ private fun SourceList(
                                 QuickSourceTile(
                                     source = source,
                                     isFavorite = source.id in favorites,
-                                    onOpen = { onOpen(source, "popular") },
+                                    onOpen = { feed -> onOpen(source, feed) },
                                 )
                             }
                         }
@@ -351,12 +351,16 @@ private fun SourceRow(
     }
 }
 
-/** A quick-access tile: the source's logo on a card, its name under it, language tag as a caption. */
+/**
+ * A quick-access tile: the source's logo on a card, its name under it, language tag as a caption,
+ * and — like the full row — a Latest shortcut when the source has that feed. Tapping the tile opens
+ * Popular.
+ */
 @Composable
-private fun QuickSourceTile(source: SourceDescriptor, isFavorite: Boolean, onOpen: () -> Unit) {
+private fun QuickSourceTile(source: SourceDescriptor, isFavorite: Boolean, onOpen: (String) -> Unit) {
     val fav = remember(source.website) { faviconUrl(source.website) }
     Column(
-        Modifier.width(84.dp).clip(RoundedCornerShape(16.dp)).clickable(onClick = onOpen).padding(vertical = 6.dp),
+        Modifier.width(84.dp).clip(RoundedCornerShape(16.dp)).clickable { onOpen("popular") }.padding(vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box {
@@ -383,6 +387,20 @@ private fun QuickSourceTile(source: SourceDescriptor, isFavorite: Boolean, onOpe
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
+        )
+        Spacer(Modifier.height(4.dp))
+        // Always laid out (just invisible without Latest) so every tile in the strip stays one height.
+        val latest = source.supportsLatest
+        Text(
+            "Latest",
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = if (latest) MaterialTheme.colorScheme.primary else Color.Transparent,
+            maxLines = 1,
+            modifier = Modifier.clip(CircleShape)
+                .background(if (latest) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else Color.Transparent)
+                .then(if (latest) Modifier.clickable { onOpen("latest") } else Modifier)
+                .padding(horizontal = 10.dp, vertical = 3.dp),
         )
     }
 }
