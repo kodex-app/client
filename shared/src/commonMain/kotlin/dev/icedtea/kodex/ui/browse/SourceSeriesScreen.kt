@@ -27,6 +27,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.rotate
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -131,6 +134,8 @@ fun SourceSeriesScreen(
     // Retained: opening a chapter in the reader unmounts this screen, and losing the sort/filter and
     // scroll position here meant coming back landed at the top of a freshly loaded list.
     val st = retain("sourceSeries") { SourceSeriesState() }
+    // Per-volume collapse: view-only, and retained so a chapter opened from the list comes back to the same view.
+    var collapsedVolumes by retain("sourceSeries:collapsedVolumes") { mutableStateOf(emptySet<String>()) }
     var sortDesc by st.sortDesc
     var sortKey by st.sortKey
     var translator by st.translator
@@ -337,16 +342,22 @@ fun SourceSeriesScreen(
                     // out as one unlabelled group = the flat list.
                     display.groupBy { it.volume }.forEach { (volume, chapters) ->
                         if (volume != null) {
-                            item(key = "volume:$volume") { VolumeHeader(volume) }
+                            item(key = "volume:$volume") {
+                                VolumeHeader(volume, chapters.size, collapsed = volume in collapsedVolumes) {
+                                    collapsedVolumes = if (volume in collapsedVolumes) collapsedVolumes - volume else collapsedVolumes + volume
+                                }
+                            }
                         }
-                        items(chapters, key = { it.externalId }) { chapter ->
-                            ChapterRow(
-                                chapter = chapter,
-                                progress = data.progress[chapter.externalId],
-                                onClick = { onOpenReader(context, chapter.externalId, chapter.name) },
-                                onLongClick = { onOpenReaderIncognito(context, chapter.externalId, chapter.name) },
-                            )
-                            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                        if (volume == null || volume !in collapsedVolumes) {
+                            items(chapters, key = { it.externalId }) { chapter ->
+                                ChapterRow(
+                                    chapter = chapter,
+                                    progress = data.progress[chapter.externalId],
+                                    onClick = { onOpenReader(context, chapter.externalId, chapter.name) },
+                                    onLongClick = { onOpenReaderIncognito(context, chapter.externalId, chapter.name) },
+                                )
+                                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                            }
                         }
                     }
                 }
@@ -427,18 +438,35 @@ private fun Actions(
 
 
 
-/** The source's volume/section label, separating grouped chapters. */
+/** The source's volume/section label, separating grouped chapters; tap collapses it. */
 @Composable
-private fun VolumeHeader(volume: String) {
-    Text(
-        volume,
-        style = MaterialTheme.typography.labelLarge,
-        fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.primary,
+private fun VolumeHeader(volume: String, count: Int, collapsed: Boolean, onToggle: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth()
+            .clickable(onClick = onToggle)
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-    )
+            .padding(start = 8.dp, end = 16.dp, top = 10.dp, bottom = 10.dp),
+    ) {
+        Icon(
+            Icons.Filled.KeyboardArrowDown, contentDescription = if (collapsed) "Expand" else "Collapse",
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.rotate(if (collapsed) -90f else 0f),
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(
+            volume,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            count.toString(),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 /**
