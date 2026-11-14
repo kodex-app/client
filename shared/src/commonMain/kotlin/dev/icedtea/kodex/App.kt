@@ -1,5 +1,10 @@
 package dev.icedtea.kodex
 
+import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import dev.icedtea.kodex.data.LocalLibraryLock
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
@@ -58,6 +63,20 @@ fun App() {
     // Written by a full-window screen (the readers) through ImmersiveContent; read just below.
     val immersiveContent = remember { mutableStateOf(false) }
 
+    // Library PIN lock: relock after the app has been in the background long enough.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> graph.libraryLock.onBackground()
+                Lifecycle.Event.ON_START -> graph.libraryLock.onForeground()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarController(snackbarHostState, scope) }
@@ -65,6 +84,7 @@ fun App() {
     KodexTheme(graph.appSettings) {
         CompositionLocalProvider(
             LocalEventBus provides graph.eventBus,
+            LocalLibraryLock provides graph.libraryLock,
             LocalSnackbar provides snackbar,
             LocalSystemNavBarColor provides systemNavBarColor,
             LocalImmersiveContent provides immersiveContent,
@@ -84,6 +104,11 @@ fun App() {
                         LoginScreen(graph.session)
                     } else {
                         MainScaffold(graph.session, graph.api, graph.appSettings, graph.sourcePrefs)
+                        // App lock: over everything (readers included) until the PIN is entered.
+                        val appLocked by graph.libraryLock.appLocked.collectAsStateSafe()
+                        if (appLocked) {
+                            dev.icedtea.kodex.ui.library.AppLockScreen(onSignOut = { graph.session.signOut() })
+                        }
                     }
                     // App-level snackbar overlay — sits above any screen's own Scaffold.
                     SnackbarHost(snackbarHostState, Modifier.align(Alignment.BottomCenter).fillMaxWidth())

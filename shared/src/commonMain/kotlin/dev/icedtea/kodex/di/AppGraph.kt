@@ -2,13 +2,16 @@ package dev.icedtea.kodex.di
 
 import dev.icedtea.kodex.auth.SessionManager
 import dev.icedtea.kodex.data.AppSettings
+import dev.icedtea.kodex.data.LibraryLockStore
 import dev.icedtea.kodex.data.ServerStore
 import dev.icedtea.kodex.data.SourcePrefsStore
 import dev.icedtea.kodex.network.EventBus
 import dev.icedtea.kodex.network.HEADER_API_KEY
+import dev.icedtea.kodex.network.HEADER_LIBRARY_UNLOCK
 import dev.icedtea.kodex.network.KodexApi
 import dev.icedtea.kodex.platform.createHttpClient
 import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.plugins.api.createClientPlugin
 import io.ktor.client.plugins.HttpResponseValidator
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -47,6 +50,23 @@ class AppGraph {
      */
     private val rejectedApiKeys = MutableSharedFlow<String>(extraBufferCapacity = 64)
 
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * Library PIN lock. Built before the client so the plugin below can ask it for the unlock token; it
+     * only uses [api] lazily, once a server is bound.
+     */
+    private lateinit var lockStore: LibraryLockStore
+
+    /** Attaches the library unlock token to every request to the active server while unlocked. */
+    private val libraryUnlockPlugin = createClientPlugin("LibraryUnlock") {
+        onRequest { request, _ ->
+            if (request.headers[HEADER_LIBRARY_UNLOCK] == null) {
+                lockStore.headerFor(request.url.buildString())?.let { request.headers.append(HEADER_LIBRARY_UNLOCK, it) }
+            }
+        }
+    }
+
     private val httpClient = createHttpClient {
         expectSuccess = true
         HttpResponseValidator {
@@ -60,6 +80,7 @@ class AppGraph {
             }
         }
         install(ContentNegotiation) { json(json) }
+        install(libraryUnlockPlugin)
         install(Logging) { level = LogLevel.INFO }
         install(HttpTimeout) {
             requestTimeoutMillis = 30_000
@@ -88,9 +109,9 @@ class AppGraph {
     /** Device-local appearance prefs (theme mode, palette, AMOLED, dynamic colour). */
     val appSettings = AppSettings()
 
-    val session: SessionManager = SessionManager(store, api).apply { bootstrap() }
+    val libraryLock: LibraryLockStore = LibraryLockStore(api, appScope).also { lockStore = it }
 
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    val session: SessionManager = SessionManager(store, api).apply { bootstrap() }
 
     /** Live server events (SSE), (re)connected to whichever server is active. */
     val eventBus = EventBus(sseHttpClient, appScope)
@@ -105,7 +126,9 @@ class AppGraph {
                 if (server != null) {
                     eventBus.connect(server.baseUrl, server.apiKey)
                     sourcePrefs.bind(server.baseUrl, server.apiKey)
+                    libraryLock.bind(server.baseUrl, server.apiKey)
                 } else {
+                    libraryLock.clear()
                     eventBus.disconnect()
                     sourcePrefs.clear()
                 }

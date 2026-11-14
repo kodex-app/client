@@ -18,6 +18,9 @@ import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.ui.draw.blur
@@ -112,6 +115,8 @@ fun HomeTab(
     /** Empty-state shortcuts to the Browse and Libraries tabs. */
     onBrowse: () -> Unit = {},
     onLibraries: () -> Unit = {},
+    /** Backs the "Customize Home" sheet's source toggles; the sheet is unavailable without it. */
+    sourcePrefs: dev.icedtea.kodex.data.SourcePrefsStore? = null,
 ) {
     val server by session.activeServer.collectAsStateSafe()
     val user by session.currentUser.collectAsStateSafe()
@@ -126,6 +131,14 @@ fun HomeTab(
     // Distinct from the cold-load spinner: a pull keeps the current rails on screen and shows the
     // indicator instead of blanking Home back to a spinner.
     var refreshing by remember { mutableStateOf(false) }
+    var customizing by remember { mutableStateOf(false) }
+    if (customizing && sourcePrefs != null) {
+        HomeScopeSheet(session, api, sourcePrefs) { changed ->
+            customizing = false
+            if (changed) reloadKey++
+        }
+    }
+    val onCustomize: (() -> Unit)? = sourcePrefs?.let { { customizing = true } }
 
     androidx.compose.runtime.LaunchedEffect(server?.id, reloadKey) {
         val current = server ?: run { refreshing = false; return@LaunchedEffect }
@@ -159,7 +172,13 @@ fun HomeTab(
             val apiKey = server?.apiKey ?: ""
             val baseUrl = server?.baseUrl ?: ""
             if (s.data.isEmpty) {
-                Centered { HomeEmpty(onBrowse = onBrowse, onLibraries = onLibraries) }
+                // Everything may be hidden by the user's own Home preferences — keep the way back.
+                Centered {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        HomeEmpty(onBrowse = onBrowse, onLibraries = onLibraries)
+                        onCustomize?.let { TextButton(onClick = it, modifier = Modifier.padding(top = 8.dp)) { Text("Customize Home") } }
+                    }
+                }
             } else {
                 // The newest entry you're part-way through gets the hero; the rest share a rail of
                 // compact resume cards beneath it, so Home leads with "pick up where you left off".
@@ -171,7 +190,7 @@ fun HomeTab(
                     contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(24.dp),
                 ) {
-                    item { Greeting(user?.email) }
+                    item { Greeting(user?.email, onCustomize) }
                     if (hero != null) item {
                         ContinueHero(
                             baseUrl, apiKey, hero,
@@ -223,9 +242,10 @@ fun HomeTab(
 
 /** "Welcome back, <name>": the local part of the account's email, the only name the server keeps. */
 @Composable
-private fun Greeting(email: String?) {
+private fun Greeting(email: String?, onCustomize: (() -> Unit)?) {
     val name = email?.substringBefore('@')?.takeIf { it.isNotBlank() }
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.Top) {
+    Column(Modifier.weight(1f)) {
         Text(
             if (name != null) "Welcome back, $name" else "Welcome back",
             style = MaterialTheme.typography.headlineSmall,
@@ -238,6 +258,10 @@ private fun Greeting(email: String?) {
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+    if (onCustomize != null) {
+        IconButton(onClick = onCustomize) { Icon(Icons.Outlined.Tune, contentDescription = "Customize Home") }
+    }
     }
 }
 

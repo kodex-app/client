@@ -43,6 +43,10 @@ class SourcePrefsStore(private val api: KodexApi, private val scope: CoroutineSc
     private val _extensionHiddenLanguages = MutableStateFlow<Set<String>>(emptySet())
     val extensionHiddenLanguages: StateFlow<Set<String>> = _extensionHiddenLanguages.asStateFlow()
 
+    /** Sources whose content the user keeps off Home (`browse.hiddenFromHome`) — the server applies it. */
+    private val _hiddenFromHome = MutableStateFlow<Set<String>>(emptySet())
+    val hiddenFromHome: StateFlow<Set<String>> = _hiddenFromHome.asStateFlow()
+
     private var baseUrl: String? = null
     private var apiKey: String? = null
 
@@ -55,6 +59,7 @@ class SourcePrefsStore(private val api: KodexApi, private val scope: CoroutineSc
             _recents.value = settings[RECENTS_KEY].asStringList()
             _hiddenLanguages.value = settings[HIDDEN_LANGUAGES_KEY].asStringList().toSet()
             _extensionHiddenLanguages.value = settings[EXTENSION_HIDDEN_LANGUAGES_KEY].asStringList().toSet()
+            _hiddenFromHome.value = settings[HIDDEN_FROM_HOME_KEY].asStringList().toSet()
         }
     }
 
@@ -63,6 +68,18 @@ class SourcePrefsStore(private val api: KodexApi, private val scope: CoroutineSc
         _favorites.value = emptyList(); _recents.value = emptyList()
         _hiddenLanguages.value = emptySet()
         _extensionHiddenLanguages.value = emptySet()
+        _hiddenFromHome.value = emptySet()
+    }
+
+    /**
+     * Shows or hides one source's content on Home. Suspends until the server has the new list, so the
+     * caller can reload Home right after and see the change.
+     */
+    suspend fun setHiddenFromHome(id: String, hide: Boolean) {
+        val b = baseUrl ?: return; val k = apiKey ?: return
+        val next = if (hide) _hiddenFromHome.value + id else _hiddenFromHome.value - id
+        _hiddenFromHome.value = next
+        api.saveUserSetting(b, k, HIDDEN_FROM_HOME_KEY, JsonArray(next.map { JsonPrimitive(it) }))
     }
 
     fun isFavorite(id: String): Boolean = id in _favorites.value
@@ -127,6 +144,7 @@ class SourcePrefsStore(private val api: KodexApi, private val scope: CoroutineSc
         const val RECENTS_KEY = "browse.recents"
         const val HIDDEN_LANGUAGES_KEY = "browse.hiddenLanguages"
         const val EXTENSION_HIDDEN_LANGUAGES_KEY = "extensions.hiddenLanguages"
+        const val HIDDEN_FROM_HOME_KEY = "browse.hiddenFromHome"
         const val RECENTS_MAX = 4
     }
 }

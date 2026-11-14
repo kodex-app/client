@@ -1,5 +1,7 @@
 package dev.icedtea.kodex.ui.main
 
+import androidx.compose.runtime.key
+import dev.icedtea.kodex.data.LocalLibraryLock
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -104,6 +106,7 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
         retained.forget(SEARCH_SLOT)
     }
     val incognito by appSettings.incognitoMode.collectAsStateSafe()
+    val lockRevision by LocalLibraryLock.current.revision.collectAsStateSafe()
     val server by session.activeServer.collectAsStateSafe()
 
     // New chapters since the tab was last opened, badged on Recents. Opening the tab is what marks
@@ -261,6 +264,9 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
         },
     ) { innerPadding ->
         Box(Modifier.padding(innerPadding).fillMaxSize()) {
+          // Locking/unlocking libraries changes what every aggregated list returns: recompose the tab
+          // so it reloads from the server.
+          key(lockRevision) {
             when (tab) {
                 BottomTab.Home -> HomeTab(
                     session, api,
@@ -274,6 +280,7 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
                         backStack.add(DetailRoute.SourceReader(source.providerId, chapterId, null, chapterName, source, incognito = incognito))
                     },
                     onSeeAll = { kind -> backStack.add(DetailRoute.SeeAll(kind)) },
+                    sourcePrefs = sourcePrefs,
                     onBrowse = { tab = BottomTab.Browse },
                     onLibraries = { tab = BottomTab.Libraries },
                 )
@@ -317,6 +324,7 @@ fun MainScaffold(session: SessionManager, api: KodexApi, appSettings: AppSetting
                     onOpenLogs = { backStack.add(DetailRoute.Logs) },
                 )
             }
+          }
         }
     }
     }

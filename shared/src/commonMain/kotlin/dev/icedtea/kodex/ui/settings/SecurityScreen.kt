@@ -203,6 +203,10 @@ fun SecurityScreen(session: SessionManager, api: KodexApi, onBack: () -> Unit) {
                     }
                 }
             }
+
+            Spacer(Modifier.height(24.dp))
+            SectionHeader("Library lock")
+            LibraryLockSection(session, api)
         }
     }
 

@@ -1,5 +1,8 @@
 package dev.icedtea.kodex.ui.main
 
+import dev.icedtea.kodex.ui.library.LibraryLockGate
+import dev.icedtea.kodex.network.seriesDetail
+import dev.icedtea.kodex.network.book
 import androidx.compose.runtime.Composable
 import dev.icedtea.kodex.auth.SessionManager
 import dev.icedtea.kodex.data.AppSettings
@@ -133,7 +136,9 @@ fun DetailHost(
 ) {
     when (route) {
         is DetailRoute.LibrarySeries ->
-            LibrarySeriesScreen(session, api, appSettings, route.library, onBack, onOpenSeries = { onOpenSeries(it.id) })
+            LibraryLockGate(route.library.id, { route.library.id }, onBack) {
+                LibrarySeriesScreen(session, api, appSettings, route.library, onBack, onOpenSeries = { onOpenSeries(it.id) })
+            }
 
         is DetailRoute.SourceFeed ->
             SourceFeedScreen(session, api, route.source, onBack, onOpenSourceSeries = { onOpenSourceSeries(route.source, it) }, initialFeed = route.feed)
@@ -145,7 +150,11 @@ fun DetailHost(
                 onOpenReaderIncognito = onOpenBrowseReaderIncognito,
             )
 
-        is DetailRoute.SeriesDetail ->
+        is DetailRoute.SeriesDetail -> LibraryLockGate(
+            route.seriesId,
+            { session.activeServer.value?.let { api.seriesDetail(it.baseUrl, it.apiKey, route.seriesId).libraryId } },
+            onBack,
+        ) {
             SeriesDetailScreen(
                 session, api, route.seriesId, onBack,
                 onOpenBook = onOpenBook,
@@ -158,15 +167,27 @@ fun DetailHost(
                 onOpenReaderIncognito = onOpenReaderIncognito,
                 onOpenSourceReaderIncognito = onOpenSourceReaderIncognito,
             )
+        }
 
-        is DetailRoute.Reader ->
+        is DetailRoute.Reader -> LibraryLockGate(
+            route.bookId,
+            { session.activeServer.value?.let { api.book(it.baseUrl, it.apiKey, route.bookId).libraryId } },
+            onBack,
+        ) {
             ReaderScreen(session, api, appSettings, route.bookId, onBack, route.startPage, route.incognito, onOpenSeriesFromReader)
+        }
 
-        is DetailRoute.SourceReader ->
+        is DetailRoute.SourceReader -> LibraryLockGate(
+            route.chapterId,
+            // Only a followed series belongs to a library; a browsed one has nothing to lock.
+            { route.seriesId?.let { id -> session.activeServer.value?.let { api.seriesDetail(it.baseUrl, it.apiKey, id).libraryId } } },
+            onBack,
+        ) {
             SourceReaderScreen(
                 session, api, appSettings, route.providerId, route.chapterId, route.seriesId, route.chapterName,
                 onBack, route.sourceSeries, route.incognito, onOpenSeriesFromReader,
             )
+        }
 
         is DetailRoute.Downloads ->
             DownloadsScreen(session, api, onBack)
