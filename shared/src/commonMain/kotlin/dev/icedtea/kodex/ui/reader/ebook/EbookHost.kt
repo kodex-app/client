@@ -27,7 +27,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import org.jetbrains.compose.resources.ExperimentalResourceApi
-import kotlin.random.Random
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /**
  * Where the ebook being read comes from — decides which upstream endpoints the host proxies. Kept
@@ -138,7 +139,11 @@ object EbookHost {
     private fun io.ktor.server.routing.Route.routes() {
         get("/{token}/reader.html") {
             val ctx = session() ?: return@get notFound()
-            call.respondText(readerHtml(ctx.bootConfigJson), ContentType.Text.Html)
+            // Only this page's own modules and its one boot script may run — never the book's. See
+            // [readerContentSecurityPolicy].
+            val nonce = randomToken()
+            call.response.header("Content-Security-Policy", readerContentSecurityPolicy(nonce))
+            call.respondText(readerHtml(ctx.bootConfigJson, nonce), ContentType.Text.Html)
         }
 
         // The vendored foliate-js engine, served as real modules so `import` inside it resolves.
@@ -245,15 +250,18 @@ object EbookHost {
         call.respondBytes(response.bodyAsBytes(), response.contentType() ?: fallback)
     }
 
-    private fun randomToken(): String = buildString {
-        repeat(24) { append(TOKEN_ALPHABET[Random.nextInt(TOKEN_ALPHABET.length)]) }
-    }
+    /**
+     * An unguessable token. From the platform's secure generator ([Uuid.random]), not `kotlin.random`:
+     * the path token is the only thing between another app on the device and the proxied book, and the
+     * script nonce the only thing letting a script run on the reader page.
+     */
+    @OptIn(ExperimentalUuidApi::class)
+    private fun randomToken(): String = Uuid.random().toHexString()
 
     private const val LOOPBACK = "127.0.0.1"
     private const val HEADER_API_KEY = "X-API-Key"
     /** How long a command poll is held open before returning empty and being re-issued. */
     private const val POLL_TIMEOUT_MS = 25_000L
-    private const val TOKEN_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789"
 }
 
 private fun HttpStatusCode.isSuccess(): Boolean = value in 200..299
@@ -294,10 +302,31 @@ private fun EbookHostSession.fileUrl(): String? = when (origin) {
 }
 
 /**
+ * The reader page's Content-Security-Policy. Its point is `script-src`: only this origin's own modules
+ * (`reader.js`, foliate) and the one boot script carrying [nonce] run — no other inline script, no
+ * event-handler attribute, no `javascript:` link, no script from a `blob:`.
+ *
+ * That is what keeps a book's own scripts from running. foliate renders each chapter in an iframe that
+ * is same-origin and script-enabled (a WebKit limitation it documents, together with the requirement
+ * that the embedding page block scripts by CSP), built from a `blob:` of the book's markup; such a frame
+ * inherits this policy. Without it a `<script>` or an `onerror=` inside an EPUB ran on the host's origin,
+ * where it could read the rest of the book through the proxy, forge reader events (`./event`) and
+ * swallow the commands meant for the page.
+ *
+ * The rest stays loose on purpose — a book brings its own styles, fonts and images, inline and as
+ * `blob:`s, and a library EPUB may point at images elsewhere — exactly as the web UI's policy does.
+ */
+internal fun readerContentSecurityPolicy(nonce: String): String =
+    "default-src 'self'; script-src 'self' 'nonce-$nonce'; " +
+        "style-src 'self' 'unsafe-inline' blob: data:; img-src 'self' data: blob: https: http:; " +
+        "media-src 'self' data: blob: https: http:; font-src 'self' data: blob:; " +
+        "connect-src 'self' blob: data:; frame-src 'self' blob:; worker-src 'self' blob:; object-src 'none'"
+
+/**
  * The host document. Deliberately minimal — it only parks the boot config on `window` and hands over
  * to `reader.js`; everything else (loading the book, pagination, styling) is foliate's.
  */
-private fun readerHtml(bootConfigJson: String): String = """
+internal fun readerHtml(bootConfigJson: String, nonce: String): String = """
 <!doctype html>
 <html>
 <head>
@@ -310,7 +339,7 @@ private fun readerHtml(bootConfigJson: String): String = """
 </head>
 <body>
 <div id="view"></div>
-<script>window.KDX_CONFIG = $bootConfigJson;</script>
+<script nonce="$nonce">window.KDX_CONFIG = $bootConfigJson;</script>
 <script type="module" src="./reader.js"></script>
 </body>
 </html>
