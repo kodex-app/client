@@ -196,7 +196,7 @@ private fun readBuildInfo(context: Context): AppBuildInfo {
         versionName = info?.versionName.orEmpty(),
         versionCode = info?.let { PackageInfoCompat.getLongVersionCode(it) } ?: 0L,
         channel = UpdateChannel.parse(meta?.getString(META_CHANNEL)),
-        repo = meta?.getString(META_REPO)?.takeIf { it.contains('/') } ?: "kodex-app/client",
+        repo = meta?.getString(META_REPO)?.trim()?.takeIf { it.contains('/') },
         storeInstaller = installer?.takeIf { it in STORE_INSTALLERS },
     )
 }

@@ -30,8 +30,11 @@ data class AppBuildInfo(
     val versionCode: Long,
     /** Null when this build has no update source (store flavor, local builds, iOS). */
     val channel: UpdateChannel?,
-    /** GitHub `owner/name` the releases are published under. */
-    val repo: String,
+    /**
+     * GitHub `owner/name` the releases are published under — the repository whose workflow built the
+     * APK (`GITHUB_REPOSITORY`), never a constant. Null outside CI builds.
+     */
+    val repo: String?,
     /** Package name of the store that installed the app, when it was a store. */
     val storeInstaller: String?,
 )
@@ -68,7 +71,7 @@ interface AppUpdatePlatform {
 }
 
 /** True when this build checks GitHub for updates at all. */
-val AppBuildInfo.selfUpdates: Boolean get() = channel != null && storeInstaller == null
+val AppBuildInfo.selfUpdates: Boolean get() = channel != null && repo != null && storeInstaller == null
 
 @Composable
 expect fun rememberAppUpdatePlatform(): AppUpdatePlatform

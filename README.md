@@ -81,9 +81,10 @@ auto-selects the most recently used one.
 
 The `github` flavor checks GitHub Releases on launch (at most hourly; toggle and manual check under
 About) and installs the new APK through `PackageInstaller` (`shared/.../update/`). CI bakes the
-channel into the manifest: tags → `release` (compared by semver against `releases/latest`), the
+channel and the repository it built from (`GITHUB_REPOSITORY`, so forks update from their own
+releases) into the manifest: tags → `release` (compared by semver against `releases/latest`), the
 `dev` branch → `dev` (the rolling prerelease; any other `dev-<sha>` is an update). Local builds
-have no channel and never update. The `store` flavor ships neither the channel nor
+have neither and never update. The `store` flavor ships neither the channel nor
 `REQUEST_INSTALL_PACKAGES`, and any build a store installed (Play, Galaxy Store, F-Droid, …) is left
 to that store at run time.
 

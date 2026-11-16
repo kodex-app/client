@@ -16,7 +16,7 @@ private object IosAppUpdatePlatform : AppUpdatePlatform {
             versionName = info?.get("CFBundleShortVersionString") as? String ?: "",
             versionCode = (info?.get("CFBundleVersion") as? String)?.toLongOrNull() ?: 0L,
             channel = null,
-            repo = "kodex-app/client",
+            repo = null,
             storeInstaller = null,
         )
     }

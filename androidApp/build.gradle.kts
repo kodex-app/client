@@ -51,8 +51,9 @@ android {
             dimension = "distribution"
             isDefault = true
             manifestPlaceholders["updateChannel"] = System.getenv("UPDATE_CHANNEL")?.trim().orEmpty()
-            manifestPlaceholders["updateRepo"] =
-                System.getenv("GITHUB_REPOSITORY")?.trim()?.takeIf { it.isNotEmpty() } ?: "kodex-app/client"
+            // `owner/name` of the repository the workflow runs in — set by GitHub Actions itself, so a
+            // fork's builds update from the fork's releases. Empty outside CI: no repo, no updates.
+            manifestPlaceholders["updateRepo"] = System.getenv("GITHUB_REPOSITORY")?.trim().orEmpty()
         }
         create("store") {
             dimension = "distribution"

@@ -39,9 +39,10 @@ internal class GitHubReleases(private val client: HttpClient) {
     /** The newest build on [build]'s channel when it differs from (or is newer than) the running one. */
     suspend fun findUpdate(build: AppBuildInfo): AvailableUpdate? {
         val channel = build.channel ?: return null
+        val repo = build.repo ?: return null
         val release = when (channel) {
-            UpdateChannel.RELEASE -> fetch("https://api.github.com/repos/${build.repo}/releases/latest")
-            UpdateChannel.DEV -> fetch("https://api.github.com/repos/${build.repo}/releases/tags/dev")
+            UpdateChannel.RELEASE -> fetch("https://api.github.com/repos/$repo/releases/latest")
+            UpdateChannel.DEV -> fetch("https://api.github.com/repos/$repo/releases/tags/dev")
         } ?: return null
         val apk = release.assets.firstOrNull { it.name.endsWith(".apk", ignoreCase = true) } ?: return null
         val version = when (channel) {
