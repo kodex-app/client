@@ -39,6 +39,11 @@ import coil3.ImageLoader
 import coil3.compose.setSingletonImageLoaderFactory
 import coil3.network.ktor3.KtorNetworkFetcherFactory
 import coil3.request.crossfade
+import androidx.compose.runtime.LaunchedEffect
+import dev.icedtea.kodex.update.AppUpdateController
+import dev.icedtea.kodex.update.LocalAppUpdate
+import dev.icedtea.kodex.update.UpdateDialog
+import dev.icedtea.kodex.update.rememberAppUpdatePlatform
 
 /**
  * Root of the shared UI, hosted identically by the Android and iOS entry points. A non-null
@@ -81,6 +86,11 @@ fun App() {
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarController(snackbarHostState, scope) }
 
+    // Self-update from GitHub Releases — inert for store builds and iOS (see AppUpdate.kt).
+    val updatePlatform = rememberAppUpdatePlatform()
+    val appUpdate = remember(updatePlatform) { AppUpdateController(updatePlatform, scope) }
+    LaunchedEffect(appUpdate) { appUpdate.checkOnLaunch() }
+
     KodexTheme(graph.appSettings) {
         CompositionLocalProvider(
             LocalEventBus provides graph.eventBus,
@@ -88,6 +98,7 @@ fun App() {
             LocalSnackbar provides snackbar,
             LocalSystemNavBarColor provides systemNavBarColor,
             LocalImmersiveContent provides immersiveContent,
+            LocalAppUpdate provides appUpdate,
         ) {
             Surface(Modifier.fillMaxSize()) {
               Box(Modifier.fillMaxSize()) {
@@ -110,6 +121,7 @@ fun App() {
                             dev.icedtea.kodex.ui.library.AppLockScreen(onSignOut = { graph.session.signOut() })
                         }
                     }
+                    UpdateDialog(appUpdate)
                     // App-level snackbar overlay — sits above any screen's own Scaffold.
                     SnackbarHost(snackbarHostState, Modifier.align(Alignment.BottomCenter).fillMaxWidth())
                 }

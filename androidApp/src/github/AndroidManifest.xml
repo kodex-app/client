@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the `github` flavor self-updates (see build.gradle.kts). The store flavor gets none of this:
+     no install permission, and no channel, so the in-app updater reads as disabled. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Hands the downloaded release APK to PackageInstaller (shared/.../update/AppUpdate.android.kt). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <application>
+        <meta-data
+            android:name="dev.icedtea.kodex.update.CHANNEL"
+            android:value="${updateChannel}" />
+        <meta-data
+            android:name="dev.icedtea.kodex.update.REPO"
+            android:value="${updateRepo}" />
+    </application>
+
+</manifest>

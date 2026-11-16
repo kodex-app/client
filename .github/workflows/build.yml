@@ -83,11 +83,15 @@ jobs:
                 echo "The release channel needs a v* tag ref; got ${GITHUB_REF}." >&2
                 exit 1
               fi
-              tag="${GITHUB_REF#refs/tags/}"; version="$tag"; app_id_suffix="" ;;
+              tag="${GITHUB_REF#refs/tags/}"; version="$tag"; version_name="${tag#v}"
+              app_id_suffix=""; update_channel=release ;;
             dev)
-              tag=dev; version="dev-$(git rev-parse --short HEAD)"; app_id_suffix=".dev" ;;
+              tag=dev; version="dev-$(git rev-parse --short HEAD)"; version_name="$version"
+              app_id_suffix=".dev"; update_channel=dev ;;
             main)
-              tag=""; version="main-$(git rev-parse --short HEAD)"; app_id_suffix="" ;;
+              # Nothing is published for main, so there is nothing for its APK to update from.
+              tag=""; version="main-$(git rev-parse --short HEAD)"; version_name="$version"
+              app_id_suffix=""; update_channel="" ;;
           esac
           [[ "${publish}" == true ]] || tag=""
           {
@@ -96,7 +100,16 @@ jobs:
             echo "version=${version}"
           } >> "$GITHUB_OUTPUT"
           # Gradle reads this; empty means "no suffix", i.e. the production applicationId.
-          echo "APP_ID_SUFFIX=${app_id_suffix}" >> "$GITHUB_ENV"
+          # The in-app updater (github flavor) compares VERSION_NAME with what it finds on the
+          # UPDATE_CHANNEL release: semver for `release`, the dev-<sha> in the APK name for `dev` —
+          # which is why version_name for dev must equal the version in the asset name below.
+          # VERSION_CODE only has to keep rising so each update installs over the last.
+          {
+            echo "APP_ID_SUFFIX=${app_id_suffix}"
+            echo "UPDATE_CHANNEL=${update_channel}"
+            echo "VERSION_NAME=${version_name}"
+            echo "VERSION_CODE=${GITHUB_RUN_NUMBER}"
+          } >> "$GITHUB_ENV"
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -150,10 +163,12 @@ jobs:
           pw_ref="KEYSTORE_PASSWORD${s}"; alias_ref="KEY_ALIAS${s}"
           keytool -list -keystore keystore/release.jks -storepass "${!pw_ref}" -alias "${!alias_ref}" > /dev/null
 
+      # The github flavor: the one that self-updates from these releases. A store build would be
+      # :androidApp:bundleStoreRelease instead.
       - name: Build release APK
         run: |
           chmod +x ./gradlew
-          ./gradlew :androidApp:assembleRelease --no-daemon --stacktrace
+          ./gradlew :androidApp:assembleGithubRelease --no-daemon --stacktrace
 
       - name: Stage APK
         id: stage
@@ -162,7 +177,7 @@ jobs:
         run: |
           set -euo pipefail
           version="${VERSION}"
-          apk="$(find androidApp/build/outputs/apk/release -maxdepth 1 -name '*.apk' | head -n1)"
+          apk="$(find androidApp/build/outputs/apk/github/release -maxdepth 1 -name '*.apk' | head -n1)"
           if [[ -z "$apk" ]]; then echo "No APK produced" >&2; exit 1; fi
           # An unsigned APK builds fine and installs nowhere — check before it reaches a release.
           apksigner="$(find "${ANDROID_HOME}/build-tools" -name apksigner -type f | sort -V | tail -n1)"

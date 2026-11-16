@@ -15,8 +15,11 @@ android {
         applicationId = "dev.icedtea.kodex"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "0.1.0"
+        // CI stamps both (see .github/workflows/build.yml): the run number keeps versionCode rising so
+        // a self-update installs over the previous build, and versionName is what the updater
+        // compares against GitHub — `1.2.3` from a v1.2.3 tag, `dev-<sha>` on the dev channel.
+        versionCode = System.getenv("VERSION_CODE")?.trim()?.toIntOrNull() ?: 1
+        versionName = System.getenv("VERSION_NAME")?.trim()?.takeIf { it.isNotEmpty() } ?: "0.1.0"
 
         // Dev-channel builds ship as a separate package (dev.icedtea.kodex.dev) so they install
         // alongside the production app instead of fighting it for the same applicationId. CI sets
@@ -32,6 +35,27 @@ android {
         // that is what standard emulators (and Chromebooks) run on.
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
+    }
+
+    // Where the APK is distributed decides whether it may update itself.
+    //  - github: published as a GitHub Release; checks that release channel and installs the new APK
+    //    itself (src/github/AndroidManifest.xml adds REQUEST_INSTALL_PACKAGES and the channel).
+    //  - store:  built for an app store, which owns updates — no update channel, no install
+    //    permission (Play restricts REQUEST_INSTALL_PACKAGES).
+    // The channel comes from UPDATE_CHANNEL (CI: `release` on tags, `dev` on the dev branch); empty —
+    // every local build — means no channel, so a hand-built APK never "updates" itself to CI's.
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("github") {
+            dimension = "distribution"
+            isDefault = true
+            manifestPlaceholders["updateChannel"] = System.getenv("UPDATE_CHANNEL")?.trim().orEmpty()
+            manifestPlaceholders["updateRepo"] =
+                System.getenv("GITHUB_REPOSITORY")?.trim()?.takeIf { it.isNotEmpty() } ?: "kodex-app/client"
+        }
+        create("store") {
+            dimension = "distribution"
         }
     }
 

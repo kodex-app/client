@@ -71,10 +71,21 @@ auto-selects the most recently used one.
 ## Build / run
 
 ```bash
-./gradlew :androidApp:assembleDebug           # Android APK
+./gradlew :androidApp:assembleGithubDebug     # Android APK (GitHub-distributed flavor)
+./gradlew :androidApp:assembleStoreRelease    # store flavor: no self-updater, no install permission
 ./gradlew :shared:testAndroidHostTest         # commonTest, on the JVM (no device needed)
 # iOS: open iosApp in Xcode on a Mac (see iosApp/README.md)
 ```
+
+## Self-update (GitHub builds)
+
+The `github` flavor checks GitHub Releases on launch (at most hourly; toggle and manual check under
+About) and installs the new APK through `PackageInstaller` (`shared/.../update/`). CI bakes the
+channel into the manifest: tags → `release` (compared by semver against `releases/latest`), the
+`dev` branch → `dev` (the rolling prerelease; any other `dev-<sha>` is an update). Local builds
+have no channel and never update. The `store` flavor ships neither the channel nor
+`REQUEST_INSTALL_PACKAGES`, and any build a store installed (Play, Galaxy Store, F-Droid, …) is left
+to that store at run time.
 
 `local.properties` needs `sdk.dir=<Android SDK path>` (auto-created here; gitignored).
 
